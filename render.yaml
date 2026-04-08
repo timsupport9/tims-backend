@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: tims-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true  # Render auto-generates a secure secret
+      - key: DB_PATH
+        value: /tmp/tims_support.db
