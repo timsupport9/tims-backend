@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TIMS Support Portal | Advanced Real-Time Operations</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        * { transition: all 0.2s ease; }
+        body { background: #f0f4f8; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        .dashboard-card:hover { transform: translateY(-3px); box-shadow: 0 20px 25px -12px rgba(0,0,0,0.15); }
+        .status-badge { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .toast-notify { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: white; padding: 12px 24px; border-radius: 48px; z-index: 9999; animation: slideIn 0.3s ease; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
+        .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(4px); }
+        .spinner { border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid #6366f1; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .real-time-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; animation: pulse 2s infinite; margin-right: 8px; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .notification-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; font-weight: bold; }
+        .chat-message { animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .progress-bar { transition: width 0.5s ease; }
+        .hover-scale:hover { transform: scale(1.05); }
+        .glass-effect { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); }
+        
+        /* Hide number input spinners */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body>
+<div id="app-root"></div>
+<div id="toast-container"></div>
+
+<script>
+    // ======================== CONFIGURATION ========================
+    const BACKEND_URL = 'https://tims-backend-cr8l.onrender.com';
+    
+    // Demo credentials (hidden in code, can be changed here)
+    const DEMO_CREDENTIALS = {
+        admin: { email: 'admin@tims.com', password: 'admin123' },
+        expert: { email: 'john@tims.com', password: 'expert123' }
+    };
+    
+    // ======================== GLOBAL STATE ========================
+    let socket = null;
+    let authToken = null;
+    let currentUser = null;
+    let currentUserRole = null;
+    let expertsData = [];
+    let tasksData = [];
+    let messagesData = [];
+    let notificationsData = [];
+    let analyticsData = null;
+    let appPhase = 'login';
+    let charts = {};
+    let unreadNotifications = 0;
+    let activeChatUser = null;
+    let fileAttachments = [];
+
+    // ======================== UTILITIES ========================
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = 'toast-notify';
+        const icons = { success: '✅', error: '❌', warning: '⚠️', info: '🔔' };
+        toast.innerHTML = `${icons[type] || '🔔'} ${message}`;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    function showLoading(show) {
+        let loader = document.getElementById('globalLoader');
+        if (show) {
+            if (!loader) {
+                loader = document.createElement('div');
+                loader.id = 'globalLoader';
+                loader.className = 'loading-overlay';
+                loader.innerHTML = '<div class="spinner"></div>';
+                document.body.appendChild(loader);
+            }
+        } else {
+            if (loader) loader.remove();
+        }
+    }
+
+    async function apiCall(endpoint, method = 'GET', body = null) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+        const options = { method, headers };
+        if (body) options.body = JSON.stringify(body);
+        const res = await fetch(`${BACKEND_URL}${endpoint}`, options);
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+    }
+
+    // ======================== ENHANCED BACKEND ACTIONS ========================
+    async function login(email, password) {
+        const res = await fetch(`${BACKEND_URL}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        if (!res.ok) throw new Error('Invalid email or password');
+        const data = await res.json();
+        authToken = data.token;
+        currentUser = data.user;
+        currentUserRole = data.user.role;
+        localStorage.setItem('token', authToken);
+        localStorage.setItem('user', JSON.stringify(currentUser));
+        
+        if (socket) socket.disconnect();
+        socket = io(BACKEND_URL, { auth: { token: authToken } });
+        
+        setupSocketListeners();
+        await fetchInitialData();
+        await fetchAnalytics();
+        appPhase = 'dashboard';
+        renderDashboard();
+    }
+
+    function setupSocketListeners() {
+        socket.on('data-update', (data) => {
+            expertsData = data.experts;
+            tasksData = data.tasks;
+            if (appPhase === 'dashboard') renderDashboard();
+            showToast('Data updated in real-time', 'info');
+        });
+        
+        socket.on('new-message', (message) => {
+            messagesData.push(message);
+            if (activeChatUser === message.senderId || activeChatUser === message.receiverId) {
+                renderChat();
+            }
+            showToast(`📨 New message from ${message.senderName}`, 'info');
+        });
+        
+        socket.on('new-notification', (notification) => {
+            notificationsData.unshift(notification);
+            unreadNotifications++;
+            updateNotificationBadge();
+            showToast(notification.message, notification.type);
+            if (appPhase === 'dashboard') renderDashboard();
+        });
+        
+        socket.on('task-updated', (task) => {
+            const index = tasksData.findIndex(t => t.id === task.id);
+            if (index !== -1) tasksData[index] = task;
+            else tasksData.push(task);
+            if (appPhase === 'dashboard') renderDashboard();
+        });
+        
+        socket.on('analytics-update', (analytics) => {
+            analyticsData = analytics;
+            if (appPhase === 'dashboard') renderDashboard();
+        });
+    }
+
+    async function fetchInitialData() {
+        const data = await apiCall('/api/data');
+        expertsData = data.experts;
+        tasksData = data.tasks;
+        notificationsData = await apiCall('/api/notifications');
+        unreadNotifications = notificationsData.filter(n => !n.read).length;
+    }
+
+    async function fetchAnalytics() {
+        analyticsData = await apiCall('/api/analytics');
+    }
+
+    async function createExpert(fullName, email, specialization, phone = '') {
+        showLoading(true);
+        try {
+            await apiCall('/api/experts', 'POST', { fullName, email, specialization, phone });
+            showToast(`Expert ${fullName} created successfully`, 'success');
+            socket.emit('notification', {
+                type: 'expert_created',
+                message: `New expert ${fullName} has joined the team`,
+                targetRole: 'admin'
+            });
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function createTask(title, description, specialization, dueDate, priority = 'medium', attachments = []) {
+        showLoading(true);
+        try {
+            await apiCall('/api/tasks', 'POST', { title, description, specialization, dueDate, priority, attachments });
+            showToast(`Task "${title}" created successfully`, 'success');
+            socket.emit('notification', {
+                type: 'task_created',
+                message: `New task: ${title} (${specialization})`,
+                targetSpecialization: specialization
+            });
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function updateTaskStatus(taskId, status, comment = '') {
+        try {
+            await apiCall(`/api/tasks/${taskId}/status`, 'PATCH', { status, comment });
+            showToast(`Status updated to ${status}`, 'success');
+            if (comment) {
+                socket.emit('notification', {
+                    type: 'task_update',
+                    message: `Task status updated: ${comment}`,
+                    targetTask: taskId
+                });
+            }
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function deleteTask(taskId) {
+        const result = await Swal.fire({
+            title: 'Delete Task?',
+            text: "This action cannot be undone!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            confirmButtonText: 'Yes, delete it!'
+        });
+        if (!result.isConfirmed) return;
+        
+        showLoading(true);
+        try {
+            await apiCall(`/api/tasks/${taskId}`, 'DELETE');
+            showToast('Task deleted successfully', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function toggleExpertAvailability(userId) {
+        try {
+            await apiCall(`/api/experts/${userId}/toggle`, 'PATCH');
+            showToast('Availability toggled', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function assignTask(taskId, expertId, expertName) {
+        try {
+            await apiCall(`/api/tasks/${taskId}/assign`, 'PATCH', { expertId, expertName });
+            showToast(`Assigned to ${expertName}`, 'success');
+            socket.emit('notification', {
+                type: 'task_assigned',
+                message: `You have been assigned to task #${taskId}`,
+                targetUser: expertId
+            });
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function claimTask(taskId) {
+        try {
+            await apiCall(`/api/tasks/${taskId}/claim`, 'PATCH');
+            showToast('Task claimed successfully!', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function sendMessage(receiverId, content) {
+        if (!content.trim()) return;
+        try {
+            await apiCall('/api/messages', 'POST', { receiverId, content });
+            showToast('Message sent', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function markNotificationRead(notificationId) {
+        await apiCall(`/api/notifications/${notificationId}/read`, 'PATCH');
+        unreadNotifications = Math.max(0, unreadNotifications - 1);
+        updateNotificationBadge();
+    }
+
+    async function generateReport(type, dateRange) {
+        showLoading(true);
+        try {
+            const report = await apiCall(`/api/reports/${type}?start=${dateRange.start}&end=${dateRange.end}`);
+            Swal.fire({
+                title: `${type.toUpperCase()} Report`,
+                html: `<pre style="text-align: left;">${JSON.stringify(report, null, 2)}</pre>`,
+                width: '800px'
+            });
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function logout() {
+        if (socket) socket.disconnect();
+        authToken = null;
+        currentUser = null;
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        appPhase = 'login';
+        renderLogin();
+    }
+
+    function updateNotificationBadge() {
+        const badge = document.getElementById('notificationBadge');
+        if (badge) {
+            if (unreadNotifications > 0) {
+                badge.textContent = unreadNotifications > 99 ? '99+' : unreadNotifications;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    }
+
+    // ======================== ENHANCED FRONTEND RENDERERS ========================
+    function renderLogin() {
+        document.getElementById('app-root').innerHTML = `
+            <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-800">
+                <div class="bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl w-full max-w-md p-8 mx-4">
+                    <div class="text-center mb-8">
+                        <div class="inline-block p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full mb-4">
+                            <i class="fas fa-headset text-4xl text-white"></i>
+                        </div>
+                        <h1 class="text-3xl font-bold text-gray-800">TIMS <span class="text-blue-700">Support Portal</span></h1>
+                        <p class="text-gray-500 mt-2">Secure Access Only</p>
+                        <div class="mt-3 flex items-center justify-center">
+                            <span class="real-time-indicator"></span>
+                            <span class="text-xs text-green-700">Encrypted Connection</span>
+                        </div>
+                    </div>
+                    <div id="loginError" class="bg-red-50 text-red-700 p-3 rounded-xl text-sm mb-4 hidden"></div>
+                    <div class="space-y-4">
+                        <div class="relative">
+                            <i class="fas fa-envelope absolute left-3 top-3 text-gray-400"></i>
+                            <input type="email" id="loginEmail" placeholder="Email Address" class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" autocomplete="off">
+                        </div>
+                        <div class="relative">
+                            <i class="fas fa-lock absolute left-3 top-3 text-gray-400"></i>
+                            <input type="password" id="loginPassword" placeholder="Password" class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" autocomplete="off">
+                        </div>
+                        <button id="loginBtn" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl transition shadow-md transform hover:scale-[1.02]">
+                            <i class="fas fa-sign-in-alt mr-2"></i>Sign In
+                        </button>
+                    </div>
+                    <div class="mt-6 pt-4 border-t border-gray-200 text-center">
+                        <p class="text-xs text-gray-500">
+                            <i class="fas fa-shield-alt mr-1"></i> Authorized Personnel Only
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('loginBtn').onclick = async () => {
+            const email = document.getElementById('loginEmail').value;
+            const pwd = document.getElementById('loginPassword').value;
+            
+            if (!email || !pwd) {
+                const errDiv = document.getElementById('loginError');
+                errDiv.innerText = 'Please enter both email and password';
+                errDiv.classList.remove('hidden');
+                setTimeout(() => errDiv.classList.add('hidden'), 3000);
+                return;
+            }
+            
+            try {
+                showLoading(true);
+                await login(email, pwd);
+                showLoading(false);
+            } catch (err) {
+                showLoading(false);
+                const errDiv = document.getElementById('loginError');
+                errDiv.innerText = err.message;
+                errDiv.classList.remove('hidden');
+                setTimeout(() => errDiv.classList.add('hidden'), 3000);
+                
+                // Clear password field on error
+                document.getElementById('loginPassword').value = '';
+            }
+        };
+        
+        // Allow Enter key to submit
+        const handleEnter = (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loginBtn').click();
+            }
+        };
+        document.getElementById('loginEmail').addEventListener('keypress', handleEnter);
+        document.getElementById('loginPassword').addEventListener('keypress', handleEnter);
+    }
+
+    function renderDashboard() {
+        if (currentUserRole === 'admin') {
+            document.getElementById('app-root').innerHTML = renderAdminDashboard();
+            attachAdminEvents();
+            initializeCharts();
+        } else {
+            document.getElementById('app-root').innerHTML = renderExpertDashboard();
+            attachExpertEvents();
+        }
+    }
+
+    function renderAdminDashboard() {
+        const totalExperts = expertsData.filter(e => e.role === 'expert').length;
+        const availableExperts = expertsData.filter(e => e.isAvailable && e.role === 'expert').length;
+        const pending = tasksData.filter(t => t.status === 'pending').length;
+        const inProgress = tasksData.filter(t => t.status === 'in-progress').length;
+        const completed = tasksData.filter(t => t.status === 'completed').length;
+        const urgentTasks = tasksData.filter(t => t.priority === 'urgent').length;
+        const completionRate = tasksData.length ? ((completed / tasksData.length) * 100).toFixed(1) : 0;
+        
+        return `
+            <div class="min-h-screen bg-gray-100">
+                <!-- Header -->
+                <div class="bg-white shadow-md sticky top-0 z-20 p-4 flex justify-between items-center border-b">
+                    <div class="flex items-center space-x-4">
+                        <i class="fas fa-headset text-blue-600 text-2xl"></i>
+                        <span class="font-bold text-gray-800 text-xl">TIMS Support Admin</span>
+                        <span class="real-time-indicator"></span>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="relative cursor-pointer" id="notificationBtn">
+                            <i class="fas fa-bell text-2xl text-gray-600 hover:text-blue-600"></i>
+                            <span id="notificationBadge" class="notification-badge hidden">${unreadNotifications}</span>
+                        </div>
+                        <button id="logoutBtn" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg transition flex items-center">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="max-w-7xl mx-auto px-4 py-8">
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-users text-3xl text-blue-500"></i></div>
+                                <div class="text-right"><div class="text-2xl font-bold">${totalExperts}</div><div class="text-gray-500 text-sm">Support Agents</div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-check-circle text-3xl text-green-500"></i></div>
+                                <div class="text-right"><div class="text-2xl font-bold">${availableExperts}</div><div class="text-gray-500 text-sm">Available Now</div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-tasks text-3xl text-yellow-500"></i></div>
+                                <div class="text-right"><div class="text-2xl font-bold">${pending}</div><div class="text-gray-500 text-sm">Open Tickets</div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-chart-line text-3xl text-purple-500"></i></div>
+                                <div class="text-right"><div class="text-2xl font-bold">${completionRate}%</div><div class="text-gray-500 text-sm">Completion Rate</div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-exclamation-triangle text-3xl text-red-500"></i></div>
+                                <div class="text-right"><div class="text-2xl font-bold">${urgentTasks}</div><div class="text-gray-500 text-sm">Urgent Tasks</div></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Analytics Charts -->
+                    <div class="grid lg:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-white rounded-xl p-6 shadow-lg">
+                            <h3 class="font-bold mb-4"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>Task Distribution</h3>
+                            <canvas id="taskChart" height="200"></canvas>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-lg">
+                            <h3 class="font-bold mb-4"><i class="fas fa-chart-pie mr-2 text-green-500"></i>Expert Performance</h3>
+                            <canvas id="performanceChart" height="200"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Actions -->
+                    <div class="grid lg:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
+                            <h3 class="font-bold mb-3 text-xl"><i class="fas fa-user-plus mr-2"></i>Add Support Agent</h3>
+                            <input id="expertName" placeholder="Full Name" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                            <input id="expertEmail" placeholder="Email" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                            <input id="expertPhone" placeholder="Phone (Optional)" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                            <input id="expertSpecialization" placeholder="Specialization" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                            <button id="createExpertBtn" class="bg-white text-blue-600 w-full py-2 rounded-lg font-semibold hover:bg-gray-100 transition">Create Agent</button>
+                        </div>
+                        <div class="bg-gradient-to-br from-green-500 to-teal-600 rounded-xl p-6 text-white shadow-lg">
+                            <h3 class="font-bold mb-3 text-xl"><i class="fas fa-ticket-alt mr-2"></i>Create Support Ticket</h3>
+                            <input id="taskTitle" placeholder="Ticket Title" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                            <textarea id="taskDescription" placeholder="Issue Description" rows="2" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800"></textarea>
+                            <select id="taskSpecialization" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                                <option value="">Select Skill Required</option>
+                                ${[...new Set(expertsData.map(e => e.specialization))].map(s => `<option value="${s}">${s}</option>`).join('')}
+                            </select>
+                            <select id="taskPriority" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                                <option value="low">Low Priority</option>
+                                <option value="medium" selected>Medium Priority</option>
+                                <option value="high">High Priority</option>
+                                <option value="urgent">Urgent</option>
+                            </select>
+                            <input id="taskDueDate" type="date" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
+                            <button id="createTaskBtn" class="bg-white text-green-600 w-full py-2 rounded-lg font-semibold hover:bg-gray-100 transition">Create Ticket</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Experts Table -->
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
+                        <div class="p-4 border-b font-bold bg-gray-50"><i class="fas fa-users mr-2 text-blue-500"></i>Support Agents Management</div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="p-3 text-left">Agent</th>
+                                        <th>Skill</th>
+                                        <th>Status</th>
+                                        <th>Tickets Closed</th>
+                                        <th>Rating</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${expertsData.filter(e => e.role === 'expert').map(exp => `
+                                        <tr class="border-b hover:bg-gray-50">
+                                            <td class="p-3">
+                                                <div class="font-semibold">${exp.fullName}</div>
+                                                <div class="text-xs text-gray-500">${exp.email}</div>
+                                            </td>
+                                            <td class="p-3"><span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">${exp.specialization}</span></td>
+                                            <td class="p-3">
+                                                <button class="toggleAvailBtn px-3 py-1 rounded-full text-sm ${exp.isAvailable ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}" data-id="${exp.id}">
+                                                    ${exp.isAvailable ? '🟢 Available' : '🔴 Busy'}
+                                                </button>
+                                            </td>
+                                            <td class="p-3 text-center font-semibold">${exp.tasksCompleted || 0}</td>
+                                            <td class="p-3">
+                                                <div class="flex items-center">
+                                                    <span class="text-yellow-500">★</span>
+                                                    <span class="ml-1">${exp.rating || 4.5}</span>
+                                                </div>
+                                            </td>
+                                            <td class="p-3">
+                                                <button class="chatWithExpertBtn text-blue-500 hover:text-blue-700 mr-2" data-id="${exp.id}" data-name="${exp.fullName}">
+                                                    <i class="fas fa-comment"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Tasks Table -->
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                        <div class="p-4 border-b font-bold bg-gray-50"><i class="fas fa-tasks mr-2 text-green-500"></i>All Support Tickets</div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="p-3">Ticket</th>
+                                        <th>Skill</th>
+                                        <th>Priority</th>
+                                        <th>Status</th>
+                                        <th>Due</th>
+                                        <th>Assign To</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tasksData.map(task => {
+                                        const matchExperts = expertsData.filter(e => e.specialization === task.specialization && e.isAvailable);
+                                        const priorityColors = { low: 'bg-gray-100', medium: 'bg-yellow-100', high: 'bg-orange-100', urgent: 'bg-red-100' };
+                                        return `
+                                            <tr class="border-b hover:bg-gray-50">
+                                                <td class="p-3">
+                                                    <div class="font-semibold">${task.title}</div>
+                                                    <div class="text-xs text-gray-500">${task.description?.slice(0, 60)}...</div>
+                                                </td>
+                                                <td class="p-3"><span class="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">${task.specialization}</span></td>
+                                                <td class="p-3"><span class="px-2 py-1 rounded-full text-xs ${priorityColors[task.priority]}">${task.priority || 'medium'}</span></td>
+                                                <td class="p-3">
+                                                    <span class="status-badge px-2 py-1 rounded ${task.status === 'completed' ? 'bg-green-100 text-green-700' : task.status === 'in-progress' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}">
+                                                        ${task.status}
+                                                    </span>
+                                                </td>
+                                                <td class="p-3 text-sm">${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}</td>
+                                                <td class="p-3">
+                                                    <select class="assignSelect text-sm border rounded px-2 py-1" data-task-id="${task.id}">
+                                                        <option value="">Select agent</option>
+                                                        ${matchExperts.map(e => `<option value="${e.id}">${e.fullName}</option>`).join('')}
+                                                    </select>
+                                                </td>
+                                                <td class="p-3">
+                                                    <button class="assignBtn bg-indigo-500 text-white px-3 py-1 rounded text-xs hover:bg-indigo-600 mr-1" data-task-id="${task.id}">
+                                                        <i class="fas fa-user-check"></i>
+                                                    </button>
+                                                    <button class="deleteTaskBtn text-red-500 hover:text-red-700" data-task-id="${task.id}">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chat Modal -->
+                <div id="chatModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+                    <div class="bg-white rounded-xl w-full max-w-2xl h-96 flex flex-col">
+                        <div class="p-4 border-b flex justify-between items-center">
+                            <h3 class="font-bold">Chat with <span id="chatUserName"></span></h3>
+                            <button id="closeChatBtn" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+                        <div class="p-4 border-t flex">
+                            <input type="text" id="chatInput" placeholder="Type your message..." class="flex-1 border rounded-lg px-3 py-2 mr-2">
+                            <button id="sendMessageBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderExpertDashboard() {
+        const myTasks = tasksData.filter(t => t.assignedTo === currentUser.id);
+        const availableTasks = tasksData.filter(t => !t.assignedTo && t.status !== 'completed' && t.specialization === currentUser.specialization);
+        const completedCount = myTasks.filter(t => t.status === 'completed').length;
+        const inProgressCount = myTasks.filter(t => t.status === 'in-progress').length;
+        
+        return `
+            <div class="min-h-screen bg-gray-100">
+                <div class="bg-white shadow-md p-4 flex justify-between items-center border-b sticky top-0 z-20">
+                    <div class="flex items-center space-x-4">
+                        <i class="fas fa-headset text-blue-600 text-2xl"></i>
+                        <span class="font-bold">TIMS Support Agent Portal</span>
+                        <span class="real-time-indicator"></span>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="relative cursor-pointer" id="notificationBtn">
+                            <i class="fas fa-bell text-2xl text-gray-600"></i>
+                            <span id="notificationBadge" class="notification-badge hidden">${unreadNotifications}</span>
+                        </div>
+                        <button id="logoutBtn" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg transition">Logout</button>
+                    </div>
+                </div>
+                
+                <div class="max-w-7xl mx-auto px-4 py-8">
+                    <!-- Welcome Section -->
+                    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-6 rounded-2xl mb-8 shadow-lg">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h2 class="text-2xl font-bold">Welcome back, ${currentUser.fullName}!</h2>
+                                <p class="mt-1">Specialization: ${currentUser.specialization}</p>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-3xl font-bold">${completedCount}</div>
+                                <div class="text-sm">Tickets Resolved</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-tasks text-3xl text-blue-500"></i></div>
+                                <div><div class="text-2xl font-bold">${myTasks.length}</div><div class="text-gray-500">Assigned Tickets</div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-spinner text-3xl text-yellow-500"></i></div>
+                                <div><div class="text-2xl font-bold">${inProgressCount}</div><div class="text-gray-500">In Progress</div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
+                            <div class="flex items-center justify-between">
+                                <div><i class="fas fa-check-circle text-3xl text-green-500"></i></div>
+                                <div><div class="text-2xl font-bold">${completedCount}</div><div class="text-gray-500">Completed</div></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- My Active Tickets -->
+                    <div class="bg-white rounded-xl shadow-lg mb-8">
+                        <div class="p-4 border-b font-bold bg-gray-50">
+                            <i class="fas fa-clipboard-list mr-2 text-blue-500"></i>My Active Tickets
+                        </div>
+                        ${myTasks.length === 0 ? 
+                            '<div class="p-8 text-center text-gray-400"><i class="fas fa-inbox text-4xl mb-2"></i><p>No tickets assigned yet.</p></div>' : 
+                            myTasks.map(task => `
+                                <div class="p-4 border-b hover:bg-gray-50 transition">
+                                    <div class="flex justify-between items-start">
+                                        <div class="flex-1">
+                                            <div class="font-semibold text-lg">${task.title}</div>
+                                            <p class="text-sm text-gray-600 mt-1">${task.description}</p>
+                                            <div class="flex items-center mt-2 space-x-3">
+                                                <span class="text-xs text-gray-500"><i class="far fa-calendar-alt mr-1"></i>Due: ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Flexible'}</span>
+                                                <span class="px-2 py-1 rounded-full text-xs ${task.priority === 'urgent' ? 'bg-red-100 text-red-700' : task.priority === 'high' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100'}">
+                                                    ${task.priority || 'Medium'} Priority
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center space-x-2">
+                                            <select class="statusSelect border rounded-lg px-3 py-2 text-sm" data-task-id="${task.id}">
+                                                <option ${task.status === 'pending' ? 'selected' : ''}>pending</option>
+                                                <option ${task.status === 'in-progress' ? 'selected' : ''}>in-progress</option>
+                                                <option ${task.status === 'completed' ? 'selected' : ''}>completed</option>
+                                            </select>
+                                            <button class="updateStatusBtn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
+                                                <i class="fas fa-sync-alt mr-1"></i>Update
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
+                    
+                    <!-- Available Tickets to Claim -->
+                    <div class="bg-white rounded-xl shadow-lg">
+                        <div class="p-4 border-b font-bold bg-gray-50">
+                            <i class="fas fa-hand-paper mr-2 text-green-500"></i>Available Tickets to Claim
+                        </div>
+                        ${availableTasks.length === 0 ? 
+                            '<div class="p-8 text-center text-gray-400"><i class="fas fa-smile-wink text-4xl mb-2"></i><p>No tickets available at the moment.</p></div>' : 
+                            availableTasks.map(task => `
+                                <div class="p-4 border-b hover:bg-gray-50 transition">
+                                    <div class="flex justify-between items-center">
+                                        <div class="flex-1">
+                                            <div class="font-semibold">${task.title}</div>
+                                            <p class="text-sm text-gray-600">${task.description}</p>
+                                            <div class="flex items-center mt-1 space-x-3">
+                                                <span class="text-xs text-gray-500"><i class="fas fa-tag mr-1"></i>${task.specialization}</span>
+                                                <span class="text-xs text-gray-500"><i class="fas fa-flag mr-1"></i>${task.priority || 'Medium'}</span>
+                                            </div>
+                                        </div>
+                                        <button class="claimBtn bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition transform hover:scale-105">
+                                            <i class="fas fa-hand-paper mr-2"></i>Claim Ticket
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function initializeCharts() {
+        const ctx1 = document.getElementById('taskChart')?.getContext('2d');
+        const ctx2 = document.getElementById('performanceChart')?.getContext('2d');
+        
+        if (ctx1) {
+            const statusCounts = {
+                pending: tasksData.filter(t => t.status === 'pending').length,
+                'in-progress': tasksData.filter(t => t.status === 'in-progress').length,
+                completed: tasksData.filter(t => t.status === 'completed').length
+            };
+            
+            charts.taskChart = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: ['Pending', 'In Progress', 'Completed'],
+                    datasets: [{
+                        label: 'Number of Tasks',
+                        data: [statusCounts.pending, statusCounts['in-progress'], statusCounts.completed],
+                        backgroundColor: ['#fbbf24', '#3b82f6', '#10b981'],
+                        borderRadius: 8
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: true }
+            });
+        }
+        
+        if (ctx2) {
+            const topExperts = expertsData.filter(e => e.role === 'expert').sort((a,b) => (b.tasksCompleted || 0) - (a.tasksCompleted || 0)).slice(0, 5);
+            charts.performanceChart = new Chart(ctx2, {
+                type: 'pie',
+                data: {
+                    labels: topExperts.map(e => e.fullName),
+                    datasets: [{
+                        data: topExperts.map(e => e.tasksCompleted || 0),
+                        backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: true }
+            });
+        }
+    }
+
+    function attachAdminEvents() {
+        document.getElementById('logoutBtn').onclick = logout;
+        
+        document.getElementById('createExpertBtn').onclick = async () => {
+            const name = document.getElementById('expertName').value;
+            const email = document.getElementById('expertEmail').value;
+            const phone = document.getElementById('expertPhone').value;
+            const spec = document.getElementById('expertSpecialization').value;
+            if (name && email && spec) await createExpert(name, email, spec, phone);
+            else showToast('Please fill all required fields', 'error');
+        };
+        
+        document.getElementById('createTaskBtn').onclick = async () => {
+            const title = document.getElementById('taskTitle').value;
+            const desc = document.getElementById('taskDescription').value;
+            const spec = document.getElementById('taskSpecialization').value;
+            const priority = document.getElementById('taskPriority').value;
+            const due = document.getElementById('taskDueDate').value;
+            if (title && desc && spec) await createTask(title, desc, spec, due, priority);
+            else showToast('Please fill all required fields', 'error');
+        };
+        
+        document.querySelectorAll('.toggleAvailBtn').forEach(btn => {
+            btn.onclick = () => toggleExpertAvailability(btn.dataset.id);
+        });
+        
+        document.querySelectorAll('.assignBtn').forEach(btn => {
+            btn.onclick = () => {
+                const taskId = btn.dataset.taskId;
+                const select = document.querySelector(`.assignSelect[data-task-id="${taskId}"]`);
+                const expertId = select.value;
+                if (expertId) {
+                    const expert = expertsData.find(e => e.id === expertId);
+                    assignTask(taskId, expertId, expert.fullName);
+                } else showToast('Select an agent first', 'error');
+            };
+        });
+        
+        document.querySelectorAll('.deleteTaskBtn').forEach(btn => {
+            btn.onclick = () => deleteTask(btn.dataset.taskId);
+        });
+        
+        document.querySelectorAll('.chatWithExpertBtn').forEach(btn => {
+            btn.onclick = () => openChat(btn.dataset.id, btn.dataset.name);
+        });
+        
+        document.getElementById('notificationBtn')?.addEventListener('click', showNotifications);
+        
+        // Setup chat modal close
+        const closeBtn = document.getElementById('closeChatBtn');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                document.getElementById('chatModal').classList.add('hidden');
+                document.getElementById('chatModal').classList.remove('flex');
+                activeChatUser = null;
+            };
+        }
+        
+        const sendBtn = document.getElementById('sendMessageBtn');
+        if (sendBtn) {
+            sendBtn.onclick = async () => {
+                const input = document.getElementById('chatInput');
+                if (input.value.trim() && activeChatUser) {
+                    await sendMessage(activeChatUser, input.value);
+                    input.value = '';
+                    renderChat();
+                }
+            };
+        }
+    }
+
+    function attachExpertEvents() {
+        document.getElementById('logoutBtn').onclick = logout;
+        
+        document.querySelectorAll('.updateStatusBtn').forEach(btn => {
+            btn.onclick = async () => {
+                const taskId = btn.dataset.taskId;
+                const select = document.querySelector(`.statusSelect[data-task-id="${taskId}"]`);
+                const { value: comment } = await Swal.fire({
+                    title: 'Add a comment (optional)',
+                    input: 'textarea',
+                    inputPlaceholder: 'Add progress notes...',
+                    showCancelButton: true
+                });
+                await updateTaskStatus(taskId, select.value, comment);
+            };
+        });
+        
+        document.querySelectorAll('.claimBtn').forEach(btn => {
+            btn.onclick = () => claimTask(btn.dataset.taskId);
+        });
+        
+        document.getElementById('notificationBtn')?.addEventListener('click', showNotifications);
+    }
+
+    function openChat(userId, userName) {
+        activeChatUser = userId;
+        document.getElementById('chatUserName').textContent = userName;
+        document.getElementById('chatModal').classList.remove('hidden');
+        document.getElementById('chatModal').classList.add('flex');
+        renderChat();
+    }
+
+    function renderChat() {
+        const chatMessages = document.getElementById('chatMessages');
+        const userMessages = messagesData.filter(m => 
+            (m.senderId === activeChatUser && m.receiverId === currentUser.id) ||
+            (m.senderId === currentUser.id && m.receiverId === activeChatUser)
+        );
+        
+        chatMessages.innerHTML = userMessages.map(msg => `
+            <div class="flex ${msg.senderId === currentUser.id ? 'justify-end' : 'justify-start'} chat-message">
+                <div class="max-w-xs ${msg.senderId === currentUser.id ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'} rounded-lg px-4 py-2">
+                    <p class="text-sm">${escapeHtml(msg.content)}</p>
+                    <span class="text-xs opacity-75">${new Date(msg.createdAt).toLocaleTimeString()}</span>
+                </div>
+            </div>
+        `).join('');
+        
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    async function showNotifications() {
+        const notifications = notificationsData.slice(0, 20);
+        const html = notifications.map(n => `
+            <div class="p-3 border-b hover:bg-gray-50 cursor-pointer notification-item" data-id="${n.id}">
+                <div class="flex items-start">
+                    <div class="flex-1">
+                        <p class="text-sm ${n.read ? 'text-gray-600' : 'font-semibold text-gray-900'}">${escapeHtml(n.message)}</p>
+                        <span class="text-xs text-gray-400">${new Date(n.createdAt).toLocaleString()}</span>
+                    </div>
+                    ${!n.read ? '<span class="w-2 h-2 bg-blue-500 rounded-full mt-2"></span>' : ''}
+                </div>
+            </div>
+        `).join('');
+        
+        await Swal.fire({
+            title: 'Notifications',
+            html: `<div class="max-h-96 overflow-y-auto">${html || '<p class="text-center text-gray-400">No notifications</p>'}</div>`,
+            width: '500px',
+            showConfirmButton: true,
+            confirmButtonText: 'Close'
+        });
+        
+        // Mark all as read
+        for (const notification of notificationsData) {
+            if (!notification.read) {
+                await markNotificationRead(notification.id);
+            }
+        }
+        unreadNotifications = 0;
+        updateNotificationBadge();
+    }
+
+    // ======================== BOOTSTRAP ========================
+    (function init() {
+        const savedToken = localStorage.getItem('token');
+        const savedUser = localStorage.getItem('user');
+        if (savedToken && savedUser) {
+            authToken = savedToken;
+            currentUser = JSON.parse(savedUser);
+            currentUserRole = currentUser.role;
+            socket = io(BACKEND_URL, { auth: { token: authToken } });
+            setupSocketListeners();
+            fetchInitialData().then(() => {
+                fetchAnalytics();
+                appPhase = 'dashboard';
+                renderDashboard();
+            }).catch(() => { 
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                renderLogin();
+            });
+        } else {
+            renderLogin();
+        }
+    })();
+</script>
+</body>
+</html>
