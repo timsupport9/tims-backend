@@ -1,4 +1,43 @@
+# Dependencies
 node_modules/
+package-lock.json
+
+# Environment
 .env
-*.db
+.env.local
+.env.production
+
+# Logs
+logs/
 *.log
+npm-debug.log*
+
+# Database
+*.db
+*.sqlite
+
+# Uploads
+uploads/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build files
+dist/
+build/
+
+# Coverage
+coverage/
+
+# Secrets
+*.pem
+*.key
+*.cert
