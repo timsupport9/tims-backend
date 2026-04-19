@@ -9,7 +9,7 @@
     "seed": "node scripts/seedDatabase.js",
     "test": "jest",
     "build": "npm install",
-    "deploy": "npm run build && npm start"
+    "deploy": "npm install && npm start"
   },
   "keywords": [
     "support",
@@ -53,13 +53,5 @@
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/tims/support-portal.git"
-  },
-  "bugs": {
-    "url": "https://github.com/tims/support-portal/issues"
-  },
-  "homepage": "https://tims-support-portal.onrender.com"
+  }
 }
