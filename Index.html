@@ -3,38 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TIMS Support Portal | Advanced Real-Time Operations</title>
+    <title>ExpertHub Platform | E-School & Consultation System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         * { transition: all 0.2s ease; }
-        body { background: #f0f4f8; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        body { background: #f0f4f8; }
         .dashboard-card:hover { transform: translateY(-3px); box-shadow: 0 20px 25px -12px rgba(0,0,0,0.15); }
         .status-badge { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-        .toast-notify { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: white; padding: 12px 24px; border-radius: 48px; z-index: 9999; animation: slideIn 0.3s ease; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .toast-notify { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: white; padding: 12px 24px; border-radius: 48px; z-index: 9999; animation: slideIn 0.3s ease; }
         @keyframes slideIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
-        .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(4px); }
+        .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10000; }
         .spinner { border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 3px solid #6366f1; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .real-time-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; animation: pulse 2s infinite; margin-right: 8px; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        .notification-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; font-weight: bold; }
-        .chat-message { animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .progress-bar { transition: width 0.5s ease; }
-        .hover-scale:hover { transform: scale(1.05); }
-        .glass-effect { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); }
-        
-        /* Hide number input spinners */
-        input[type=number]::-webkit-inner-spin-button, 
-        input[type=number]::-webkit-outer-spin-button { 
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        input[type=number] { -moz-appearance: textfield; }
+        .tab-active { border-bottom: 3px solid #6366f1; color: #6366f1; }
+        .sidebar-item:hover { background: linear-gradient(90deg, #6366f120, transparent); }
+        .file-upload-zone { border: 2px dashed #d1d5db; border-radius: 12px; padding: 2rem; text-align: center; cursor: pointer; }
+        .file-upload-zone:hover { border-color: #6366f1; background: #6366f110; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .modal-content { background: white; border-radius: 16px; padding: 2rem; max-width: 90%; max-height: 90vh; overflow-y: auto; }
+        .chat-message { max-width: 70%; padding: 0.75rem 1rem; border-radius: 16px; margin-bottom: 0.5rem; }
+        .chat-message.sent { background: #6366f1; color: white; margin-left: auto; border-bottom-right-radius: 4px; }
+        .chat-message.received { background: #f3f4f6; margin-right: auto; border-bottom-left-radius: 4px; }
+        .star-rating { color: #fbbf24; font-size: 1.25rem; }
+        .availability-slot { padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; border: 1px solid #e5e7eb; }
+        .availability-slot.selected { background: #6366f1; color: white; border-color: #6366f1; }
+        .commission-badge { background: linear-gradient(135deg, #f59e0b, #ef4444); color: white; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; }
     </style>
 </head>
 <body>
@@ -43,37 +41,44 @@
 
 <script>
     // ======================== CONFIGURATION ========================
-    const BACKEND_URL = 'https://tims-backend-cr8l.onrender.com';
-    
-    // Demo credentials (hidden in code, can be changed here)
-    const DEMO_CREDENTIALS = {
-        admin: { email: 'admin@tims.com', password: 'admin123' },
-        expert: { email: 'john@tims.com', password: 'expert123' }
-    };
+    const BACKEND_URL = 'http://localhost:5000';  // Change to your deployed backend
     
     // ======================== GLOBAL STATE ========================
     let socket = null;
     let authToken = null;
     let currentUser = null;
     let currentUserRole = null;
+    let appPhase = 'login'; // login, register, dashboard
+    let activeTab = 'dashboard';
+    let activeESchoolTab = 'bootcamps';
+    
+    // Data stores
+    let usersData = [];
     let expertsData = [];
     let tasksData = [];
-    let messagesData = [];
+    let eventsData = [];
+    let consultationsData = [];
+    let bootcampsData = [];
+    let shortCoursesData = [];
+    let tuitionSessionsData = [];
+    let examPrepsData = [];
+    let careerGuidanceData = [];
+    let earningsData = null;
+    let withdrawalsData = [];
+    let claimsData = [];
+    let supportTicketsData = [];
     let notificationsData = [];
-    let analyticsData = null;
-    let appPhase = 'login';
-    let charts = {};
-    let unreadNotifications = 0;
-    let activeChatUser = null;
-    let fileAttachments = [];
+    let chatMessages = {};
+    let availabilitySlots = [];
+    let selectedSlots = [];
 
     // ======================== UTILITIES ========================
     function showToast(message, type = 'info') {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = 'toast-notify';
-        const icons = { success: '✅', error: '❌', warning: '⚠️', info: '🔔' };
-        toast.innerHTML = `${icons[type] || '🔔'} ${message}`;
+        const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '🔔';
+        toast.innerHTML = `${icon} ${message}`;
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 3000);
     }
@@ -93,277 +98,384 @@
         }
     }
 
-    async function apiCall(endpoint, method = 'GET', body = null) {
-        const headers = { 'Content-Type': 'application/json' };
+    async function apiCall(endpoint, method = 'GET', body = null, isFormData = false) {
+        const headers = {};
+        if (!isFormData) headers['Content-Type'] = 'application/json';
         if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
         const options = { method, headers };
-        if (body) options.body = JSON.stringify(body);
+        if (body) options.body = isFormData ? body : JSON.stringify(body);
         const res = await fetch(`${BACKEND_URL}${endpoint}`, options);
         if (!res.ok) throw new Error(await res.text());
         return res.json();
     }
 
-    // ======================== ENHANCED BACKEND ACTIONS ========================
+    function formatDate(dateStr) {
+        if (!dateStr) return '—';
+        return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function formatTime(timeStr) {
+        if (!timeStr) return '—';
+        return timeStr;
+    }
+
+    function getStatusColor(status) {
+        const colors = {
+            active: 'bg-green-100 text-green-700', pending: 'bg-yellow-100 text-yellow-700',
+            suspended: 'bg-red-100 text-red-700', completed: 'bg-green-100 text-green-700',
+            'in-progress': 'bg-blue-100 text-blue-700', assigned: 'bg-purple-100 text-purple-700',
+            closed: 'bg-gray-100 text-gray-700', approved: 'bg-green-100 text-green-700',
+            rejected: 'bg-red-100 text-red-700', filed: 'bg-orange-100 text-orange-700'
+        };
+        return colors[status] || 'bg-gray-100 text-gray-700';
+    }
+
+    // ======================== AUTH FUNCTIONS ========================
     async function login(email, password) {
-        const res = await fetch(`${BACKEND_URL}/api/login`, {
+        const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
         });
-        if (!res.ok) throw new Error('Invalid email or password');
+        if (!res.ok) throw new Error('Invalid credentials');
         const data = await res.json();
         authToken = data.token;
         currentUser = data.user;
         currentUserRole = data.user.role;
         localStorage.setItem('token', authToken);
         localStorage.setItem('user', JSON.stringify(currentUser));
-        
-        if (socket) socket.disconnect();
-        socket = io(BACKEND_URL, { auth: { token: authToken } });
-        
-        setupSocketListeners();
-        await fetchInitialData();
-        await fetchAnalytics();
+        initializeSocket();
+        await fetchAllDashboardData();
         appPhase = 'dashboard';
         renderDashboard();
     }
 
-    function setupSocketListeners() {
-        socket.on('data-update', (data) => {
-            expertsData = data.experts;
-            tasksData = data.tasks;
-            if (appPhase === 'dashboard') renderDashboard();
-            showToast('Data updated in real-time', 'info');
+    async function register(name, email, password, phone = '') {
+        const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password, phone })
         });
-        
-        socket.on('new-message', (message) => {
-            messagesData.push(message);
-            if (activeChatUser === message.senderId || activeChatUser === message.receiverId) {
-                renderChat();
-            }
-            showToast(`📨 New message from ${message.senderName}`, 'info');
-        });
-        
-        socket.on('new-notification', (notification) => {
-            notificationsData.unshift(notification);
-            unreadNotifications++;
-            updateNotificationBadge();
-            showToast(notification.message, notification.type);
-            if (appPhase === 'dashboard') renderDashboard();
-        });
-        
-        socket.on('task-updated', (task) => {
-            const index = tasksData.findIndex(t => t.id === task.id);
-            if (index !== -1) tasksData[index] = task;
-            else tasksData.push(task);
-            if (appPhase === 'dashboard') renderDashboard();
-        });
-        
-        socket.on('analytics-update', (analytics) => {
-            analyticsData = analytics;
-            if (appPhase === 'dashboard') renderDashboard();
-        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        showToast('Registration successful! Please wait for admin approval.', 'success');
+        return data;
     }
 
-    async function fetchInitialData() {
-        const data = await apiCall('/api/data');
-        expertsData = data.experts;
-        tasksData = data.tasks;
-        notificationsData = await apiCall('/api/notifications');
-        unreadNotifications = notificationsData.filter(n => !n.read).length;
+    function initializeSocket() {
+        if (socket) socket.disconnect();
+        socket = io(BACKEND_URL, { auth: { token: authToken } });
+        socket.on('data-update', handleSocketUpdate);
+        socket.on('new_message', handleNewMessage);
+        socket.on('notification', handleNewNotification);
     }
 
-    async function fetchAnalytics() {
-        analyticsData = await apiCall('/api/analytics');
+    function handleSocketUpdate(data) {
+        if (data.type === 'experts') expertsData = data.data;
+        if (data.type === 'tasks') tasksData = data.data;
+        if (data.type === 'consultations') consultationsData = data.data;
+        if (appPhase === 'dashboard') refreshCurrentView();
     }
 
-    async function createExpert(fullName, email, specialization, phone = '') {
-        showLoading(true);
-        try {
-            await apiCall('/api/experts', 'POST', { fullName, email, specialization, phone });
-            showToast(`Expert ${fullName} created successfully`, 'success');
-            socket.emit('notification', {
-                type: 'expert_created',
-                message: `New expert ${fullName} has joined the team`,
-                targetRole: 'admin'
-            });
-        } catch (err) { showToast(err.message, 'error'); }
-        showLoading(false);
+    function handleNewMessage(message) {
+        if (!chatMessages[message.consultation_id]) chatMessages[message.consultation_id] = [];
+        chatMessages[message.consultation_id].push(message);
+        if (activeTab === 'consultations') renderConsultationChat(message.consultation_id);
     }
 
-    async function createTask(title, description, specialization, dueDate, priority = 'medium', attachments = []) {
-        showLoading(true);
-        try {
-            await apiCall('/api/tasks', 'POST', { title, description, specialization, dueDate, priority, attachments });
-            showToast(`Task "${title}" created successfully`, 'success');
-            socket.emit('notification', {
-                type: 'task_created',
-                message: `New task: ${title} (${specialization})`,
-                targetSpecialization: specialization
-            });
-        } catch (err) { showToast(err.message, 'error'); }
-        showLoading(false);
-    }
-
-    async function updateTaskStatus(taskId, status, comment = '') {
-        try {
-            await apiCall(`/api/tasks/${taskId}/status`, 'PATCH', { status, comment });
-            showToast(`Status updated to ${status}`, 'success');
-            if (comment) {
-                socket.emit('notification', {
-                    type: 'task_update',
-                    message: `Task status updated: ${comment}`,
-                    targetTask: taskId
-                });
-            }
-        } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    async function deleteTask(taskId) {
-        const result = await Swal.fire({
-            title: 'Delete Task?',
-            text: "This action cannot be undone!",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            confirmButtonText: 'Yes, delete it!'
-        });
-        if (!result.isConfirmed) return;
-        
-        showLoading(true);
-        try {
-            await apiCall(`/api/tasks/${taskId}`, 'DELETE');
-            showToast('Task deleted successfully', 'success');
-        } catch (err) { showToast(err.message, 'error'); }
-        showLoading(false);
-    }
-
-    async function toggleExpertAvailability(userId) {
-        try {
-            await apiCall(`/api/experts/${userId}/toggle`, 'PATCH');
-            showToast('Availability toggled', 'success');
-        } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    async function assignTask(taskId, expertId, expertName) {
-        try {
-            await apiCall(`/api/tasks/${taskId}/assign`, 'PATCH', { expertId, expertName });
-            showToast(`Assigned to ${expertName}`, 'success');
-            socket.emit('notification', {
-                type: 'task_assigned',
-                message: `You have been assigned to task #${taskId}`,
-                targetUser: expertId
-            });
-        } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    async function claimTask(taskId) {
-        try {
-            await apiCall(`/api/tasks/${taskId}/claim`, 'PATCH');
-            showToast('Task claimed successfully!', 'success');
-        } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    async function sendMessage(receiverId, content) {
-        if (!content.trim()) return;
-        try {
-            await apiCall('/api/messages', 'POST', { receiverId, content });
-            showToast('Message sent', 'success');
-        } catch (err) { showToast(err.message, 'error'); }
-    }
-
-    async function markNotificationRead(notificationId) {
-        await apiCall(`/api/notifications/${notificationId}/read`, 'PATCH');
-        unreadNotifications = Math.max(0, unreadNotifications - 1);
+    function handleNewNotification(notification) {
+        notificationsData.unshift(notification);
+        showToast(notification.title, 'info');
         updateNotificationBadge();
     }
 
-    async function generateReport(type, dateRange) {
-        showLoading(true);
+    async function fetchAllDashboardData() {
         try {
-            const report = await apiCall(`/api/reports/${type}?start=${dateRange.start}&end=${dateRange.end}`);
-            Swal.fire({
-                title: `${type.toUpperCase()} Report`,
-                html: `<pre style="text-align: left;">${JSON.stringify(report, null, 2)}</pre>`,
-                width: '800px'
-            });
-        } catch (err) { showToast(err.message, 'error'); }
-        showLoading(false);
+            if (currentUserRole === 'admin') {
+                const [users, experts, stats] = await Promise.all([
+                    apiCall('/api/admin/users'),
+                    apiCall('/api/admin/experts'),
+                    apiCall('/api/admin/analytics')
+                ]);
+                usersData = users.users || [];
+                expertsData = experts.experts || [];
+            }
+            
+            const [consultations, events, notifications] = await Promise.all([
+                apiCall('/api/common/consultations'),
+                apiCall('/api/common/events'),
+                apiCall('/api/common/notifications')
+            ]);
+            consultationsData = consultations.consultations || [];
+            eventsData = events.events || [];
+            notificationsData = notifications.notifications || [];
+        } catch (err) {
+            console.error('Error fetching data:', err);
+        }
     }
 
     async function logout() {
         if (socket) socket.disconnect();
         authToken = null;
         currentUser = null;
+        currentUserRole = null;
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         appPhase = 'login';
+        activeTab = 'dashboard';
         renderLogin();
     }
 
+    // ======================== API FUNCTIONS - EXPERT MANAGEMENT ========================
+    async function createExpert(name, email, expertise, hourlyRate, bio, phone) {
+        showLoading(true);
+        try {
+            await apiCall('/api/admin/experts/create', 'POST', {
+                name, email, password: 'Expert@123', expertise: [expertise],
+                hourly_rate: hourlyRate, bio, phone, send_welcome_email: true
+            });
+            showToast(`Expert ${name} created successfully`, 'success');
+            await fetchAllDashboardData();
+            refreshCurrentView();
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function suspendExpert(expertId, reason, type = 'temporary', days = 7) {
+        showLoading(true);
+        try {
+            await apiCall(`/api/admin/experts/${expertId}/suspend`, 'POST', {
+                suspension_type: type, reason, duration_days: days, notify_expert: true
+            });
+            showToast('Expert suspended', 'success');
+            await fetchAllDashboardData();
+            refreshCurrentView();
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function deleteExpert(expertId, reason) {
+        if (!confirm('Are you sure you want to delete this expert?')) return;
+        showLoading(true);
+        try {
+            await apiCall(`/api/admin/experts/${expertId}`, 'DELETE', { reason });
+            showToast('Expert deleted', 'success');
+            await fetchAllDashboardData();
+            refreshCurrentView();
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function reactivateExpert(expertId) {
+        try {
+            await apiCall(`/api/admin/experts/${expertId}/reactivate`, 'POST', { reason: 'Admin reactivation' });
+            showToast('Expert reactivated', 'success');
+            await fetchAllDashboardData();
+            refreshCurrentView();
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    // ======================== API FUNCTIONS - E-SCHOOL ========================
+    async function fetchESchoolData() {
+        try {
+            const [bootcamps, courses, tuition, exams, career] = await Promise.all([
+                apiCall('/api/eschool/bootcamps'),
+                apiCall('/api/eschool/short-courses'),
+                apiCall('/api/eschool/tuition'),
+                apiCall('/api/eschool/exam-prep'),
+                apiCall('/api/eschool/career-guidance')
+            ]);
+            bootcampsData = bootcamps.bootcamps || [];
+            shortCoursesData = courses.courses || [];
+            tuitionSessionsData = tuition.sessions || [];
+            examPrepsData = exams.exams || [];
+            careerGuidanceData = career.guidance || [];
+        } catch (err) { console.error('Error fetching eSchool data:', err); }
+    }
+
+    async function enrollInProgram(type, referenceId) {
+        showLoading(true);
+        try {
+            await apiCall('/api/eschool/enroll', 'POST', { enrollment_type: type, reference_id: referenceId });
+            showToast('Enrolled successfully!', 'success');
+            await fetchESchoolData();
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    // ======================== API FUNCTIONS - CONSULTATIONS ========================
+    async function requestConsultation(title, description, type, serviceId = null) {
+        showLoading(true);
+        try {
+            await apiCall('/api/user/consultations', 'POST', { title, description, consultation_type: type, service_id: serviceId });
+            showToast('Consultation request submitted', 'success');
+            await fetchAllDashboardData();
+            refreshCurrentView();
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function bookConsultation(expertId, serviceId, slotId, title, description, type) {
+        showLoading(true);
+        try {
+            const formData = new FormData();
+            formData.append('expert_id', expertId);
+            formData.append('service_id', serviceId);
+            formData.append('slot_id', slotId);
+            formData.append('title', title);
+            formData.append('description', description);
+            formData.append('consultation_type', type);
+            await apiCall('/api/user/consultations/book', 'POST', formData, true);
+            showToast('Consultation booked successfully', 'success');
+            await fetchAllDashboardData();
+            refreshCurrentView();
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function sendChatMessage(consultationId, message) {
+        try {
+            await apiCall(`/api/user/consultations/${consultationId}/messages`, 'POST', { message });
+            document.getElementById(`chat-input-${consultationId}`).value = '';
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function fetchChatMessages(consultationId) {
+        try {
+            const data = await apiCall(`/api/user/consultations/${consultationId}/messages`);
+            chatMessages[consultationId] = data.messages || [];
+        } catch (err) { console.error('Error fetching messages:', err); }
+    }
+
+    async function uploadAttachment(consultationId, file) {
+        showLoading(true);
+        try {
+            const formData = new FormData();
+            formData.append('attachments', file);
+            await apiCall(`/api/user/consultations/${consultationId}/attachments`, 'POST', formData, true);
+            showToast('File uploaded', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    // ======================== API FUNCTIONS - FINANCIAL ========================
+    async function fetchEarnings() {
+        try {
+            const data = await apiCall('/api/expert/earnings');
+            earningsData = data.summary || data;
+            withdrawalsData = data.payments || [];
+        } catch (err) { console.error('Error fetching earnings:', err); }
+    }
+
+    async function requestWithdrawal(amount, method) {
+        showLoading(true);
+        try {
+            await apiCall('/api/expert/withdrawals', 'POST', {
+                amount, withdrawal_method: method,
+                account_details: { bank: 'Bank', account: '123456' }
+            });
+            showToast('Withdrawal request submitted. 7-day holding period applies.', 'success');
+            await fetchEarnings();
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    async function fileClaim(consultationId, type, title, description, amount = null) {
+        showLoading(true);
+        try {
+            await apiCall('/api/user/claims', 'POST', {
+                consultation_id: consultationId, claim_type: type,
+                claim_title: title, claim_description: description,
+                claim_amount: amount, evidence_files: []
+            });
+            showToast('Claim filed successfully', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    // ======================== API FUNCTIONS - AVAILABILITY ========================
+    async function fetchAvailabilitySlots(expertId, date = '') {
+        try {
+            const params = date ? `?expertId=${expertId}&date=${date}` : `?expertId=${expertId}`;
+            const data = await apiCall(`/api/expert/booking-slots${params}`);
+            availabilitySlots = data.slots || [];
+        } catch (err) { console.error('Error fetching slots:', err); }
+    }
+
+    async function setAvailability(schedule) {
+        showLoading(true);
+        try {
+            await apiCall('/api/expert/availability', 'PUT', { schedule });
+            showToast('Availability updated', 'success');
+        } catch (err) { showToast(err.message, 'error'); }
+        showLoading(false);
+    }
+
+    // ======================== REFRESH CURRENT VIEW ========================
+    function refreshCurrentView() {
+        if (appPhase === 'dashboard') renderDashboard();
+    }
+
     function updateNotificationBadge() {
-        const badge = document.getElementById('notificationBadge');
+        const badge = document.getElementById('notif-badge');
         if (badge) {
-            if (unreadNotifications > 0) {
-                badge.textContent = unreadNotifications > 99 ? '99+' : unreadNotifications;
-                badge.classList.remove('hidden');
-            } else {
-                badge.classList.add('hidden');
-            }
+            const unread = notificationsData.filter(n => !n.is_read).length;
+            badge.textContent = unread;
+            badge.style.display = unread > 0 ? 'flex' : 'none';
         }
     }
 
-    // ======================== ENHANCED FRONTEND RENDERERS ========================
+    // ======================== RENDER FUNCTIONS ========================
     function renderLogin() {
         document.getElementById('app-root').innerHTML = `
             <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-800">
                 <div class="bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl w-full max-w-md p-8 mx-4">
                     <div class="text-center mb-8">
                         <div class="inline-block p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full mb-4">
-                            <i class="fas fa-headset text-4xl text-white"></i>
+                            <i class="fas fa-graduation-cap text-4xl text-white"></i>
                         </div>
-                        <h1 class="text-3xl font-bold text-gray-800">TIMS <span class="text-blue-700">Support Portal</span></h1>
-                        <p class="text-gray-500 mt-2">Secure Access Only</p>
-                        <div class="mt-3 flex items-center justify-center">
-                            <span class="real-time-indicator"></span>
-                            <span class="text-xs text-green-700">Encrypted Connection</span>
-                        </div>
+                        <h1 class="text-3xl font-bold text-gray-800">Expert<span class="text-indigo-600">Hub</span></h1>
+                        <p class="text-gray-500">E-School & Consultation Platform</p>
+                        <div class="mt-3"><span class="real-time-indicator"></span><span class="text-xs text-green-700">Secure Connection</span></div>
                     </div>
                     <div id="loginError" class="bg-red-50 text-red-700 p-3 rounded-xl text-sm mb-4 hidden"></div>
                     <div class="space-y-4">
-                        <div class="relative">
-                            <i class="fas fa-envelope absolute left-3 top-3 text-gray-400"></i>
-                            <input type="email" id="loginEmail" placeholder="Email Address" class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" autocomplete="off">
+                        <div class="flex border-b border-gray-200 mb-4">
+                            <button id="tabLogin" class="tab-active flex-1 py-2 text-center font-semibold" onclick="switchAuthTab('login')">Sign In</button>
+                            <button id="tabRegister" class="flex-1 py-2 text-center text-gray-500" onclick="switchAuthTab('register')">Register</button>
                         </div>
-                        <div class="relative">
-                            <i class="fas fa-lock absolute left-3 top-3 text-gray-400"></i>
-                            <input type="password" id="loginPassword" placeholder="Password" class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" autocomplete="off">
+                        <div id="loginForm">
+                            <input type="email" id="loginEmail" placeholder="Email address" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 mb-3">
+                            <input type="password" id="loginPassword" placeholder="Password" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 mb-3">
+                            <button id="loginBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition shadow-md">Sign In</button>
                         </div>
-                        <button id="loginBtn" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl transition shadow-md transform hover:scale-[1.02]">
-                            <i class="fas fa-sign-in-alt mr-2"></i>Sign In
-                        </button>
+                        <div id="registerForm" class="hidden">
+                            <input type="text" id="regName" placeholder="Full Name" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 mb-3">
+                            <input type="email" id="regEmail" placeholder="Email address" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 mb-3">
+                            <input type="password" id="regPassword" placeholder="Password" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 mb-3">
+                            <input type="text" id="regPhone" placeholder="Phone (optional)" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 mb-3">
+                            <button id="registerBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition shadow-md">Create Account</button>
+                        </div>
                     </div>
-                    <div class="mt-6 pt-4 border-t border-gray-200 text-center">
-                        <p class="text-xs text-gray-500">
-                            <i class="fas fa-shield-alt mr-1"></i> Authorized Personnel Only
-                        </p>
-                    </div>
+                    <p class="text-center text-xs text-gray-500 mt-4">Default: admin@platform.com / admin123</p>
                 </div>
             </div>
         `;
-        
+        attachAuthEvents();
+    }
+
+    function switchAuthTab(tab) {
+        document.getElementById('tabLogin').className = tab === 'login' ? 'tab-active flex-1 py-2 text-center font-semibold' : 'flex-1 py-2 text-center text-gray-500';
+        document.getElementById('tabRegister').className = tab === 'register' ? 'tab-active flex-1 py-2 text-center font-semibold' : 'flex-1 py-2 text-center text-gray-500';
+        document.getElementById('loginForm').className = tab === 'login' ? '' : 'hidden';
+        document.getElementById('registerForm').className = tab === 'register' ? '' : 'hidden';
+    }
+
+    function attachAuthEvents() {
         document.getElementById('loginBtn').onclick = async () => {
             const email = document.getElementById('loginEmail').value;
             const pwd = document.getElementById('loginPassword').value;
-            
-            if (!email || !pwd) {
-                const errDiv = document.getElementById('loginError');
-                errDiv.innerText = 'Please enter both email and password';
-                errDiv.classList.remove('hidden');
-                setTimeout(() => errDiv.classList.add('hidden'), 3000);
-                return;
-            }
-            
+            if (!email || !pwd) { showToast('Please fill all fields', 'error'); return; }
             try {
                 showLoading(true);
                 await login(email, pwd);
@@ -374,587 +486,1023 @@
                 errDiv.innerText = err.message;
                 errDiv.classList.remove('hidden');
                 setTimeout(() => errDiv.classList.add('hidden'), 3000);
-                
-                // Clear password field on error
-                document.getElementById('loginPassword').value = '';
             }
         };
-        
-        // Allow Enter key to submit
-        const handleEnter = (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('loginBtn').click();
+        document.getElementById('registerBtn').onclick = async () => {
+            const name = document.getElementById('regName').value;
+            const email = document.getElementById('regEmail').value;
+            const pwd = document.getElementById('regPassword').value;
+            const phone = document.getElementById('regPhone').value;
+            if (!name || !email || !pwd) { showToast('Please fill required fields', 'error'); return; }
+            try {
+                showLoading(true);
+                await register(name, email, pwd, phone);
+                showLoading(false);
+                showToast('Registration submitted for approval', 'success');
+            } catch (err) {
+                showLoading(false);
+                showToast(err.message, 'error');
             }
         };
-        document.getElementById('loginEmail').addEventListener('keypress', handleEnter);
-        document.getElementById('loginPassword').addEventListener('keypress', handleEnter);
     }
 
     function renderDashboard() {
-        if (currentUserRole === 'admin') {
-            document.getElementById('app-root').innerHTML = renderAdminDashboard();
-            attachAdminEvents();
-            initializeCharts();
-        } else {
-            document.getElementById('app-root').innerHTML = renderExpertDashboard();
-            attachExpertEvents();
+        if (currentUserRole === 'admin') renderAdminDashboard();
+        else if (currentUserRole === 'expert') renderExpertDashboard();
+        else renderUserDashboard();
+    }
+
+    // ======================== ADMIN DASHBOARD ========================
+    function renderAdminDashboard() {
+        const root = document.getElementById('app-root');
+        const pendingUsers = usersData.filter(u => u.status === 'pending').length;
+        const activeExperts = expertsData.filter(e => e.status === 'active').length;
+        const activeConsultations = consultationsData.filter(c => ['pending', 'assigned', 'in_progress'].includes(c.status)).length;
+        
+        root.innerHTML = `
+            <div class="min-h-screen bg-gray-50 flex">
+                <!-- Sidebar -->
+                <div class="w-64 bg-slate-900 text-white min-h-screen hidden lg:block">
+                    <div class="p-6 border-b border-slate-700">
+                        <i class="fas fa-graduation-cap text-2xl mr-2"></i>
+                        <span class="font-bold text-xl">ExpertHub Admin</span>
+                    </div>
+                    <nav class="mt-4">
+                        ${renderSidebarItem('dashboard', 'Dashboard', 'fa-chart-line')}
+                        ${renderSidebarItem('users', 'User Management', 'fa-users', pendingUsers)}
+                        ${renderSidebarItem('experts', 'Expert Management', 'fa-user-tie')}
+                        ${renderSidebarItem('events', 'Events & Training', 'fa-calendar-alt')}
+                        ${renderSidebarItem('consultations', 'Consultations', 'fa-comments', activeConsultations)}
+                        ${renderSidebarItem('eschool', 'E-School Hub', 'fa-school')}
+                        ${renderSidebarItem('earnings', 'Earnings & Payments', 'fa-dollar-sign')}
+                        ${renderSidebarItem('claims', 'Client Claims', 'fa-gavel')}
+                        ${renderSidebarItem('support', 'Support Tickets', 'fa-headset')}
+                        ${renderSidebarItem('analytics', 'Analytics', 'fa-chart-bar')}
+                    </nav>
+                </div>
+                
+                <!-- Main Content -->
+                <div class="flex-1">
+                    <div class="bg-white shadow-md sticky top-0 z-10 p-4 flex justify-between items-center border-b">
+                        <div class="flex items-center">
+                            <button class="lg:hidden mr-3" onclick="document.querySelector('.w-64').classList.toggle('hidden')">
+                                <i class="fas fa-bars text-xl"></i>
+                            </button>
+                            <span class="real-time-indicator"></span>
+                            <span class="font-semibold text-gray-700">Admin Panel</span>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="relative">
+                                <i class="fas fa-bell text-gray-600 text-xl cursor-pointer"></i>
+                                <span id="notif-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full" style="display:none">0</span>
+                            </div>
+                            <span class="text-sm text-gray-600">${currentUser?.name || 'Admin'}</span>
+                            <button id="logoutBtn" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-sm transition">Logout</button>
+                        </div>
+                    </div>
+                    <div class="p-6" id="admin-content">
+                        ${renderAdminContent()}
+                    </div>
+                </div>
+            </div>
+        `;
+        attachAdminEvents();
+        updateNotificationBadge();
+    }
+
+    function renderSidebarItem(id, label, icon, badge = 0) {
+        const isActive = activeTab === id;
+        return `
+            <div class="sidebar-item flex items-center px-6 py-3 cursor-pointer ${isActive ? 'bg-indigo-600 border-l-4 border-white' : 'hover:bg-slate-800'}" 
+                 onclick="switchAdminTab('${id}')">
+                <i class="fas ${icon} w-6"></i>
+                <span class="ml-3 flex-1">${label}</span>
+                ${badge > 0 ? `<span class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">${badge}</span>` : ''}
+                ${isActive ? '<i class="fas fa-chevron-right text-xs"></i>' : ''}
+            </div>
+        `;
+    }
+
+    function switchAdminTab(tab) {
+        activeTab = tab;
+        refreshCurrentView();
+    }
+
+    function renderAdminContent() {
+        switch(activeTab) {
+            case 'dashboard': return renderAdminDashboardOverview();
+            case 'users': return renderAdminUserManagement();
+            case 'experts': return renderAdminExpertManagement();
+            case 'events': return renderAdminEvents();
+            case 'consultations': return renderAdminConsultations();
+            case 'eschool': return renderAdminESchool();
+            case 'earnings': return renderAdminEarnings();
+            case 'claims': return renderAdminClaims();
+            case 'support': return renderAdminSupport();
+            case 'analytics': return renderAdminAnalytics();
+            default: return renderAdminDashboardOverview();
         }
     }
 
-    function renderAdminDashboard() {
-        const totalExperts = expertsData.filter(e => e.role === 'expert').length;
-        const availableExperts = expertsData.filter(e => e.isAvailable && e.role === 'expert').length;
-        const pending = tasksData.filter(t => t.status === 'pending').length;
-        const inProgress = tasksData.filter(t => t.status === 'in-progress').length;
-        const completed = tasksData.filter(t => t.status === 'completed').length;
-        const urgentTasks = tasksData.filter(t => t.priority === 'urgent').length;
-        const completionRate = tasksData.length ? ((completed / tasksData.length) * 100).toFixed(1) : 0;
-        
+    function renderAdminDashboardOverview() {
         return `
-            <div class="min-h-screen bg-gray-100">
-                <!-- Header -->
-                <div class="bg-white shadow-md sticky top-0 z-20 p-4 flex justify-between items-center border-b">
-                    <div class="flex items-center space-x-4">
-                        <i class="fas fa-headset text-blue-600 text-2xl"></i>
-                        <span class="font-bold text-gray-800 text-xl">TIMS Support Admin</span>
-                        <span class="real-time-indicator"></span>
+            <h1 class="text-2xl font-bold mb-6">📊 Platform Overview</h1>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow">
+                    <div class="flex items-center justify-between">
+                        <div><p class="text-gray-500 text-sm">Total Users</p><p class="text-3xl font-bold">${usersData.length}</p></div>
+                        <div class="bg-blue-100 p-3 rounded-full"><i class="fas fa-users text-blue-600 text-xl"></i></div>
                     </div>
-                    <div class="flex items-center space-x-4">
-                        <div class="relative cursor-pointer" id="notificationBtn">
-                            <i class="fas fa-bell text-2xl text-gray-600 hover:text-blue-600"></i>
-                            <span id="notificationBadge" class="notification-badge hidden">${unreadNotifications}</span>
-                        </div>
-                        <button id="logoutBtn" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg transition flex items-center">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                        </button>
+                    <p class="text-xs text-gray-400 mt-2">${pendingUsers} pending approval</p>
+                </div>
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow">
+                    <div class="flex items-center justify-between">
+                        <div><p class="text-gray-500 text-sm">Active Experts</p><p class="text-3xl font-bold">${activeExperts}</p></div>
+                        <div class="bg-green-100 p-3 rounded-full"><i class="fas fa-user-tie text-green-600 text-xl"></i></div>
                     </div>
                 </div>
-                
-                <div class="max-w-7xl mx-auto px-4 py-8">
-                    <!-- Stats Cards -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-users text-3xl text-blue-500"></i></div>
-                                <div class="text-right"><div class="text-2xl font-bold">${totalExperts}</div><div class="text-gray-500 text-sm">Support Agents</div></div>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-check-circle text-3xl text-green-500"></i></div>
-                                <div class="text-right"><div class="text-2xl font-bold">${availableExperts}</div><div class="text-gray-500 text-sm">Available Now</div></div>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-tasks text-3xl text-yellow-500"></i></div>
-                                <div class="text-right"><div class="text-2xl font-bold">${pending}</div><div class="text-gray-500 text-sm">Open Tickets</div></div>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-chart-line text-3xl text-purple-500"></i></div>
-                                <div class="text-right"><div class="text-2xl font-bold">${completionRate}%</div><div class="text-gray-500 text-sm">Completion Rate</div></div>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-exclamation-triangle text-3xl text-red-500"></i></div>
-                                <div class="text-right"><div class="text-2xl font-bold">${urgentTasks}</div><div class="text-gray-500 text-sm">Urgent Tasks</div></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Analytics Charts -->
-                    <div class="grid lg:grid-cols-2 gap-6 mb-8">
-                        <div class="bg-white rounded-xl p-6 shadow-lg">
-                            <h3 class="font-bold mb-4"><i class="fas fa-chart-bar mr-2 text-blue-500"></i>Task Distribution</h3>
-                            <canvas id="taskChart" height="200"></canvas>
-                        </div>
-                        <div class="bg-white rounded-xl p-6 shadow-lg">
-                            <h3 class="font-bold mb-4"><i class="fas fa-chart-pie mr-2 text-green-500"></i>Expert Performance</h3>
-                            <canvas id="performanceChart" height="200"></canvas>
-                        </div>
-                    </div>
-                    
-                    <!-- Quick Actions -->
-                    <div class="grid lg:grid-cols-2 gap-6 mb-8">
-                        <div class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
-                            <h3 class="font-bold mb-3 text-xl"><i class="fas fa-user-plus mr-2"></i>Add Support Agent</h3>
-                            <input id="expertName" placeholder="Full Name" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                            <input id="expertEmail" placeholder="Email" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                            <input id="expertPhone" placeholder="Phone (Optional)" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                            <input id="expertSpecialization" placeholder="Specialization" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                            <button id="createExpertBtn" class="bg-white text-blue-600 w-full py-2 rounded-lg font-semibold hover:bg-gray-100 transition">Create Agent</button>
-                        </div>
-                        <div class="bg-gradient-to-br from-green-500 to-teal-600 rounded-xl p-6 text-white shadow-lg">
-                            <h3 class="font-bold mb-3 text-xl"><i class="fas fa-ticket-alt mr-2"></i>Create Support Ticket</h3>
-                            <input id="taskTitle" placeholder="Ticket Title" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                            <textarea id="taskDescription" placeholder="Issue Description" rows="2" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800"></textarea>
-                            <select id="taskSpecialization" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                                <option value="">Select Skill Required</option>
-                                ${[...new Set(expertsData.map(e => e.specialization))].map(s => `<option value="${s}">${s}</option>`).join('')}
-                            </select>
-                            <select id="taskPriority" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                                <option value="low">Low Priority</option>
-                                <option value="medium" selected>Medium Priority</option>
-                                <option value="high">High Priority</option>
-                                <option value="urgent">Urgent</option>
-                            </select>
-                            <input id="taskDueDate" type="date" class="w-full border-0 rounded-lg p-2 mb-2 text-gray-800">
-                            <button id="createTaskBtn" class="bg-white text-green-600 w-full py-2 rounded-lg font-semibold hover:bg-gray-100 transition">Create Ticket</button>
-                        </div>
-                    </div>
-                    
-                    <!-- Experts Table -->
-                    <div class="bg-white rounded-xl shadow-lg overflow-hidden mb-8">
-                        <div class="p-4 border-b font-bold bg-gray-50"><i class="fas fa-users mr-2 text-blue-500"></i>Support Agents Management</div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="p-3 text-left">Agent</th>
-                                        <th>Skill</th>
-                                        <th>Status</th>
-                                        <th>Tickets Closed</th>
-                                        <th>Rating</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${expertsData.filter(e => e.role === 'expert').map(exp => `
-                                        <tr class="border-b hover:bg-gray-50">
-                                            <td class="p-3">
-                                                <div class="font-semibold">${exp.fullName}</div>
-                                                <div class="text-xs text-gray-500">${exp.email}</div>
-                                            </td>
-                                            <td class="p-3"><span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">${exp.specialization}</span></td>
-                                            <td class="p-3">
-                                                <button class="toggleAvailBtn px-3 py-1 rounded-full text-sm ${exp.isAvailable ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}" data-id="${exp.id}">
-                                                    ${exp.isAvailable ? '🟢 Available' : '🔴 Busy'}
-                                                </button>
-                                            </td>
-                                            <td class="p-3 text-center font-semibold">${exp.tasksCompleted || 0}</td>
-                                            <td class="p-3">
-                                                <div class="flex items-center">
-                                                    <span class="text-yellow-500">★</span>
-                                                    <span class="ml-1">${exp.rating || 4.5}</span>
-                                                </div>
-                                            </td>
-                                            <td class="p-3">
-                                                <button class="chatWithExpertBtn text-blue-500 hover:text-blue-700 mr-2" data-id="${exp.id}" data-name="${exp.fullName}">
-                                                    <i class="fas fa-comment"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    
-                    <!-- Tasks Table -->
-                    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
-                        <div class="p-4 border-b font-bold bg-gray-50"><i class="fas fa-tasks mr-2 text-green-500"></i>All Support Tickets</div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="p-3">Ticket</th>
-                                        <th>Skill</th>
-                                        <th>Priority</th>
-                                        <th>Status</th>
-                                        <th>Due</th>
-                                        <th>Assign To</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${tasksData.map(task => {
-                                        const matchExperts = expertsData.filter(e => e.specialization === task.specialization && e.isAvailable);
-                                        const priorityColors = { low: 'bg-gray-100', medium: 'bg-yellow-100', high: 'bg-orange-100', urgent: 'bg-red-100' };
-                                        return `
-                                            <tr class="border-b hover:bg-gray-50">
-                                                <td class="p-3">
-                                                    <div class="font-semibold">${task.title}</div>
-                                                    <div class="text-xs text-gray-500">${task.description?.slice(0, 60)}...</div>
-                                                </td>
-                                                <td class="p-3"><span class="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">${task.specialization}</span></td>
-                                                <td class="p-3"><span class="px-2 py-1 rounded-full text-xs ${priorityColors[task.priority]}">${task.priority || 'medium'}</span></td>
-                                                <td class="p-3">
-                                                    <span class="status-badge px-2 py-1 rounded ${task.status === 'completed' ? 'bg-green-100 text-green-700' : task.status === 'in-progress' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}">
-                                                        ${task.status}
-                                                    </span>
-                                                </td>
-                                                <td class="p-3 text-sm">${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : '—'}</td>
-                                                <td class="p-3">
-                                                    <select class="assignSelect text-sm border rounded px-2 py-1" data-task-id="${task.id}">
-                                                        <option value="">Select agent</option>
-                                                        ${matchExperts.map(e => `<option value="${e.id}">${e.fullName}</option>`).join('')}
-                                                    </select>
-                                                </td>
-                                                <td class="p-3">
-                                                    <button class="assignBtn bg-indigo-500 text-white px-3 py-1 rounded text-xs hover:bg-indigo-600 mr-1" data-task-id="${task.id}">
-                                                        <i class="fas fa-user-check"></i>
-                                                    </button>
-                                                    <button class="deleteTaskBtn text-red-500 hover:text-red-700" data-task-id="${task.id}">
-                                                        <i class="fas fa-trash"></i>
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        `;
-                                    }).join('')}
-                                </tbody>
-                            </table>
-                        </div>
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow">
+                    <div class="flex items-center justify-between">
+                        <div><p class="text-gray-500 text-sm">Active Consultations</p><p class="text-3xl font-bold">${activeConsultations}</p></div>
+                        <div class="bg-purple-100 p-3 rounded-full"><i class="fas fa-comments text-purple-600 text-xl"></i></div>
                     </div>
                 </div>
-                
-                <!-- Chat Modal -->
-                <div id="chatModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
-                    <div class="bg-white rounded-xl w-full max-w-2xl h-96 flex flex-col">
-                        <div class="p-4 border-b flex justify-between items-center">
-                            <h3 class="font-bold">Chat with <span id="chatUserName"></span></h3>
-                            <button id="closeChatBtn" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times"></i></button>
-                        </div>
-                        <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
-                        <div class="p-4 border-t flex">
-                            <input type="text" id="chatInput" placeholder="Type your message..." class="flex-1 border rounded-lg px-3 py-2 mr-2">
-                            <button id="sendMessageBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">Send</button>
-                        </div>
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow">
+                    <div class="flex items-center justify-between">
+                        <div><p class="text-gray-500 text-sm">Platform Revenue</p><p class="text-3xl font-bold">$0</p></div>
+                        <div class="bg-yellow-100 p-3 rounded-full"><i class="fas fa-dollar-sign text-yellow-600 text-xl"></i></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Actions -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-white rounded-xl p-6 shadow">
+                    <h3 class="font-bold mb-3">➕ Quick Actions</h3>
+                    <button onclick="switchAdminTab('experts'); activeTab='experts'; setTimeout(() => document.getElementById('admin-content').innerHTML = renderAdminContent(), 100);" 
+                            class="w-full bg-indigo-600 text-white py-2 rounded-lg mb-2 hover:bg-indigo-700">
+                        <i class="fas fa-plus mr-2"></i>Create Expert
+                    </button>
+                    <button onclick="switchAdminTab('events')" class="w-full bg-blue-600 text-white py-2 rounded-lg mb-2 hover:bg-blue-700">
+                        <i class="fas fa-calendar-plus mr-2"></i>Create Event
+                    </button>
+                    <button onclick="switchAdminTab('users')" class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">
+                        <i class="fas fa-user-check mr-2"></i>Approve Users
+                    </button>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow col-span-2">
+                    <h3 class="font-bold mb-3">📋 Recent Notifications</h3>
+                    <div class="space-y-2">
+                        ${notificationsData.slice(0, 5).map(n => `
+                            <div class="flex items-center p-2 bg-gray-50 rounded-lg">
+                                <i class="fas fa-bell text-blue-500 mr-2"></i>
+                                <div class="flex-1"><p class="text-sm font-semibold">${n.title}</p><p class="text-xs text-gray-500">${n.message}</p></div>
+                                <span class="text-xs text-gray-400">${formatDate(n.created_at)}</span>
+                            </div>
+                        `).join('') || '<p class="text-gray-400 text-sm">No notifications</p>'}
                     </div>
                 </div>
             </div>
         `;
     }
 
-    function renderExpertDashboard() {
-        const myTasks = tasksData.filter(t => t.assignedTo === currentUser.id);
-        const availableTasks = tasksData.filter(t => !t.assignedTo && t.status !== 'completed' && t.specialization === currentUser.specialization);
-        const completedCount = myTasks.filter(t => t.status === 'completed').length;
-        const inProgressCount = myTasks.filter(t => t.status === 'in-progress').length;
-        
+    function renderAdminExpertManagement() {
         return `
-            <div class="min-h-screen bg-gray-100">
-                <div class="bg-white shadow-md p-4 flex justify-between items-center border-b sticky top-0 z-20">
-                    <div class="flex items-center space-x-4">
-                        <i class="fas fa-headset text-blue-600 text-2xl"></i>
-                        <span class="font-bold">TIMS Support Agent Portal</span>
-                        <span class="real-time-indicator"></span>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <div class="relative cursor-pointer" id="notificationBtn">
-                            <i class="fas fa-bell text-2xl text-gray-600"></i>
-                            <span id="notificationBadge" class="notification-badge hidden">${unreadNotifications}</span>
-                        </div>
-                        <button id="logoutBtn" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg transition">Logout</button>
-                    </div>
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold">👨‍💼 Expert Management</h1>
+                <button onclick="showCreateExpertModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+                    <i class="fas fa-plus mr-2"></i>Create New Expert
+                </button>
+            </div>
+            
+            <!-- Create Expert Form -->
+            <div class="bg-white rounded-xl p-6 shadow mb-6" id="createExpertForm" style="display:none">
+                <h3 class="font-bold mb-4">Create New Expert</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input id="newExpertName" placeholder="Full Name" class="border rounded-lg p-2">
+                    <input id="newExpertEmail" placeholder="Email" class="border rounded-lg p-2">
+                    <input id="newExpertPhone" placeholder="Phone" class="border rounded-lg p-2">
+                    <input id="newExpertSpecialization" placeholder="Specialization" class="border rounded-lg p-2">
+                    <input id="newExpertRate" placeholder="Hourly Rate ($)" type="number" class="border rounded-lg p-2">
+                    <input id="newExpertBio" placeholder="Bio" class="border rounded-lg p-2">
                 </div>
-                
-                <div class="max-w-7xl mx-auto px-4 py-8">
-                    <!-- Welcome Section -->
-                    <div class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-6 rounded-2xl mb-8 shadow-lg">
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <h2 class="text-2xl font-bold">Welcome back, ${currentUser.fullName}!</h2>
-                                <p class="mt-1">Specialization: ${currentUser.specialization}</p>
-                            </div>
-                            <div class="text-right">
-                                <div class="text-3xl font-bold">${completedCount}</div>
-                                <div class="text-sm">Tickets Resolved</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Stats Cards -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-tasks text-3xl text-blue-500"></i></div>
-                                <div><div class="text-2xl font-bold">${myTasks.length}</div><div class="text-gray-500">Assigned Tickets</div></div>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-spinner text-3xl text-yellow-500"></i></div>
-                                <div><div class="text-2xl font-bold">${inProgressCount}</div><div class="text-gray-500">In Progress</div></div>
-                            </div>
-                        </div>
-                        <div class="bg-white rounded-xl p-6 shadow-lg dashboard-card">
-                            <div class="flex items-center justify-between">
-                                <div><i class="fas fa-check-circle text-3xl text-green-500"></i></div>
-                                <div><div class="text-2xl font-bold">${completedCount}</div><div class="text-gray-500">Completed</div></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- My Active Tickets -->
-                    <div class="bg-white rounded-xl shadow-lg mb-8">
-                        <div class="p-4 border-b font-bold bg-gray-50">
-                            <i class="fas fa-clipboard-list mr-2 text-blue-500"></i>My Active Tickets
-                        </div>
-                        ${myTasks.length === 0 ? 
-                            '<div class="p-8 text-center text-gray-400"><i class="fas fa-inbox text-4xl mb-2"></i><p>No tickets assigned yet.</p></div>' : 
-                            myTasks.map(task => `
-                                <div class="p-4 border-b hover:bg-gray-50 transition">
-                                    <div class="flex justify-between items-start">
-                                        <div class="flex-1">
-                                            <div class="font-semibold text-lg">${task.title}</div>
-                                            <p class="text-sm text-gray-600 mt-1">${task.description}</p>
-                                            <div class="flex items-center mt-2 space-x-3">
-                                                <span class="text-xs text-gray-500"><i class="far fa-calendar-alt mr-1"></i>Due: ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Flexible'}</span>
-                                                <span class="px-2 py-1 rounded-full text-xs ${task.priority === 'urgent' ? 'bg-red-100 text-red-700' : task.priority === 'high' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100'}">
-                                                    ${task.priority || 'Medium'} Priority
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div class="flex items-center space-x-2">
-                                            <select class="statusSelect border rounded-lg px-3 py-2 text-sm" data-task-id="${task.id}">
-                                                <option ${task.status === 'pending' ? 'selected' : ''}>pending</option>
-                                                <option ${task.status === 'in-progress' ? 'selected' : ''}>in-progress</option>
-                                                <option ${task.status === 'completed' ? 'selected' : ''}>completed</option>
-                                            </select>
-                                            <button class="updateStatusBtn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
-                                                <i class="fas fa-sync-alt mr-1"></i>Update
+                <button onclick="handleCreateExpert()" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">Create Expert</button>
+                <button onclick="document.getElementById('createExpertForm').style.display='none'" class="mt-4 ml-2 bg-gray-300 text-gray-700 px-6 py-2 rounded-lg">Cancel</button>
+            </div>
+            
+            <!-- Experts Table -->
+            <div class="bg-white rounded-xl shadow overflow-hidden">
+                <div class="p-4 border-b font-bold">All Experts (${expertsData.length})</div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="p-3 text-left">Expert</th>
+                                <th class="p-3 text-left">Specialization</th>
+                                <th class="p-3 text-left">Status</th>
+                                <th class="p-3 text-left">Earnings</th>
+                                <th class="p-3 text-left">Rating</th>
+                                <th class="p-3 text-left">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${expertsData.map(exp => `
+                                <tr class="border-t hover:bg-gray-50">
+                                    <td class="p-3">
+                                        <div class="font-semibold">${exp.name || exp.fullName}</div>
+                                        <div class="text-xs text-gray-500">${exp.email}</div>
+                                    </td>
+                                    <td class="p-3">
+                                        ${(exp.expertise || []).map(e => `<span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full mr-1">${e}</span>`).join('')}
+                                    </td>
+                                    <td class="p-3">
+                                        <span class="status-badge ${getStatusColor(exp.status)}">${exp.status || 'active'}</span>
+                                    </td>
+                                    <td class="p-3">$${(exp.total_earnings || 0).toFixed(2)}</td>
+                                    <td class="p-3">${exp.average_rating || 'N/A'} ⭐</td>
+                                    <td class="p-3">
+                                        <div class="flex gap-2">
+                                            ${exp.status === 'active' ? `
+                                                <button onclick="suspendExpert('${exp.id}', 'Policy violation', 'temporary', 7)" class="text-yellow-600 hover:text-yellow-800" title="Suspend">
+                                                    <i class="fas fa-pause-circle"></i>
+                                                </button>
+                                            ` : ''}
+                                            ${exp.status === 'suspended' ? `
+                                                <button onclick="reactivateExpert('${exp.id}')" class="text-green-600 hover:text-green-800" title="Reactivate">
+                                                    <i class="fas fa-play-circle"></i>
+                                                </button>
+                                            ` : ''}
+                                            <button onclick="deleteExpert('${exp.id}', 'Admin removal')" class="text-red-600 hover:text-red-800" title="Delete">
+                                                <i class="fas fa-trash"></i>
                                             </button>
                                         </div>
-                                    </div>
-                                </div>
-                            `).join('')
-                        }
-                    </div>
-                    
-                    <!-- Available Tickets to Claim -->
-                    <div class="bg-white rounded-xl shadow-lg">
-                        <div class="p-4 border-b font-bold bg-gray-50">
-                            <i class="fas fa-hand-paper mr-2 text-green-500"></i>Available Tickets to Claim
+                                    </td>
+                                </tr>
+                            `).join('') || '<tr><td colspan="6" class="p-6 text-center text-gray-400">No experts found</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderAdminESchool() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">🎓 E-School Management</h1>
+            
+            <!-- Tabs -->
+            <div class="flex gap-2 mb-6 flex-wrap">
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'bootcamps' ? 'bg-indigo-600 text-white' : 'bg-white'}" 
+                        onclick="activeESchoolTab='bootcamps'; fetchESchoolData().then(() => document.getElementById('admin-content').innerHTML = renderAdminContent())">
+                    🔥 Bootcamps
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'courses' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='courses'; fetchESchoolData().then(() => document.getElementById('admin-content').innerHTML = renderAdminContent())">
+                    📚 Short Courses
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'tuition' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='tuition'; fetchESchoolData().then(() => document.getElementById('admin-content').innerHTML = renderAdminContent())">
+                    👨‍🏫 Online Tuition
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'exams' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='exams'; fetchESchoolData().then(() => document.getElementById('admin-content').innerHTML = renderAdminContent())">
+                    📝 Exam Preparation
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'career' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='career'; fetchESchoolData().then(() => document.getElementById('admin-content').innerHTML = renderAdminContent())">
+                    💼 Career Guidance
+                </button>
+            </div>
+            
+            <!-- Content based on active tab -->
+            <div class="bg-white rounded-xl shadow p-6">
+                ${activeESchoolTab === 'bootcamps' ? renderBootcampsList() : ''}
+                ${activeESchoolTab === 'courses' ? renderShortCoursesList() : ''}
+                ${activeESchoolTab === 'tuition' ? renderTuitionList() : ''}
+                ${activeESchoolTab === 'exams' ? renderExamPrepList() : ''}
+                ${activeESchoolTab === 'career' ? renderCareerGuidanceList() : ''}
+            </div>
+        `;
+    }
+
+    function renderBootcampsList() {
+        return `
+            <h3 class="font-bold mb-4">🔥 Available Bootcamps</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                ${bootcampsData.map(b => `
+                    <div class="border rounded-xl p-4 hover:shadow-lg transition">
+                        <span class="bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded-full">${b.category}</span>
+                        <h4 class="font-bold mt-2">${b.title}</h4>
+                        <p class="text-sm text-gray-600 mt-1">${b.description?.substring(0, 80)}...</p>
+                        <div class="flex justify-between items-center mt-3">
+                            <span class="font-bold text-indigo-600">$${b.price}</span>
+                            <span class="text-xs text-gray-500">${b.duration_weeks} weeks</span>
                         </div>
-                        ${availableTasks.length === 0 ? 
-                            '<div class="p-8 text-center text-gray-400"><i class="fas fa-smile-wink text-4xl mb-2"></i><p>No tickets available at the moment.</p></div>' : 
-                            availableTasks.map(task => `
-                                <div class="p-4 border-b hover:bg-gray-50 transition">
-                                    <div class="flex justify-between items-center">
-                                        <div class="flex-1">
-                                            <div class="font-semibold">${task.title}</div>
-                                            <p class="text-sm text-gray-600">${task.description}</p>
-                                            <div class="flex items-center mt-1 space-x-3">
-                                                <span class="text-xs text-gray-500"><i class="fas fa-tag mr-1"></i>${task.specialization}</span>
-                                                <span class="text-xs text-gray-500"><i class="fas fa-flag mr-1"></i>${task.priority || 'Medium'}</span>
-                                            </div>
-                                        </div>
-                                        <button class="claimBtn bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition transform hover:scale-105">
-                                            <i class="fas fa-hand-paper mr-2"></i>Claim Ticket
-                                        </button>
-                                    </div>
-                                </div>
-                            `).join('')
-                        }
+                        <button onclick="enrollInProgram('bootcamp', '${b.id}')" class="mt-2 w-full bg-indigo-600 text-white py-2 rounded-lg text-sm hover:bg-indigo-700">
+                            Enroll Now
+                        </button>
+                    </div>
+                `).join('') || '<p class="text-gray-400 col-span-3">No bootcamps available</p>'}
+            </div>
+        `;
+    }
+
+    function renderShortCoursesList() {
+        return `
+            <h3 class="font-bold mb-4">📚 Short Courses</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                ${shortCoursesData.map(c => `
+                    <div class="border rounded-xl p-4">
+                        <span class="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">${c.difficulty_level}</span>
+                        <h4 class="font-bold mt-2">${c.title}</h4>
+                        <p class="text-sm text-gray-600">${c.duration_hours}h | $${c.price}</p>
+                    </div>
+                `).join('') || '<p class="text-gray-400">No courses available</p>'}
+            </div>
+        `;
+    }
+
+    function renderTuitionList() {
+        return `
+            <h3 class="font-bold mb-4">👨‍🏫 Online Tuition Sessions</h3>
+            <div class="space-y-3">
+                ${tuitionSessionsData.map(t => `
+                    <div class="border rounded-lg p-4 flex justify-between items-center">
+                        <div>
+                            <span class="font-semibold">${t.title}</span>
+                            <p class="text-sm text-gray-500">${t.subject_name} | ${t.level_name}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-bold">$${t.price_per_session}/session</p>
+                            <p class="text-xs text-gray-400">${t.session_type}</p>
+                        </div>
+                    </div>
+                `).join('') || '<p class="text-gray-400">No tuition sessions available</p>'}
+            </div>
+        `;
+    }
+
+    function renderExamPrepList() {
+        return `
+            <h3 class="font-bold mb-4">📝 Exam Preparation Materials</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                ${examPrepsData.map(e => `
+                    <div class="border rounded-xl p-4">
+                        <span class="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full">${e.exam_type} ${e.year}</span>
+                        <h4 class="font-bold mt-2">${e.title}</h4>
+                        <p class="text-sm text-gray-600">${e.subject_name} | ${e.total_questions} questions</p>
+                        <p class="font-bold text-indigo-600 mt-2">$${e.price}</p>
+                    </div>
+                `).join('') || '<p class="text-gray-400">No exam materials available</p>'}
+            </div>
+        `;
+    }
+
+    function renderCareerGuidanceList() {
+        return `
+            <h3 class="font-bold mb-4">💼 Career Guidance Sessions</h3>
+            <div class="space-y-3">
+                ${careerGuidanceData.map(c => `
+                    <div class="border rounded-lg p-4">
+                        <span class="font-semibold">${c.title}</span>
+                        <span class="text-sm text-gray-500 ml-2">${c.career_path}</span>
+                        <p class="text-sm">${c.session_type} | ${c.duration_minutes}min | $${c.price}</p>
+                    </div>
+                `).join('') || '<p class="text-gray-400">No career guidance sessions available</p>'}
+            </div>
+        `;
+    }
+
+    function renderAdminEarnings() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">💰 Earnings & Commission Management</h1>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-xl p-6 shadow text-center">
+                    <p class="text-gray-500">Platform Commission</p>
+                    <p class="text-3xl font-bold text-indigo-600">20%</p>
+                    <p class="text-xs text-gray-400">Default rate</p>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow text-center">
+                    <p class="text-gray-500">Total Commission Earned</p>
+                    <p class="text-3xl font-bold text-green-600">$0.00</p>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow text-center">
+                    <p class="text-gray-500">Pending Payouts</p>
+                    <p class="text-3xl font-bold text-yellow-600">$0.00</p>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow p-6">
+                <h3 class="font-bold mb-4">Withdrawal Requests</h3>
+                <p class="text-gray-400 text-sm">Pending withdrawal requests will appear here</p>
+            </div>
+        `;
+    }
+
+    function renderAdminClaims() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">⚖️ Client Claims Management</h1>
+            <div class="bg-white rounded-xl shadow p-6">
+                <h3 class="font-bold mb-4">Active Claims</h3>
+                <p class="text-gray-400">${claimsData.length} active claims</p>
+                ${claimsData.map(c => `
+                    <div class="border rounded-lg p-4 mb-2">
+                        <div class="flex justify-between">
+                            <span class="font-semibold">${c.claim_title}</span>
+                            <span class="status-badge ${getStatusColor(c.status)}">${c.status}</span>
+                        </div>
+                        <p class="text-sm text-gray-600">${c.claim_description?.substring(0, 100)}</p>
+                        ${c.claim_amount ? `<p class="text-sm font-bold text-red-600">Amount: $${c.claim_amount}</p>` : ''}
+                    </div>
+                `).join('') || '<p class="text-gray-400">No active claims</p>'}
+            </div>
+        `;
+    }
+
+    function renderAdminSupport() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">🎫 Support Tickets</h1>
+            <div class="bg-white rounded-xl shadow p-6">
+                <p class="text-gray-400">Support ticket management system</p>
+            </div>
+        `;
+    }
+
+    function renderAdminAnalytics() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">📈 Platform Analytics</h1>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl p-6 shadow">
+                    <h3 class="font-bold mb-4">User Growth</h3>
+                    <canvas id="userGrowthChart" height="200"></canvas>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow">
+                    <h3 class="font-bold mb-4">Revenue Overview</h3>
+                    <canvas id="revenueChart" height="200"></canvas>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderAdminEvents() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">📅 Events & Training</h1>
+            <div class="bg-white rounded-xl shadow p-6">
+                <h3 class="font-bold mb-4">Create New Event</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input id="eventTitle" placeholder="Event Title" class="border rounded-lg p-2">
+                    <input id="eventDate" type="date" class="border rounded-lg p-2">
+                    <textarea id="eventDesc" placeholder="Description" class="border rounded-lg p-2 col-span-2"></textarea>
+                    <select id="eventExpert" class="border rounded-lg p-2">
+                        <option value="">Select Expert</option>
+                        ${expertsData.map(e => `<option value="${e.id}">${e.name || e.fullName}</option>`).join('')}
+                    </select>
+                    <input id="eventPayment" placeholder="Expert Payment ($)" type="number" class="border rounded-lg p-2">
+                </div>
+                <button onclick="createEvent()" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg">Create Event</button>
+            </div>
+        `;
+    }
+
+    function renderAdminConsultations() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">💬 Consultation Oversight</h1>
+            <div class="bg-white rounded-xl shadow overflow-hidden">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="p-3 text-left">Client</th>
+                            <th class="p-3 text-left">Title</th>
+                            <th class="p-3 text-left">Status</th>
+                            <th class="p-3 text-left">Expert</th>
+                            <th class="p-3 text-left">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${consultationsData.map(c => `
+                            <tr class="border-t">
+                                <td class="p-3">${c.client_name || 'Client'}</td>
+                                <td class="p-3">${c.title}</td>
+                                <td class="p-3"><span class="status-badge ${getStatusColor(c.status)}">${c.status}</span></td>
+                                <td class="p-3">${c.expert_name || 'Unassigned'}</td>
+                                <td class="p-3">
+                                    <button onclick="showAssignExpertModal('${c.id}')" class="text-indigo-600 text-sm">Assign Expert</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function renderAdminUserManagement() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">👥 User Management</h1>
+            <div class="bg-white rounded-xl shadow overflow-hidden">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="p-3 text-left">User</th>
+                            <th class="p-3 text-left">Role</th>
+                            <th class="p-3 text-left">Status</th>
+                            <th class="p-3 text-left">Joined</th>
+                            <th class="p-3 text-left">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${usersData.map(u => `
+                            <tr class="border-t">
+                                <td class="p-3">
+                                    <div class="font-semibold">${u.name}</div>
+                                    <div class="text-xs text-gray-500">${u.email}</div>
+                                </td>
+                                <td class="p-3"><span class="bg-gray-100 px-2 py-1 rounded-full text-xs">${u.role}</span></td>
+                                <td class="p-3"><span class="status-badge ${getStatusColor(u.status)}">${u.status}</span></td>
+                                <td class="p-3 text-sm">${formatDate(u.created_at)}</td>
+                                <td class="p-3">
+                                    ${u.status === 'pending' ? `
+                                        <button onclick="approveUser('${u.id}')" class="bg-green-500 text-white px-3 py-1 rounded text-sm">Approve</button>
+                                    ` : ''}
+                                    ${u.status === 'active' ? `
+                                        <button onclick="suspendUser('${u.id}')" class="bg-yellow-500 text-white px-3 py-1 rounded text-sm">Suspend</button>
+                                    ` : ''}
+                                </td>
+                            </tr>
+                        `).join('') || '<tr><td colspan="5" class="p-6 text-center text-gray-400">No users found</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    // ======================== EXPERT DASHBOARD ========================
+    function renderExpertDashboard() {
+        const root = document.getElementById('app-root');
+        const myConsultations = consultationsData.filter(c => c.assigned_expert_id === currentUser.id);
+        
+        root.innerHTML = `
+            <div class="min-h-screen bg-gray-50 flex">
+                <div class="w-64 bg-slate-900 text-white min-h-screen hidden lg:block">
+                    <div class="p-6 border-b border-slate-700">
+                        <i class="fas fa-user-tie text-2xl mr-2"></i>
+                        <span class="font-bold text-xl">Expert Panel</span>
+                    </div>
+                    <nav class="mt-4">
+                        ${renderSidebarItem('dashboard', 'Dashboard', 'fa-chart-line')}
+                        ${renderSidebarItem('consultations', 'My Consultations', 'fa-comments', myConsultations.length)}
+                        ${renderSidebarItem('availability', 'Availability', 'fa-clock')}
+                        ${renderSidebarItem('earnings', 'My Earnings', 'fa-dollar-sign')}
+                        ${renderSidebarItem('profile', 'Profile', 'fa-user')}
+                    </nav>
+                </div>
+                <div class="flex-1">
+                    <div class="bg-white shadow-md sticky top-0 z-10 p-4 flex justify-between items-center border-b">
+                        <div class="flex items-center">
+                            <span class="real-time-indicator"></span>
+                            <span class="font-semibold text-gray-700">Expert Panel</span>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span class="text-sm text-gray-600">${currentUser?.name || 'Expert'}</span>
+                            <button id="logoutBtn" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-sm transition">Logout</button>
+                        </div>
+                    </div>
+                    <div class="p-6" id="expert-content">
+                        ${renderExpertContent()}
+                    </div>
+                </div>
+            </div>
+        `;
+        attachExpertEvents();
+    }
+
+    function renderExpertContent() {
+        switch(activeTab) {
+            case 'dashboard': return renderExpertOverview();
+            case 'consultations': return renderExpertConsultations();
+            case 'availability': return renderExpertAvailability();
+            case 'earnings': return renderExpertEarnings();
+            case 'profile': return renderExpertProfile();
+            default: return renderExpertOverview();
+        }
+    }
+
+    function renderExpertOverview() {
+        const myConsultations = consultationsData.filter(c => c.assigned_expert_id === currentUser.id);
+        const activeCount = myConsultations.filter(c => ['assigned', 'in_progress'].includes(c.status)).length;
+        
+        return `
+            <h1 class="text-2xl font-bold mb-6">Welcome, ${currentUser?.name}</h1>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow">
+                    <div class="bg-blue-100 p-3 rounded-full w-fit mb-3"><i class="fas fa-comments text-blue-600 text-xl"></i></div>
+                    <p class="text-3xl font-bold">${myConsultations.length}</p>
+                    <p class="text-gray-500">Total Consultations</p>
+                </div>
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow">
+                    <div class="bg-green-100 p-3 rounded-full w-fit mb-3"><i class="fas fa-clock text-green-600 text-xl"></i></div>
+                    <p class="text-3xl font-bold">${activeCount}</p>
+                    <p class="text-gray-500">Active</p>
+                </div>
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow">
+                    <div class="bg-yellow-100 p-3 rounded-full w-fit mb-3"><i class="fas fa-dollar-sign text-yellow-600 text-xl"></i></div>
+                    <p class="text-3xl font-bold">$${(earningsData?.total_earned || 0).toFixed(2)}</p>
+                    <p class="text-gray-500">Total Earnings</p>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderExpertConsultations() {
+        const myConsultations = consultationsData.filter(c => c.assigned_expert_id === currentUser.id);
+        return `
+            <h1 class="text-2xl font-bold mb-6">💬 My Consultation Cases</h1>
+            <div class="space-y-4">
+                ${myConsultations.map(c => `
+                    <div class="bg-white rounded-xl p-6 shadow">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold">${c.title}</h3>
+                                <p class="text-sm text-gray-600">Client: ${c.client_name || 'Client'}</p>
+                                <span class="status-badge ${getStatusColor(c.status)} mt-2 inline-block">${c.status}</span>
+                            </div>
+                            <div class="text-right">
+                                ${c.expert_fee ? `<p class="font-bold text-green-600">$${c.expert_fee}</p>` : ''}
+                                <button onclick="openConsultationChat('${c.id}')" class="mt-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">
+                                    <i class="fas fa-comments mr-1"></i>Open Chat
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('') || '<p class="text-gray-400">No consultations assigned</p>'}
+            </div>
+            <div id="chat-modal" class="modal-overlay hidden">
+                <div class="modal-content w-full max-w-2xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold">Consultation Chat</h3>
+                        <button onclick="document.getElementById('chat-modal').classList.add('hidden')" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                    <div id="chat-messages" class="h-96 overflow-y-auto mb-4 p-4 bg-gray-50 rounded-lg"></div>
+                    <div class="flex gap-2">
+                        <input id="chat-input" placeholder="Type your message..." class="flex-1 border rounded-lg p-2">
+                        <button onclick="sendChatMessage(currentChatId, document.getElementById('chat-input').value)" 
+                                class="bg-indigo-600 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                        <label class="bg-gray-200 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-300">
+                            <i class="fas fa-paperclip"></i>
+                            <input type="file" hidden onchange="uploadAttachment(currentChatId, this.files[0])">
+                        </label>
                     </div>
                 </div>
             </div>
         `;
     }
 
-    function initializeCharts() {
-        const ctx1 = document.getElementById('taskChart')?.getContext('2d');
-        const ctx2 = document.getElementById('performanceChart')?.getContext('2d');
-        
-        if (ctx1) {
-            const statusCounts = {
-                pending: tasksData.filter(t => t.status === 'pending').length,
-                'in-progress': tasksData.filter(t => t.status === 'in-progress').length,
-                completed: tasksData.filter(t => t.status === 'completed').length
-            };
-            
-            charts.taskChart = new Chart(ctx1, {
-                type: 'bar',
-                data: {
-                    labels: ['Pending', 'In Progress', 'Completed'],
-                    datasets: [{
-                        label: 'Number of Tasks',
-                        data: [statusCounts.pending, statusCounts['in-progress'], statusCounts.completed],
-                        backgroundColor: ['#fbbf24', '#3b82f6', '#10b981'],
-                        borderRadius: 8
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: true }
-            });
-        }
-        
-        if (ctx2) {
-            const topExperts = expertsData.filter(e => e.role === 'expert').sort((a,b) => (b.tasksCompleted || 0) - (a.tasksCompleted || 0)).slice(0, 5);
-            charts.performanceChart = new Chart(ctx2, {
-                type: 'pie',
-                data: {
-                    labels: topExperts.map(e => e.fullName),
-                    datasets: [{
-                        data: topExperts.map(e => e.tasksCompleted || 0),
-                        backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316']
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: true }
-            });
-        }
+    function renderExpertAvailability() {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        return `
+            <h1 class="text-2xl font-bold mb-6">🕐 Availability Schedule</h1>
+            <div class="bg-white rounded-xl p-6 shadow">
+                <h3 class="font-bold mb-4">Set Your Weekly Availability</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    ${days.map((day, index) => `
+                        <div class="border rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-semibold">${day}</span>
+                                <button onclick="toggleDayAvailability(${index})" class="text-sm text-indigo-600">Toggle</button>
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="time" id="start-${index}" class="border rounded p-1 text-sm" value="09:00">
+                                <span class="text-gray-400">to</span>
+                                <input type="time" id="end-${index}" class="border rounded p-1 text-sm" value="17:00">
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button onclick="saveAvailability()" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg">
+                    Save Availability
+                </button>
+            </div>
+            <div class="bg-white rounded-xl p-6 shadow mt-6">
+                <h3 class="font-bold mb-4">Request Time Off</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="date" id="timeOffStart" class="border rounded-lg p-2">
+                    <input type="date" id="timeOffEnd" class="border rounded-lg p-2">
+                    <input type="text" id="timeOffReason" placeholder="Reason" class="border rounded-lg p-2">
+                </div>
+                <button onclick="requestTimeOff()" class="mt-4 bg-yellow-600 text-white px-6 py-2 rounded-lg">Request Time Off</button>
+            </div>
+        `;
     }
 
+    function renderExpertEarnings() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">💰 My Earnings</h1>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-xl p-6 shadow text-center">
+                    <p class="text-gray-500">Total Earned</p>
+                    <p class="text-3xl font-bold text-green-600">$${(earningsData?.total_earned || 0).toFixed(2)}</p>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow text-center">
+                    <p class="text-gray-500">Available Balance</p>
+                    <p class="text-3xl font-bold text-indigo-600">$${(earningsData?.available_balance || 0).toFixed(2)}</p>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow text-center">
+                    <p class="text-gray-500">Total Paid Out</p>
+                    <p class="text-3xl font-bold text-blue-600">$${(earningsData?.total_paid_out || 0).toFixed(2)}</p>
+                </div>
+            </div>
+            
+            <!-- Commission Info -->
+            <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+                <p class="font-semibold text-yellow-800">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    Platform Commission: <span class="commission-badge">20%</span>
+                </p>
+                <p class="text-sm text-yellow-700 mt-1">A 20% platform commission is deducted from each consultation payment.</p>
+            </div>
+            
+            <!-- Withdrawal Request -->
+            <div class="bg-white rounded-xl p-6 shadow mb-6">
+                <h3 class="font-bold mb-4">Request Withdrawal</h3>
+                <p class="text-sm text-gray-500 mb-2">Withdrawals are processed after a 7-day holding period</p>
+                <div class="flex gap-4">
+                    <input type="number" id="withdrawAmount" placeholder="Amount" class="border rounded-lg p-2 flex-1" 
+                           max="${earningsData?.available_balance || 0}">
+                    <select id="withdrawMethod" class="border rounded-lg p-2">
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="mobile_money">Mobile Money</option>
+                        <option value="paypal">PayPal</option>
+                    </select>
+                    <button onclick="handleWithdrawRequest()" class="bg-indigo-600 text-white px-6 py-2 rounded-lg">Request</button>
+                </div>
+            </div>
+            
+            <!-- Withdrawal History -->
+            <div class="bg-white rounded-xl p-6 shadow">
+                <h3 class="font-bold mb-4">Withdrawal History</h3>
+                ${withdrawalsData.length > 0 ? withdrawalsData.map(w => `
+                    <div class="flex justify-between items-center border-b py-3">
+                        <div>
+                            <p class="font-semibold">$${w.amount?.toFixed(2)}</p>
+                            <p class="text-xs text-gray-500">${formatDate(w.created_at)}</p>
+                        </div>
+                        <span class="status-badge ${getStatusColor(w.status)}">${w.status}</span>
+                    </div>
+                `).join('') : '<p class="text-gray-400">No withdrawals yet</p>'}
+            </div>
+        `;
+    }
+
+    function renderExpertProfile() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">👤 My Profile</h1>
+            <div class="bg-white rounded-xl p-6 shadow">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Name</label>
+                        <input value="${currentUser?.name || ''}" class="border rounded-lg p-2 w-full" disabled>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Email</label>
+                        <input value="${currentUser?.email || ''}" class="border rounded-lg p-2 w-full" disabled>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Specialization</label>
+                        <input value="${currentUser?.specialization || ''}" class="border rounded-lg p-2 w-full">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Hourly Rate ($)</label>
+                        <input type="number" value="${currentUser?.hourly_rate || ''}" class="border rounded-lg p-2 w-full">
+                    </div>
+                </div>
+                <button onclick="updateProfile()" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg">Update Profile</button>
+            </div>
+        `;
+    }
+
+    // ======================== USER DASHBOARD ========================
+    function renderUserDashboard() {
+        const root = document.getElementById('app-root');
+        const myConsultations = consultationsData.filter(c => c.user_id === currentUser.id);
+        
+        root.innerHTML = `
+            <div class="min-h-screen bg-gray-50 flex">
+                <div class="w-64 bg-slate-900 text-white min-h-screen hidden lg:block">
+                    <div class="p-6 border-b border-slate-700">
+                        <i class="fas fa-user-graduate text-2xl mr-2"></i>
+                        <span class="font-bold text-xl">Learner Panel</span>
+                    </div>
+                    <nav class="mt-4">
+                        ${renderSidebarItem('dashboard', 'Dashboard', 'fa-chart-line')}
+                        ${renderSidebarItem('eschool', 'E-School Hub', 'fa-school')}
+                        ${renderSidebarItem('events', 'Events', 'fa-calendar-alt')}
+                        ${renderSidebarItem('consultations', 'My Consultations', 'fa-comments', myConsultations.length)}
+                        ${renderSidebarItem('experts', 'Find Experts', 'fa-search')}
+                        ${renderSidebarItem('support', 'Support', 'fa-headset')}
+                        ${renderSidebarItem('apply', 'Become Expert', 'fa-user-tie')}
+                    </nav>
+                </div>
+                <div class="flex-1">
+                    <div class="bg-white shadow-md sticky top-0 z-10 p-4 flex justify-between items-center border-b">
+                        <div class="flex items-center">
+                            <span class="real-time-indicator"></span>
+                            <span class="font-semibold text-gray-700">Learner Panel</span>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span class="text-sm text-gray-600">${currentUser?.name || 'User'}</span>
+                            <button id="logoutBtn" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-sm transition">Logout</button>
+                        </div>
+                    </div>
+                    <div class="p-6" id="user-content">
+                        ${activeTab === 'eschool' ? renderUserESchool() : renderUserDashboardOverview()}
+                    </div>
+                </div>
+            </div>
+        `;
+        attachUserEvents();
+    }
+
+    function renderUserDashboardOverview() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">Welcome, ${currentUser?.name}</h1>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow text-center">
+                    <i class="fas fa-school text-4xl text-indigo-600 mb-3"></i>
+                    <h3 class="font-bold">E-School</h3>
+                    <p class="text-sm text-gray-500">Bootcamps, Courses & Tuition</p>
+                    <button onclick="activeTab='eschool'; refreshCurrentView()" class="mt-3 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">Explore</button>
+                </div>
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow text-center">
+                    <i class="fas fa-comments text-4xl text-green-600 mb-3"></i>
+                    <h3 class="font-bold">Consultations</h3>
+                    <p class="text-sm text-gray-500">Expert 1-on-1 Support</p>
+                    <button onclick="switchUserTab('consultations')" class="mt-3 bg-green-600 text-white px-4 py-2 rounded-lg text-sm">Request</button>
+                </div>
+                <div class="dashboard-card bg-white rounded-xl p-6 shadow text-center">
+                    <i class="fas fa-user-tie text-4xl text-purple-600 mb-3"></i>
+                    <h3 class="font-bold">Become Expert</h3>
+                    <p class="text-sm text-gray-500">Share Your Knowledge</p>
+                    <button onclick="switchUserTab('apply')" class="mt-3 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm">Apply</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderUserESchool() {
+        return `
+            <h1 class="text-2xl font-bold mb-6">🎓 E-School Learning Hub</h1>
+            <div class="flex gap-2 mb-6 flex-wrap">
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'bootcamps' ? 'bg-indigo-600 text-white' : 'bg-white'}" 
+                        onclick="activeESchoolTab='bootcamps'; fetchESchoolData().then(() => document.getElementById('user-content').innerHTML = renderUserESchool())">
+                    🔥 Bootcamps
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'courses' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='courses'; fetchESchoolData().then(() => document.getElementById('user-content').innerHTML = renderUserESchool())">
+                    📚 Short Courses
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'tuition' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='tuition'; fetchESchoolData().then(() => document.getElementById('user-content').innerHTML = renderUserESchool())">
+                    👨‍🏫 Tuition
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'exams' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='exams'; fetchESchoolData().then(() => document.getElementById('user-content').innerHTML = renderUserESchool())">
+                    📝 Exam Prep
+                </button>
+                <button class="px-4 py-2 rounded-lg ${activeESchoolTab === 'career' ? 'bg-indigo-600 text-white' : 'bg-white'}"
+                        onclick="activeESchoolTab='career'; fetchESchoolData().then(() => document.getElementById('user-content').innerHTML = renderUserESchool())">
+                    💼 Career
+                </button>
+            </div>
+            <div id="eschool-content">
+                ${activeESchoolTab === 'bootcamps' ? renderBootcampsList() : ''}
+                ${activeESchoolTab === 'courses' ? renderShortCoursesList() : ''}
+                ${activeESchoolTab === 'tuition' ? renderTuitionList() : ''}
+                ${activeESchoolTab === 'exams' ? renderExamPrepList() : ''}
+                ${activeESchoolTab === 'career' ? renderCareerGuidanceList() : ''}
+            </div>
+        `;
+    }
+
+    // ======================== EVENT HANDLERS ========================
     function attachAdminEvents() {
         document.getElementById('logoutBtn').onclick = logout;
-        
-        document.getElementById('createExpertBtn').onclick = async () => {
-            const name = document.getElementById('expertName').value;
-            const email = document.getElementById('expertEmail').value;
-            const phone = document.getElementById('expertPhone').value;
-            const spec = document.getElementById('expertSpecialization').value;
-            if (name && email && spec) await createExpert(name, email, spec, phone);
-            else showToast('Please fill all required fields', 'error');
-        };
-        
-        document.getElementById('createTaskBtn').onclick = async () => {
-            const title = document.getElementById('taskTitle').value;
-            const desc = document.getElementById('taskDescription').value;
-            const spec = document.getElementById('taskSpecialization').value;
-            const priority = document.getElementById('taskPriority').value;
-            const due = document.getElementById('taskDueDate').value;
-            if (title && desc && spec) await createTask(title, desc, spec, due, priority);
-            else showToast('Please fill all required fields', 'error');
-        };
-        
-        document.querySelectorAll('.toggleAvailBtn').forEach(btn => {
-            btn.onclick = () => toggleExpertAvailability(btn.dataset.id);
-        });
-        
-        document.querySelectorAll('.assignBtn').forEach(btn => {
-            btn.onclick = () => {
-                const taskId = btn.dataset.taskId;
-                const select = document.querySelector(`.assignSelect[data-task-id="${taskId}"]`);
-                const expertId = select.value;
-                if (expertId) {
-                    const expert = expertsData.find(e => e.id === expertId);
-                    assignTask(taskId, expertId, expert.fullName);
-                } else showToast('Select an agent first', 'error');
+        document.querySelectorAll('.sidebar-item').forEach(item => {
+            item.onclick = function() {
+                const tab = this.getAttribute('onclick').match(/'([^']+)'/)[1];
+                switchAdminTab(tab);
             };
         });
-        
-        document.querySelectorAll('.deleteTaskBtn').forEach(btn => {
-            btn.onclick = () => deleteTask(btn.dataset.taskId);
-        });
-        
-        document.querySelectorAll('.chatWithExpertBtn').forEach(btn => {
-            btn.onclick = () => openChat(btn.dataset.id, btn.dataset.name);
-        });
-        
-        document.getElementById('notificationBtn')?.addEventListener('click', showNotifications);
-        
-        // Setup chat modal close
-        const closeBtn = document.getElementById('closeChatBtn');
-        if (closeBtn) {
-            closeBtn.onclick = () => {
-                document.getElementById('chatModal').classList.add('hidden');
-                document.getElementById('chatModal').classList.remove('flex');
-                activeChatUser = null;
-            };
-        }
-        
-        const sendBtn = document.getElementById('sendMessageBtn');
-        if (sendBtn) {
-            sendBtn.onclick = async () => {
-                const input = document.getElementById('chatInput');
-                if (input.value.trim() && activeChatUser) {
-                    await sendMessage(activeChatUser, input.value);
-                    input.value = '';
-                    renderChat();
-                }
-            };
-        }
     }
 
     function attachExpertEvents() {
         document.getElementById('logoutBtn').onclick = logout;
-        
-        document.querySelectorAll('.updateStatusBtn').forEach(btn => {
-            btn.onclick = async () => {
-                const taskId = btn.dataset.taskId;
-                const select = document.querySelector(`.statusSelect[data-task-id="${taskId}"]`);
-                const { value: comment } = await Swal.fire({
-                    title: 'Add a comment (optional)',
-                    input: 'textarea',
-                    inputPlaceholder: 'Add progress notes...',
-                    showCancelButton: true
-                });
-                await updateTaskStatus(taskId, select.value, comment);
-            };
-        });
-        
-        document.querySelectorAll('.claimBtn').forEach(btn => {
-            btn.onclick = () => claimTask(btn.dataset.taskId);
-        });
-        
-        document.getElementById('notificationBtn')?.addEventListener('click', showNotifications);
     }
 
-    function openChat(userId, userName) {
-        activeChatUser = userId;
-        document.getElementById('chatUserName').textContent = userName;
-        document.getElementById('chatModal').classList.remove('hidden');
-        document.getElementById('chatModal').classList.add('flex');
-        renderChat();
+    function attachUserEvents() {
+        document.getElementById('logoutBtn').onclick = logout;
     }
 
-    function renderChat() {
-        const chatMessages = document.getElementById('chatMessages');
-        const userMessages = messagesData.filter(m => 
-            (m.senderId === activeChatUser && m.receiverId === currentUser.id) ||
-            (m.senderId === currentUser.id && m.receiverId === activeChatUser)
-        );
-        
-        chatMessages.innerHTML = userMessages.map(msg => `
-            <div class="flex ${msg.senderId === currentUser.id ? 'justify-end' : 'justify-start'} chat-message">
-                <div class="max-w-xs ${msg.senderId === currentUser.id ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'} rounded-lg px-4 py-2">
-                    <p class="text-sm">${escapeHtml(msg.content)}</p>
-                    <span class="text-xs opacity-75">${new Date(msg.createdAt).toLocaleTimeString()}</span>
-                </div>
-            </div>
-        `).join('');
-        
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-    
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+    function switchUserTab(tab) {
+        activeTab = tab;
+        refreshCurrentView();
     }
 
-    async function showNotifications() {
-        const notifications = notificationsData.slice(0, 20);
-        const html = notifications.map(n => `
-            <div class="p-3 border-b hover:bg-gray-50 cursor-pointer notification-item" data-id="${n.id}">
-                <div class="flex items-start">
-                    <div class="flex-1">
-                        <p class="text-sm ${n.read ? 'text-gray-600' : 'font-semibold text-gray-900'}">${escapeHtml(n.message)}</p>
-                        <span class="text-xs text-gray-400">${new Date(n.createdAt).toLocaleString()}</span>
-                    </div>
-                    ${!n.read ? '<span class="w-2 h-2 bg-blue-500 rounded-full mt-2"></span>' : ''}
-                </div>
-            </div>
-        `).join('');
+    function showCreateExpertModal() {
+        const form = document.getElementById('createExpertForm');
+        if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function handleCreateExpert() {
+        const name = document.getElementById('newExpertName').value;
+        const email = document.getElementById('newExpertEmail').value;
+        const phone = document.getElementById('newExpertPhone').value;
+        const expertise = document.getElementById('newExpertSpecialization').value;
+        const rate = document.getElementById('newExpertRate').value;
+        const bio = document.getElementById('newExpertBio').value;
         
-        await Swal.fire({
-            title: 'Notifications',
-            html: `<div class="max-h-96 overflow-y-auto">${html || '<p class="text-center text-gray-400">No notifications</p>'}</div>`,
-            width: '500px',
-            showConfirmButton: true,
-            confirmButtonText: 'Close'
-        });
-        
-        // Mark all as read
-        for (const notification of notificationsData) {
-            if (!notification.read) {
-                await markNotificationRead(notification.id);
-            }
+        if (!name || !email || !expertise) {
+            showToast('Please fill required fields', 'error');
+            return;
         }
-        unreadNotifications = 0;
-        updateNotificationBadge();
+        
+        await createExpert(name, email, expertise, rate, bio, phone);
+        document.getElementById('createExpertForm').style.display = 'none';
+    }
+
+    async function handleWithdrawRequest() {
+        const amount = document.getElementById('withdrawAmount').value;
+        const method = document.getElementById('withdrawMethod').value;
+        if (!amount || amount <= 0) {
+            showToast('Please enter a valid amount', 'error');
+            return;
+        }
+        await requestWithdrawal(parseFloat(amount), method);
+    }
+
+    async function saveAvailability() {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const schedule = [];
+        days.forEach((day, index) => {
+            const start = document.getElementById(`start-${index}`).value;
+            const end = document.getElementById(`end-${index}`).value;
+            if (start && end) {
+                schedule.push({ day: index, start, end, recurrence: 'weekly' });
+            }
+        });
+        await setAvailability(schedule);
+    }
+
+    async function requestTimeOff() {
+        const start = document.getElementById('timeOffStart').value;
+        const end = document.getElementById('timeOffEnd').value;
+        const reason = document.getElementById('timeOffReason').value;
+        if (!start || !end) {
+            showToast('Please select dates', 'error');
+            return;
+        }
+        try {
+            await apiCall('/api/expert/time-off', 'POST', { start_date: start, end_date: end, reason });
+            showToast('Time off request submitted', 'success');
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }
+
+    let currentChatId = null;
+
+    function openConsultationChat(consultationId) {
+        currentChatId = consultationId;
+        document.getElementById('chat-modal').classList.remove('hidden');
+        fetchChatMessages(consultationId);
+        renderChatMessages(consultationId);
+    }
+
+    function renderChatMessages(consultationId) {
+        const messages = chatMessages[consultationId] || [];
+        const container = document.getElementById('chat-messages');
+        if (container) {
+            container.innerHTML = messages.map(m => `
+                <div class="chat-message ${m.sender_id === currentUser.id ? 'sent' : 'received'}">
+                    <p class="text-sm">${m.message}</p>
+                    <span class="text-xs opacity-70">${m.sender_name || ''}</span>
+                </div>
+            `).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    async function approveUser(userId) {
+        try {
+            await apiCall(`/api/admin/users/${userId}/approve`, 'PUT');
+            showToast('User approved', 'success');
+            await fetchAllDashboardData();
+            refreshCurrentView();
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
     }
 
     // ======================== BOOTSTRAP ========================
@@ -965,16 +1513,14 @@
             authToken = savedToken;
             currentUser = JSON.parse(savedUser);
             currentUserRole = currentUser.role;
-            socket = io(BACKEND_URL, { auth: { token: authToken } });
-            setupSocketListeners();
-            fetchInitialData().then(() => {
-                fetchAnalytics();
+            initializeSocket();
+            fetchAllDashboardData().then(() => {
                 appPhase = 'dashboard';
                 renderDashboard();
             }).catch(() => { 
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                renderLogin();
+                renderLogin(); 
             });
         } else {
             renderLogin();
