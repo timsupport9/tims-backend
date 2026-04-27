@@ -1,43 +1,56 @@
 # Dependencies
 node_modules/
-package-lock.json
+.pnp
+.pnp.js
 
-# Environment
+# Environment variables
 .env
 .env.local
 .env.production
+.env.development
 
 # Logs
 logs/
 *.log
 npm-debug.log*
 
-# Database
-*.db
-*.sqlite
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
 
-# Uploads
-uploads/
-temp/
+# Coverage directory
+coverage/
+.nyc_output/
+
+# Build output
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Uploads
+uploads/
+!uploads/.gitkeep
 
-# Build files
-dist/
-build/
+# Temp files
+tmp/
+temp/
 
-# Coverage
-coverage/
+# Docker
+docker-compose.override.yml
 
-# Secrets
+# Certificates
 *.pem
 *.key
-*.cert
+*.crt
