@@ -1,12 +1,23 @@
 services:
   - type: web
     name: tims-backend
-    runtime: node
-    plan: free
+    env: node
     buildCommand: npm install
     startCommand: node server.js
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
       - key: JWT_SECRET
-        generateValue: true  # Render auto-generates a secure secret
-      - key: DB_PATH
-        value: /tmp/tims_support.db
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://timssupportcentre.netlify.app
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 100
+    healthCheckPath: /api/health
+    autoDeploy: true
