@@ -1,81 +1,30 @@
-
 {
-  "name": "experthub-platform",
+  "name": "tims-backend-production",
   "version": "2.0.0",
-  "description": "Advanced ExpertHub Platform - E-School, Consultation, Expert Management & Financial System with Real-Time Features",
+  "description": "Production-ready TIMS Support Portal Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "seed": "node scripts/seedDatabase.js",
-    "migrate": "node scripts/runMigrations.js",
-    "test": "jest",
-    "build": "npm install",
-    "deploy": "npm install && npm start",
-    "lint": "eslint .",
-    "format": "prettier --write ."
+    "dev": "nodemon server.js"
   },
-  "keywords": [
-    "expert-platform",
-    "consultation",
-    "e-school",
-    "e-learning",
-    "bootcamp",
-    "online-tuition",
-    "exam-preparation",
-    "career-guidance",
-    "expert-management",
-    "real-time-chat",
-    "payment-system",
-    "commission-management",
-    "socketio",
-    "express",
-    "postgresql"
-  ],
-  "author": "ExpertHub Team",
-  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
-    "pg": "^8.11.3",
-    "socket.io": "^4.7.4",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.7.2",
+    "mongoose": "^8.0.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "uuid": "^9.0.1",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
+    "express-mongo-sanitize": "^2.2.0",
     "compression": "^1.7.4",
-    "express-validator": "^7.0.1",
-    "multer": "^1.4.5-lts.1",
-    "uuid": "^9.0.1",
-    "moment": "^2.29.4",
-    "nodemailer": "^6.9.7",
-    "winston": "^3.11.0",
-    "express-fileupload": "^1.4.3",
-    "stripe": "^14.17.0",
-    "redis": "^4.6.12",
-    "axios": "^1.6.2",
-    "cron": "^3.1.6",
-    "morgan": "^1.10.0"
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "jest": "^29.7.0",
-    "supertest": "^6.3.3",
-    "@faker-js/faker": "^8.3.1",
-    "eslint": "^8.55.0",
-    "prettier": "^3.1.1"
+    "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-org/experthub-platform.git"
-  },
-  "bugs": {
-    "url": "https://github.com/your-org/experthub-platform/issues"
-  },
-  "homepage": "https://experthub.com"
+    "node": "18.x"
+  }
 }
