@@ -1,12 +1,13 @@
 {
   "name": "tims-backend-production",
   "version": "2.0.0",
-  "description": "Production-ready TIMS Support Portal Backend",
+  "description": "Production-ready TIMS Support Portal Backend with enhanced features including real-time notifications, activity logging, caching, and advanced reporting",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "build": "npm install",
-    "postinstall": "echo 'Build completed'"
+    "dev": "nodemon server.js",
+    "postinstall": "echo '✅ TIMS Backend build completed successfully'"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -20,13 +21,36 @@
     "helmet": "^7.1.0",
     "express-mongo-sanitize": "^2.2.0",
     "compression": "^1.7.4",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "morgan": "^1.10.0",
+    "express-validator": "^7.0.1",
+    "node-cache": "^5.1.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": "18.x",
-    "npm": "9.x"
-  }
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "keywords": [
+    "tims",
+    "task-management",
+    "expert-system",
+    "real-time",
+    "notifications",
+    "express",
+    "socketio",
+    "jwt"
+  ],
+  "author": "TIMS Support Portal Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/tims-backend"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/tims-backend/issues"
+  },
+  "homepage": "https://github.com/your-org/tims-backend#readme"
 }
