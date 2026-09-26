@@ -1,5 +1,5 @@
 /* ============================================================
-   ExpertHub 2.0 — SPA frontend
+   ExpertHub 2.0 — SPA frontend  (extended build)
    ============================================================ */
 
 /* ---------- CONFIG ---------- */
@@ -14,6 +14,11 @@ const CONFIG = {
   DEFAULT_AVATAR: 'https://ui-avatars.com/api/?background=6366f1&color=fff&name=',
   PAYMENT_PROVIDERS: ['stripe','paystack','flutterwave','paypal','demo'],
   POLL_INTERVAL: 60000,
+  USER_INTENTS: ['learn','consult','both'],
+  INSTITUTION_TYPES: ['corporate','university','college','ngo','government','bootcamp'],
+  INSTITUTION_ROLES: ['operations_manager','coordinator','instructor','viewer'],
+  ASSESSMENT_TYPES: ['quiz','exam','project','practical','peer'],
+  PROGRAMME_STATUSES: ['draft','active','paused','completed','archived'],
 };
 
 /* ---------- STATE ---------- */
@@ -25,6 +30,7 @@ let currentUserRole = null;
 let appPhase = 'landing';
 let activeTab = 'dashboard';
 let activeESchoolTab = 'courses';
+let activeInstTab = 'overview';
 let currentChatId = null;
 let chatTypingTimer = null;
 let pollTimer = null;
@@ -36,6 +42,10 @@ const S = {
   tickets: [], coupons: [], certificates: [], wallet: { balance:0, ledger:[] }, earnings: null,
   analytics: null, eventRegistrations: [], availability: [], timeOff: [], chatMessages: {},
   page: { users:1, experts:1, courses:1, consultations:1, transactions:1 },
+  /* --- corporate / institutional --- */
+  institutions: [], programmes: [], cohorts: [], assessments: [], projects: [],
+  trainees: [], instructors: [], myInstitution: null, institutionStats: null,
+  institutionTeam: [], userIntent: 'both',
 };
 
 /* ---------- UTILS ---------- */
@@ -53,6 +63,7 @@ const avatar = u => u?.avatar || (CONFIG.DEFAULT_AVATAR + encodeURIComponent(u?.
 const statusClass = s => `status status-${String(s||'unknown').toLowerCase().replace(/\s+/g,'_')}`;
 const uid = () => Math.random().toString(36).slice(2,10);
 const debounce = (fn,ms=350) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+const pct = (n) => `${Math.max(0, Math.min(100, Number(n)||0))}%`;
 
 function downloadCsv(filename, rows) {
   if (!rows.length) return showToast('Nothing to export','warning');
@@ -130,7 +141,6 @@ async function apiCall(endpoint, method='GET', body=null, isFormData=false, _ret
   const res = await fetch(`${CONFIG.API_BASE}${endpoint}`, options);
 
   if (res.status === 401 && !_retry && refreshToken) {
-    // try refresh
     try {
       const r = await fetch(`${CONFIG.API_BASE}/api/auth/refresh`, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -179,13 +189,16 @@ function initializeSocket() {
     if (currentChatId !== consultation_id) return;
     const el = $('#chat-typing');
     if (!el) return;
-    if (is_typing && user_id !== currentUser?.id) {
-      el.textContent = 'typing…';
-    } else {
-      el.textContent = '';
-    }
+    el.textContent = (is_typing && user_id !== currentUser?.id) ? 'typing…' : '';
   });
   socket.on('presence', () => {});
+  socket.on('institution:approval', d => {
+    showToast(`New approval request: ${d.title}`,'info');
+    loadAllData().then(rerenderRoleContent);
+  });
+  socket.on('institution:assessment_due', d => {
+    showToast(`Assessment due: ${d.title}`,'warning', 6000);
+  });
 }
 
 /* ---------- AUTH ---------- */
@@ -195,6 +208,7 @@ async function login(email, password) {
   refreshToken = data.refresh;
   currentUser = data.user;
   currentUserRole = data.user.role;
+  S.userIntent = data.user.intent || 'both';
   localStorage.setItem('token', authToken);
   localStorage.setItem('refresh', refreshToken);
   localStorage.setItem('user', JSON.stringify(currentUser));
@@ -203,7 +217,7 @@ async function login(email, password) {
   await loadAllData();
   appPhase = 'dashboard';
   activeTab = 'dashboard';
-  location.hash = '#/dashboard';
+  location.hash = currentUserRole === 'institution' ? '#/institution/dashboard' : '#/dashboard';
   renderDashboard();
   showToast(`Welcome back, ${currentUser.name}!`,'success');
   startPolling();
@@ -217,6 +231,7 @@ async function logout() {
   try { await apiCall('/api/auth/logout','POST',{ refresh: refreshToken }); } catch {}
   if (socket) socket.disconnect();
   socket = null; authToken = null; refreshToken = null; currentUser = null; currentUserRole = null;
+  S.userIntent = 'both';
   localStorage.removeItem('token'); localStorage.removeItem('refresh'); localStorage.removeItem('user');
   stopPolling();
   appPhase = 'landing'; location.hash = '#/';
@@ -242,6 +257,7 @@ async function loadAllData() {
       tasks.push(apiCall('/api/admin/tickets').then(d => { S.tickets = d.tickets||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/admin/reviews').then(d => { S.reviews = d.reviews||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/admin/audit-logs').then(d => { S.auditLogs = d.logs||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/admin/institutions').then(d => { S.institutions = d.institutions||[]; }).catch(()=>{}));
     } else if (currentUserRole === 'expert') {
       tasks.push(apiCall('/api/expert/earnings').then(d => { S.earnings = d.summary; S.wallet.ledger = d.ledger||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/expert/reviews').then(d => { S.reviews = d.reviews||[]; }).catch(()=>{}));
@@ -249,6 +265,18 @@ async function loadAllData() {
       tasks.push(apiCall('/api/expert/availability').then(d => { S.availability = d.availability||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/expert/time-off').then(d => { S.timeOff = d.timeOff||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/expert/dashboard-stats').then(d => { S.expertStats = d.stats; }).catch(()=>{}));
+    } else if (currentUserRole === 'institution') {
+      tasks.push(apiCall('/api/institution/me').then(d => { S.myInstitution = d.institution; }).catch(()=>{}));
+      tasks.push(apiCall('/api/institution/programmes').then(d => { S.programmes = d.programmes||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/institution/cohorts').then(d => { S.cohorts = d.cohorts||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/institution/assessments').then(d => { S.assessments = d.assessments||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/institution/projects').then(d => { S.projects = d.projects||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/institution/trainees').then(d => { S.trainees = d.trainees||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/institution/instructors').then(d => { S.instructors = d.instructors||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/institution/stats').then(d => { S.institutionStats = d.stats; }).catch(()=>{}));
+      if (currentUser?.institution_role === 'operations_manager') {
+        tasks.push(apiCall('/api/institution/team').then(d => { S.institutionTeam = d.team||[]; }).catch(()=>{}));
+      }
     } else {
       tasks.push(apiCall('/api/user/experts').then(d => { S.experts = d.experts||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/user/enrollments').then(d => { S.enrollments = d.enrollments||[]; }).catch(()=>{}));
@@ -257,6 +285,7 @@ async function loadAllData() {
       tasks.push(apiCall('/api/user/claims').then(d => { S.claims = d.claims||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/user/tickets').then(d => { S.tickets = d.tickets||[]; }).catch(()=>{}));
       tasks.push(apiCall('/api/user/certificates').then(d => { S.certificates = d.certificates||[]; }).catch(()=>{}));
+      tasks.push(apiCall('/api/user/preferences').then(d => { S.userIntent = d.intent || S.userIntent; }).catch(()=>{}));
     }
     tasks.push(apiCall('/api/eschool/courses').then(d => { S.courses = d.courses||[]; }).catch(()=>{}));
     await Promise.all(tasks);
@@ -269,6 +298,10 @@ async function reloadNotifications() { try { const d = await apiCall('/api/commo
 async function reloadWallet() { try { const d = await apiCall('/api/user/wallet'); S.wallet.balance = d.balance; S.wallet.ledger = d.ledger||[]; } catch {} }
 async function reloadEarnings() { try { const d = await apiCall('/api/expert/earnings'); S.earnings = d.summary; S.wallet.ledger = d.ledger||[]; } catch {} }
 async function reloadCourses() { try { const d = await apiCall('/api/eschool/courses'); S.courses = d.courses||[]; } catch {} }
+async function reloadInstitutionProgrammes() { try { const d = await apiCall('/api/institution/programmes'); S.programmes = d.programmes||[]; } catch {} }
+async function reloadInstitutionCohorts()    { try { const d = await apiCall('/api/institution/cohorts');    S.cohorts    = d.cohorts||[];    } catch {} }
+async function reloadInstitutionTrainees()   { try { const d = await apiCall('/api/institution/trainees');   S.trainees   = d.trainees||[];   } catch {} }
+async function reloadInstitutions()          { try { const d = await apiCall('/api/admin/institutions');     S.institutions = d.institutions||[]; } catch {} }
 
 function startPolling() {
   stopPolling();
@@ -303,11 +336,11 @@ function renderLanding() {
 
       <main class="hero">
         <div>
-          <span class="hero-badge"><span class="live-indicator"></span> Trusted by learners & experts</span>
+          <span class="hero-badge"><span class="live-indicator"></span> Trusted by learners, experts & institutions</span>
           <h1 class="hero-title">Learn, consult and grow with <span class="hero-title-accent">real experts</span></h1>
           <p class="hero-subtitle">
-            ExpertHub combines an E-School, bootcamps, short courses, tuition, exam prep and
-            1-on-1 consultations — all in one modern platform.
+            ExpertHub combines an E-School, bootcamps, short courses, tuition, exam prep, 1-on-1
+            consultations and full corporate training — all in one modern platform.
           </p>
           <div class="hero-cta">
             <button class="btn btn-primary" id="heroStart"><i class="fas fa-rocket"></i> Get started free</button>
@@ -326,19 +359,21 @@ function renderLanding() {
             <div class="hero-card-row"><div class="hero-card-icon yellow"><i class="fas fa-user-tie"></i></div><div><div class="hero-card-title">Verified experts</div><div class="hero-card-desc">Approved by our admin team</div></div></div>
           </div>
           <div class="hero-card">
-            <div class="hero-card-row"><div class="hero-card-icon"><i class="fas fa-shield-halved"></i></div><div><div class="hero-card-title">Secure accounts</div><div class="hero-card-desc">Role-based access & admin approval</div></div></div>
+            <div class="hero-card-row"><div class="hero-card-icon"><i class="fas fa-building-columns"></i></div><div><div class="hero-card-title">Corporate training</div><div class="hero-card-desc">Programmes, cohorts, assessments</div></div></div>
           </div>
         </div>
       </main>
 
       <section class="section alt">
-        <h2 class="section-title">Everything you need to learn & earn</h2>
-        <p class="section-sub">A complete platform for learners, experts and administrators.</p>
+        <h2 class="section-title">Everything you need to learn, earn & train</h2>
+        <p class="section-sub">A complete platform for learners, experts, institutions and administrators.</p>
         <div class="features-grid">
           <div class="feature-card"><div class="feature-icon"><i class="fas fa-graduation-cap"></i></div><h3>Learn anything</h3><p>Bootcamps, short courses, tuition and exam prep — curated by experts.</p></div>
           <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#10b981,#059669)"><i class="fas fa-user-tie"></i></div><h3>Teach & earn</h3><p>Experts get verified, manage consultations and withdraw earnings.</p></div>
           <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)"><i class="fas fa-comments"></i></div><h3>Real-time chat</h3><p>Live messaging, attachments, typing indicator and video calls.</p></div>
-          <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)"><i class="fas fa-shield-halved"></i></div><h3>Admin controlled</h3><p>Approvals, moderation, payouts and full audit logging built in.</p></div>
+          <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)"><i class="fas fa-building-columns"></i></div><h3>Corporate training</h3><p>Programmes, cohorts, assessments and trainee management.</p></div>
+          <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#ef4444,#b91c1c)"><i class="fas fa-shield-halved"></i></div><h3>Admin controlled</h3><p>Approvals, moderation, payouts and full audit logging built in.</p></div>
+          <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#0ea5e9,#0369a1)"><i class="fas fa-chart-line"></i></div><h3>Deep analytics</h3><p>Track progress, scores and completion across all cohorts.</p></div>
         </div>
       </section>
 
@@ -372,21 +407,21 @@ function renderLanding() {
           </div>
           <div class="pricing-card">
             <span class="pricing-badge">Enterprise</span>
-            <h3 style="margin:0">Custom</h3>
+            <h3 style="margin:0">Institution</h3>
             <div class="pricing-price">Let's talk</div>
             <ul class="pricing-features">
-              <li><i class="fas fa-check"></i> Team accounts</li>
-              <li><i class="fas fa-check"></i> Bulk enrollments</li>
-              <li><i class="fas fa-check"></i> Custom integrations</li>
+              <li><i class="fas fa-check"></i> Team accounts + ops manager</li>
+              <li><i class="fas fa-check"></i> Programmes, cohorts & trainees</li>
+              <li><i class="fas fa-check"></i> Assessments & capstone projects</li>
               <li><i class="fas fa-check"></i> Dedicated manager</li>
             </ul>
-            <button class="btn btn-secondary btn-block" onclick="showToast('Contact sales@experthub.com','info')">Contact us</button>
+            <button class="btn btn-secondary btn-block" onclick="location.hash='#/register'">Register institution</button>
           </div>
         </div>
       </section>
 
       <section class="section alt">
-        <h2 class="section-title">Loved by learners & experts</h2>
+        <h2 class="section-title">Loved by learners, experts & institutions</h2>
         <p class="section-sub">Real stories from our community.</p>
         <div class="testimonials-grid">
           <div class="testimonial">
@@ -404,10 +439,10 @@ function renderLanding() {
             </div>
           </div>
           <div class="testimonial">
-            <p class="testimonial-text">"The admin panel is a dream. Approvals, payouts, moderation — everything in one place."</p>
+            <p class="testimonial-text">"We run 12 cohorts a year through ExpertHub. Trainee tracking and assessments just work."</p>
             <div class="testimonial-author">
-              <img class="testimonial-avatar" src="https://ui-avatars.com/api/?background=8b5cf6&color=fff&name=Admin" alt="" />
-              <div><div class="testimonial-name">Platform Admin</div><div class="testimonial-role">ExpertHub</div></div>
+              <img class="testimonial-avatar" src="https://ui-avatars.com/api/?background=8b5cf6&color=fff&name=Acme" alt="" />
+              <div><div class="testimonial-name">Acme Academy</div><div class="testimonial-role">Corporate Training</div></div>
             </div>
           </div>
         </div>
@@ -418,17 +453,17 @@ function renderLanding() {
         <p class="section-sub">Everything you need to know.</p>
         <div class="faq-list">
           ${[
-            ['How does registration work?','Learners are approved instantly. Experts require admin approval (usually within 48 hours).'],
+            ['How does registration work?','Learners are approved instantly. Experts and institutions require admin approval.'],
             ['What is the platform commission?','We charge a flat 20% commission on all course sales and consultations.'],
             ['How long do payouts take?','Withdrawals have a 7-day holding period, then process within 3-5 business days.'],
             ['Can I switch from learner to expert?','Yes! Apply to become an expert from your dashboard. Our team reviews each application.'],
-            ['Is my payment information secure?','All payments are processed through PCI-compliant providers (Stripe, Paystack, Flutterwave, PayPal).'],
+            ['Do you support corporate training?','Yes — institutions get programmes, cohorts, assessments, projects and trainee tracking.'],
           ].map(([q,a]) => `<div class="faq-item"><div class="faq-q">${q}<i class="fas fa-chevron-down"></i></div><div class="faq-a">${a}</div></div>`).join('')}
         </div>
       </section>
 
       <footer class="landing-footer">
-        © ${new Date().getFullYear()} ExpertHub — E-School & Consultation Platform.
+        © ${new Date().getFullYear()} ExpertHub — E-School, Consultation & Corporate Training Platform.
       </footer>
     </div>`;
 
@@ -474,6 +509,7 @@ function renderLogin() {
           <span>admin@platform.com / admin123</span>
           <span>expert@platform.com / expert123</span>
           <span>learner@platform.com / learner123</span>
+          <span>ops@acme.com / ops123 (Institution Ops Manager)</span>
         </div>
       </section>
     </main>`;
@@ -502,12 +538,13 @@ function renderRegister() {
         <header class="auth-header">
           <div class="auth-logo"><i class="fas fa-user-plus"></i></div>
           <h1 class="auth-title">Create your <span class="auth-title-accent">account</span></h1>
-          <p class="auth-subtitle">Learners are auto-approved. Experts need admin approval.</p>
+          <p class="auth-subtitle">Learners are auto-approved. Experts & institutions need admin approval.</p>
         </header>
         <form id="registerForm" class="auth-form">
           <div class="role-picker">
             <button type="button" data-role="learner" class="role-pick role-pick-active">🎓 Learner</button>
             <button type="button" data-role="expert"  class="role-pick">🧑‍🏫 Expert</button>
+            <button type="button" data-role="institution" class="role-pick">🏢 Institution</button>
           </div>
           <label class="form-group"><span class="form-label">Full name</span><input id="regName" required class="form-input" placeholder="Jane Doe" /></label>
           <label class="form-group"><span class="form-label">Email</span><input id="regEmail" type="email" required class="form-input" placeholder="you@example.com" /></label>
@@ -523,6 +560,20 @@ function renderRegister() {
             <label class="form-group"><span class="form-label">Hourly rate ($)</span><input id="regRate" type="number" class="form-input" placeholder="50" /></label>
             <label class="form-group"><span class="form-label">Short bio</span><textarea id="regBio" class="form-textarea" rows="3"></textarea></label>
           </div>
+          <div id="institutionExtra" class="hidden" style="display:grid;gap:12px">
+            <label class="form-group"><span class="form-label">Institution name</span><input id="regInstName" class="form-input" placeholder="Acme Corp Academy" /></label>
+            <label class="form-group"><span class="form-label">Institution type</span>
+              <select id="regInstType" class="form-select">
+                <option value="corporate">Corporate</option>
+                <option value="university">University</option>
+                <option value="college">College</option>
+                <option value="ngo">NGO</option>
+                <option value="government">Government</option>
+                <option value="bootcamp">Bootcamp</option>
+              </select></label>
+            <label class="form-group"><span class="form-label">Industry / Sector</span><input id="regInstIndustry" class="form-input" placeholder="e.g. Banking, Healthcare" /></label>
+            <label class="form-group"><span class="form-label">Operations manager email</span><input id="regInstOpsEmail" class="form-input" placeholder="ops@acme.com" /></label>
+          </div>
           <label class="checkbox-row"><input type="checkbox" id="regTerms" /> I agree to the Terms & Privacy Policy</label>
           <button type="submit" class="btn btn-primary btn-block">Create account</button>
         </form>
@@ -534,7 +585,9 @@ function renderRegister() {
   $$('.role-pick').forEach(b => b.onclick = () => {
     $$('.role-pick').forEach(x => x.classList.remove('role-pick-active'));
     b.classList.add('role-pick-active');
-    $('#expertExtra').classList.toggle('hidden', b.dataset.role !== 'expert');
+    const r = b.dataset.role;
+    $('#expertExtra').classList.toggle('hidden', r !== 'expert');
+    $('#institutionExtra').classList.toggle('hidden', r !== 'institution');
   });
 
   $('#regPassword').addEventListener('input', e => {
@@ -543,8 +596,8 @@ function renderRegister() {
     if (/[A-Z]/.test(v)) score++;
     if (/[0-9]/.test(v)) score++;
     if (/[^A-Za-z0-9]/.test(v)) score++;
-    const pct = score * 25;
-    $('#pwdBar').style.width = pct + '%';
+    const p = score * 25;
+    $('#pwdBar').style.width = p + '%';
     $('#pwdHint').textContent = ['Too short','Weak','Fair','Good','Strong'][score] || '';
   });
 
@@ -563,12 +616,18 @@ function renderRegister() {
       specialization: $('#regSpec').value,
       hourly_rate: Number($('#regRate').value || 0),
       bio: $('#regBio').value,
+    } : role === 'institution' ? {
+      institution_name: $('#regInstName').value,
+      institution_type: $('#regInstType').value,
+      industry: $('#regInstIndustry').value,
+      ops_manager_email: $('#regInstOpsEmail').value,
     } : {};
 
     try {
       showLoading(true);
       await register({ name, email, password: pwd, phone, role, extra });
       if (role === 'learner') location.hash = '#/login';
+      else if (role === 'institution') showToast('Institution registered. Awaiting admin verification.','info',6000);
       else showToast('Awaiting admin approval before you can log in.','info',6000);
     } catch (ex) { showToast(ex.message,'error'); }
     finally { showLoading(false); }
@@ -635,8 +694,9 @@ function renderReset(token) {
    ============================================================ */
 function renderDashboard() {
   if (!currentUser) return renderLogin();
-  if (currentUserRole === 'admin')  return renderAdminDashboard();
-  if (currentUserRole === 'expert') return renderExpertDashboard();
+  if (currentUserRole === 'admin')       return renderAdminDashboard();
+  if (currentUserRole === 'expert')      return renderExpertDashboard();
+  if (currentUserRole === 'institution') return renderInstitutionDashboard();
   return renderUserDashboard();
 }
 
@@ -773,6 +833,7 @@ function renderAdminDashboard() {
     ${sidebarItem('experts','Expert Management','fa-user-tie')}
     ${sidebarItem('consultations','Consultations','fa-comments', activeCons)}
     ${sidebarItem('events','Events','fa-calendar-alt')}
+    ${sidebarItem('institutions','Institutions','fa-building-columns')}
     ${sidebarItem('transactions','Transactions','fa-receipt')}
     ${sidebarItem('payouts','Payouts','fa-money-check-dollar')}
     ${sidebarItem('coupons','Coupons','fa-tag')}
@@ -799,6 +860,7 @@ function renderAdminContent() {
     case 'experts':       return adminExperts();
     case 'consultations': return adminConsultations();
     case 'events':        return adminEvents();
+    case 'institutions':  return adminInstitutions();
     case 'transactions':  return adminTransactions();
     case 'payouts':       return adminPayouts();
     case 'coupons':       return adminCoupons();
@@ -831,7 +893,9 @@ function adminOverview() {
       <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Total Users</p><p class="stat-value">${t.total_users ?? S.users.length}</p><p class="stat-sub">${pending} pending approval</p></div><div class="stat-icon stat-icon-blue"><i class="fas fa-users"></i></div></div>
       <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Active Experts</p><p class="stat-value">${activeExperts}</p></div><div class="stat-icon stat-icon-green"><i class="fas fa-user-tie"></i></div></div>
       <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Active Consultations</p><p class="stat-value">${activeCons}</p></div><div class="stat-icon stat-icon-purple"><i class="fas fa-comments"></i></div></div>
-      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Revenue</p><p class="stat-value">${fmtCur(t.total_revenue || 0)}</p></div><div class="stat-icon stat-icon-yellow"><i class="fas fa-dollar-sign"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Institutions</p><p class="stat-value">${S.institutions.length}</p></div><div class="stat-icon stat-icon-yellow"><i class="fas fa-building-columns"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Revenue</p><p class="stat-value">${fmtCur(t.total_revenue || 0)}</p></div><div class="stat-icon stat-icon-green"><i class="fas fa-dollar-sign"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Programmes</p><p class="stat-value">${S.programmes.length}</p></div><div class="stat-icon stat-icon-blue"><i class="fas fa-diagram-project"></i></div></div>
     </section>
     <section class="dashboard-columns">
       <div class="panel panel-quick-actions">
@@ -839,7 +903,8 @@ function adminOverview() {
         <button class="btn btn-primary btn-block" data-action="switch-tab" data-tab="experts"><i class="fas fa-user-plus"></i> Create Expert</button>
         <button class="btn btn-info btn-block" data-action="switch-tab" data-tab="events"><i class="fas fa-calendar-plus"></i> Manage Events</button>
         <button class="btn btn-success btn-block" data-action="switch-tab" data-tab="users"><i class="fas fa-user-check"></i> Approve Users</button>
-        <button class="btn btn-warning btn-block" data-action="switch-tab" data-tab="coupons"><i class="fas fa-tag"></i> Manage Coupons</button>
+        <button class="btn btn-warning btn-block" data-action="switch-tab" data-tab="institutions"><i class="fas fa-building"></i> Review Institutions</button>
+        <button class="btn btn-secondary btn-block" data-action="switch-tab" data-tab="coupons"><i class="fas fa-tag"></i> Manage Coupons</button>
       </div>
       <div class="panel">
         <h3 class="panel-title">📋 Recent Notifications</h3>
@@ -881,6 +946,7 @@ function adminUsers() {
           <option value="">All roles</option>
           <option value="admin" ${roleFilter==='admin'?'selected':''}>Admin</option>
           <option value="expert" ${roleFilter==='expert'?'selected':''}>Expert</option>
+          <option value="institution" ${roleFilter==='institution'?'selected':''}>Institution</option>
           <option value="learner" ${roleFilter==='learner'?'selected':''}>Learner</option>
         </select>
         <button class="btn btn-secondary" data-action="export-users"><i class="fas fa-download"></i> Export</button>
@@ -1016,6 +1082,52 @@ function adminEvents() {
               <button class="btn btn-danger btn-sm" data-action="delete-event" data-id="${ev.id}">Delete</button>
             </div>
           </article>`).join('') || '<p class="empty-row">No events</p>'}
+      </div>
+    </section>`;
+}
+function adminInstitutions() {
+  const list = S.institutions.slice();
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Institutions</span></div>
+    <section class="page-header">
+      <h1 class="page-title">🏢 Institutional / Corporate Accounts</h1>
+      <div class="page-actions">
+        <button class="btn btn-primary" data-action="create-institution"><i class="fas fa-plus"></i> New Institution</button>
+      </div>
+    </section>
+    <section class="stat-grid">
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Institutions</p><p class="stat-value">${list.length}</p></div><div class="stat-icon stat-icon-blue"><i class="fas fa-building"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Active Programmes</p><p class="stat-value">${S.programmes.filter(p=>p.status==='active').length}</p></div><div class="stat-icon stat-icon-green"><i class="fas fa-diagram-project"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Total Trainees</p><p class="stat-value">${S.trainees.length}</p></div><div class="stat-icon stat-icon-purple"><i class="fas fa-user-graduate"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Pending Verification</p><p class="stat-value">${list.filter(i=>i.status==='pending').length}</p></div><div class="stat-icon stat-icon-yellow"><i class="fas fa-clock"></i></div></div>
+    </section>
+    <section class="panel">
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Institution</th><th>Type</th><th>Industry</th><th>Ops Manager</th><th>Programmes</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${list.map(i => `
+              <tr>
+                <td><div class="user-cell">
+                  <div class="user-avatar" style="background:var(--brand);display:flex;align-items:center;justify-content:center;color:#fff"><i class="fas fa-building"></i></div>
+                  <div><div class="user-name">${esc(i.name||'')}</div><div class="user-email">${esc(i.contact_email||'')}</div></div>
+                </div></td>
+                <td><span class="chip chip-neutral">${esc(i.type||'corporate')}</span></td>
+                <td>${esc(i.industry||'—')}</td>
+                <td>${esc(i.ops_manager_name||'—')}<br><small class="user-email">${esc(i.ops_manager_email||'')}</small></td>
+                <td>${i.programme_count||0}</td>
+                <td><span class="${statusClass(i.status||'pending')}">${esc(i.status||'')}</span></td>
+                <td class="actions-cell">
+                  ${i.status==='pending' ? `<button class="btn btn-success btn-xs" data-action="approve-institution" data-id="${i.id}">Verify</button>` : ''}
+                  ${i.status==='pending' ? `<button class="btn btn-danger btn-xs" data-action="reject-institution" data-id="${i.id}">Reject</button>` : ''}
+                  ${i.status==='active' ? `<button class="btn btn-warning btn-xs" data-action="suspend-institution" data-id="${i.id}">Suspend</button>` : ''}
+                  <button class="btn btn-info btn-xs" data-action="assign-ops-manager" data-id="${i.id}">Assign Ops</button>
+                  <button class="btn btn-secondary btn-xs" data-action="edit-institution" data-id="${i.id}">Edit</button>
+                  <button class="btn btn-danger btn-xs" data-action="delete-institution" data-id="${i.id}">Delete</button>
+                </td>
+              </tr>`).join('') || '<tr><td colspan="7" class="empty-row">No institutions registered</td></tr>'}
+          </tbody>
+        </table>
       </div>
     </section>`;
 }
@@ -1185,6 +1297,7 @@ function adminBroadcasts() {
             <option value="all">All users</option>
             <option value="experts">Experts only</option>
             <option value="learners">Learners only</option>
+            <option value="institutions">Institutions only</option>
             <option value="admins">Admins only</option>
           </select></label>
         <label class="form-group form-group-full"><span class="form-label">Message</span>
@@ -1589,17 +1702,21 @@ function expertProfile() {
 }
 
 /* ============================================================
-   LEARNER DASHBOARD
+   USER DASHBOARD (intent-aware — learner / consultant / both)
    ============================================================ */
 function renderUserDashboard() {
   const mine = S.consultations.filter(c => c.user_id === currentUser?.id);
+  const intent = S.userIntent || currentUser?.intent || 'both';
+  const showLearn   = intent === 'learn'   || intent === 'both';
+  const showConsult = intent === 'consult' || intent === 'both';
+
   const nav = `
     ${sidebarItem('dashboard','Dashboard','fa-chart-line')}
-    ${sidebarItem('eschool','E-School','fa-school')}
-    ${sidebarItem('my-learning','My Learning','fa-graduation-cap')}
-    ${sidebarItem('certificates','Certificates','fa-certificate')}
+    ${showLearn ? sidebarItem('eschool','E-School','fa-school') : ''}
+    ${showLearn ? sidebarItem('my-learning','My Learning','fa-graduation-cap') : ''}
+    ${showLearn ? sidebarItem('certificates','Certificates','fa-certificate') : ''}
     ${sidebarItem('events','Events','fa-calendar-alt')}
-    ${sidebarItem('experts','Find Experts','fa-search')}
+    ${showConsult ? sidebarItem('experts','Find Experts','fa-search') : ''}
     ${sidebarItem('consultations','My Consultations','fa-comments', mine.length)}
     ${sidebarItem('wallet','Wallet','fa-wallet')}
     ${sidebarItem('transactions','Transactions','fa-receipt')}
@@ -1608,9 +1725,9 @@ function renderUserDashboard() {
     ${sidebarItem('profile','Profile','fa-user')}
   `;
   shell({
-    roleClass:'role-learner', brandIcon:'fa-user-graduate',
-    brandTitle:'Learner Panel', brandSubtitle:'ExpertHub',
-    nav, roleLabel:'Learner Panel', content: renderUserContent(),
+    roleClass:'role-user', brandIcon:'fa-user-circle',
+    brandTitle:'My Panel', brandSubtitle:'ExpertHub',
+    nav, roleLabel:'User Panel', content: renderUserContent(),
   });
   attachRoleEvents();
 }
@@ -1632,15 +1749,47 @@ function renderUserContent() {
   }
 }
 function userOverview() {
+  const intent = S.userIntent || currentUser?.intent || 'both';
+  const mine = S.consultations.filter(c => c.user_id === currentUser?.id);
+  const activeCons = mine.filter(c => ['pending','assigned','in_progress'].includes(c.status)).length;
   return `
     <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Dashboard</span></div>
-    <section class="page-header"><h1 class="page-title">Welcome, ${esc(currentUser?.name||'Learner')}</h1></section>
+    <section class="page-header">
+      <h1 class="page-title">Welcome, ${esc(currentUser?.name||'User')}</h1>
+      <div class="page-actions">
+        <span class="chip chip-neutral">Mode: ${intent === 'both' ? 'Learning & Consulting' : intent === 'learn' ? 'Learning' : 'Consulting'}</span>
+        <button class="btn btn-secondary btn-sm" data-action="change-intent"><i class="fas fa-sliders"></i> Change Mode</button>
+      </div>
+    </section>
+
     <section class="dashboard-columns">
-      <article class="dashboard-card tile-card"><i class="fas fa-school tile-icon"></i><h3 class="tile-title">E-School</h3><p class="tile-desc">Bootcamps, courses, tuition & exam prep</p><button class="btn btn-primary" data-action="switch-tab" data-tab="eschool">Explore</button></article>
-      <article class="dashboard-card tile-card"><i class="fas fa-user-tie tile-icon"></i><h3 class="tile-title">Find experts</h3><p class="tile-desc">Book 1-on-1 consultations</p><button class="btn btn-success" data-action="switch-tab" data-tab="experts">Browse</button></article>
-      <article class="dashboard-card tile-card"><i class="fas fa-comments tile-icon"></i><h3 class="tile-title">My consultations</h3><p class="tile-desc">Manage support requests</p><button class="btn btn-purple" data-action="switch-tab" data-tab="consultations">Open</button></article>
+      ${intent !== 'consult' ? `
+        <article class="dashboard-card tile-card"><i class="fas fa-school tile-icon"></i><h3 class="tile-title">E-School</h3><p class="tile-desc">Bootcamps, courses, tuition & exam prep</p><button class="btn btn-primary" data-action="switch-tab" data-tab="eschool">Explore</button></article>
+        <article class="dashboard-card tile-card"><i class="fas fa-graduation-cap tile-icon"></i><h3 class="tile-title">My Learning</h3><p class="tile-desc">Continue where you left off</p><button class="btn btn-info" data-action="switch-tab" data-tab="my-learning">Open</button></article>
+      ` : ''}
+      ${intent !== 'learn' ? `
+        <article class="dashboard-card tile-card"><i class="fas fa-user-tie tile-icon"></i><h3 class="tile-title">Find Experts</h3><p class="tile-desc">Book 1-on-1 consultations</p><button class="btn btn-success" data-action="switch-tab" data-tab="experts">Browse</button></article>
+        <article class="dashboard-card tile-card"><i class="fas fa-comments tile-icon"></i><h3 class="tile-title">Consultations</h3><p class="tile-desc">${activeCons} active request(s)</p><button class="btn btn-purple" data-action="switch-tab" data-tab="consultations">Open</button></article>
+      ` : ''}
+      <article class="dashboard-card tile-card"><i class="fas fa-wallet tile-icon"></i><h3 class="tile-title">Wallet</h3><p class="tile-desc">Balance: ${fmtCur(S.wallet.balance||0)}</p><button class="btn btn-warning" data-action="switch-tab" data-tab="wallet">Manage</button></article>
       <article class="dashboard-card tile-card"><i class="fas fa-certificate tile-icon"></i><h3 class="tile-title">Certificates</h3><p class="tile-desc">Your achievements</p><button class="btn btn-info" data-action="switch-tab" data-tab="certificates">View</button></article>
-    </section>`;
+    </section>
+
+    ${activeCons ? `
+      <section class="panel">
+        <h3 class="panel-title">🔔 Active Consultations</h3>
+        <ul class="list-stack">
+          ${mine.filter(c => ['pending','assigned','in_progress'].includes(c.status)).slice(0,5).map(c => `
+            <li class="list-row">
+              <div class="list-row-main">
+                <span class="list-row-title">${esc(c.title||'')}</span>
+                <span class="list-row-sub">Expert: ${esc(c.expert_name||'Unassigned')}</span>
+              </div>
+              <span class="${statusClass(c.status)}">${esc(c.status)}</span>
+            </li>`).join('')}
+        </ul>
+      </section>` : ''}
+  `;
 }
 function userESchool() {
   const tabs = [
@@ -1865,6 +2014,12 @@ function userProfile() {
         <label class="form-group"><span class="form-label">Full name</span><input id="profileName" class="form-input" value="${esc(currentUser?.name||'')}" /></label>
         <label class="form-group"><span class="form-label">Phone</span><input id="profilePhone" class="form-input" value="${esc(currentUser?.phone||'')}" /></label>
         <label class="form-group"><span class="form-label">Timezone</span><input id="profileTimezone" class="form-input" value="${esc(currentUser?.timezone||'UTC')}" /></label>
+        <label class="form-group"><span class="form-label">Preferred mode</span>
+          <select id="profileIntent" class="form-select">
+            <option value="both"    ${S.userIntent==='both'?'selected':''}>Both — Learning & Consulting</option>
+            <option value="learn"   ${S.userIntent==='learn'?'selected':''}>Learning only</option>
+            <option value="consult" ${S.userIntent==='consult'?'selected':''}>Consulting only</option>
+          </select></label>
         <label class="form-group form-group-full"><span class="form-label">Change avatar</span><input type="file" id="avatarFile" class="form-input" accept="image/*" /></label>
       </div>
       <div class="panel-actions">
@@ -1877,6 +2032,455 @@ function userProfile() {
       </div>
       <div class="panel-actions"><button class="btn btn-warning" data-action="change-password">Update Password</button></div>
     </section>`;
+}
+
+/* ============================================================
+   INSTITUTION DASHBOARD
+   ============================================================ */
+function renderInstitutionDashboard() {
+  if (!currentUser) return renderLogin();
+  const inst = S.myInstitution || {};
+  const isOpsManager = currentUser?.institution_role === 'operations_manager';
+
+  const nav = `
+    ${sidebarItem('dashboard','Dashboard','fa-chart-line')}
+    ${sidebarItem('programmes','Programmes','fa-diagram-project')}
+    ${sidebarItem('cohorts','Cohorts & Batches','fa-layer-group')}
+    ${sidebarItem('training','Training Delivery','fa-chalkboard-user')}
+    ${sidebarItem('assessments','Assessments','fa-clipboard-check')}
+    ${sidebarItem('projects','Projects','fa-briefcase')}
+    ${sidebarItem('trainees','Trainees','fa-users')}
+    ${sidebarItem('instructors','Instructors','fa-user-tie')}
+    ${sidebarItem('reports','Reports & Insights','fa-file-lines')}
+    ${isOpsManager ? sidebarItem('operations','Operations Control','fa-sliders') : ''}
+    ${sidebarItem('profile','Institution Profile','fa-building')}
+  `;
+
+  shell({
+    roleClass:'role-institution',
+    brandIcon:'fa-building-columns',
+    brandTitle: esc(inst.name || currentUser?.institution_name || 'Institution'),
+    brandSubtitle: 'Corporate Training Hub',
+    nav,
+    roleLabel: isOpsManager ? 'Operations Manager' : 'Institution Panel',
+    content: renderInstitutionContent(),
+  });
+  attachRoleEvents();
+  renderInstitutionCharts();
+}
+
+function renderInstitutionContent() {
+  switch (activeTab) {
+    case 'dashboard':   return instOverview();
+    case 'programmes':  return instProgrammes();
+    case 'cohorts':     return instCohorts();
+    case 'training':    return instTraining();
+    case 'assessments': return instAssessments();
+    case 'projects':    return instProjects();
+    case 'trainees':    return instTrainees();
+    case 'instructors': return instInstructors();
+    case 'reports':     return instReports();
+    case 'operations':  return instOperations();
+    case 'profile':     return instProfile();
+    default:            return instOverview();
+  }
+}
+
+/* ---------- Overview ---------- */
+function instOverview() {
+  const st = S.institutionStats || {};
+  const activeProgrammes = S.programmes.filter(p => p.status === 'active').length;
+  const activeCohorts    = S.cohorts.filter(c => c.status === 'active').length;
+  const completion       = st.avg_completion_rate || 0;
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Institution Dashboard</span></div>
+    <section class="page-header">
+      <h1 class="page-title">🏢 ${esc(S.myInstitution?.name || 'Institution')} Overview</h1>
+      <div class="page-actions">
+        <button class="btn btn-secondary" data-action="export-institution-report"><i class="fas fa-download"></i> Export Report</button>
+        <button class="btn btn-primary" data-action="refresh-all"><i class="fas fa-rotate"></i> Refresh</button>
+      </div>
+    </section>
+    <section class="stat-grid">
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Active Programmes</p><p class="stat-value">${activeProgrammes}</p><p class="stat-sub">of ${S.programmes.length} total</p></div><div class="stat-icon stat-icon-blue"><i class="fas fa-diagram-project"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Active Cohorts</p><p class="stat-value">${activeCohorts}</p></div><div class="stat-icon stat-icon-green"><i class="fas fa-layer-group"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Trainees</p><p class="stat-value">${S.trainees.length}</p></div><div class="stat-icon stat-icon-purple"><i class="fas fa-users"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Avg. Completion</p><p class="stat-value">${completion}%</p></div><div class="stat-icon stat-icon-yellow"><i class="fas fa-chart-line"></i></div></div>
+    </section>
+
+    <section class="dashboard-columns">
+      <div class="panel">
+        <h3 class="panel-title">🚀 Quick Actions</h3>
+        <button class="btn btn-primary btn-block" data-action="create-programme"><i class="fas fa-plus"></i> New Programme</button>
+        <button class="btn btn-info btn-block" data-action="create-cohort"><i class="fas fa-layer-group"></i> Create Cohort</button>
+        <button class="btn btn-success btn-block" data-action="invite-trainee"><i class="fas fa-user-plus"></i> Invite Trainees</button>
+        <button class="btn btn-warning btn-block" data-action="schedule-assessment"><i class="fas fa-clipboard-check"></i> Schedule Assessment</button>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">📊 Programme Status Breakdown</h3>
+        <ul class="list-stack">
+          ${CONFIG.PROGRAMME_STATUSES.map(s => {
+            const n = S.programmes.filter(p => p.status === s).length;
+            return `<li class="list-row">
+              <div class="list-row-main"><span class="list-row-title">${s.charAt(0).toUpperCase()+s.slice(1)}</span></div>
+              <span class="status status-${s}">${n}</span>
+            </li>`;
+          }).join('')}
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel-charts">
+      <div class="chart-card"><h3 class="panel-title">📈 Trainee Progress (avg %)</h3><canvas id="chartInstProgress" height="200"></canvas></div>
+      <div class="chart-card"><h3 class="panel-title">🎯 Assessment Scores</h3><canvas id="chartInstAssess" height="200"></canvas></div>
+    </section>
+  `;
+}
+
+/* ---------- Programmes ---------- */
+function instProgrammes() {
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Programmes</span></div>
+    <section class="page-header">
+      <h1 class="page-title">📚 Training Programmes</h1>
+      <button class="btn btn-primary" data-action="create-programme"><i class="fas fa-plus"></i> New Programme</button>
+    </section>
+    <section class="card-grid">
+      ${S.programmes.map(p => `
+        <article class="program-card">
+          <span class="chip chip-blue">${esc(p.category || 'General')}</span>
+          <span class="${statusClass(p.status)}" style="margin-left:6px">${esc(p.status)}</span>
+          <h4 class="program-title">${esc(p.title || '')}</h4>
+          <p class="program-desc">${esc((p.description||'').slice(0,110))}</p>
+          <footer class="program-footer">
+            <span class="program-meta">${fmtDate(p.start_date)} → ${fmtDate(p.end_date)}</span>
+            <span class="program-meta">${p.enrolled_count||0}/${p.capacity||0} enrolled</span>
+          </footer>
+          <div class="panel-actions" style="margin-top:10px">
+            <button class="btn btn-secondary btn-sm" data-action="view-programme" data-id="${p.id}">View</button>
+            <button class="btn btn-info btn-sm" data-action="edit-programme" data-id="${p.id}">Edit</button>
+            <button class="btn btn-danger btn-sm" data-action="delete-programme" data-id="${p.id}">Delete</button>
+          </div>
+        </article>`).join('') || '<div class="empty-state"><i class="fas fa-diagram-project"></i><h3>No programmes yet</h3><p>Create your first training programme.</p></div>'}
+    </section>`;
+}
+
+/* ---------- Cohorts ---------- */
+function instCohorts() {
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Cohorts</span></div>
+    <section class="page-header">
+      <h1 class="page-title">👥 Cohorts & Batches</h1>
+      <button class="btn btn-primary" data-action="create-cohort"><i class="fas fa-plus"></i> New Cohort</button>
+    </section>
+    <section class="panel">
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Programme</th><th>Instructor</th><th>Dates</th><th>Capacity</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${S.cohorts.map(c => `
+              <tr>
+                <td>${esc(c.name||'')}</td>
+                <td>${esc(c.programme_title || (S.programmes.find(p=>p.id===c.programme_id)?.title) || '—')}</td>
+                <td>${esc(c.instructor_name || '—')}</td>
+                <td>${fmtDate(c.start_date)} → ${fmtDate(c.end_date)}</td>
+                <td>${c.trainee_count||0}/${c.capacity||0}</td>
+                <td><span class="${statusClass(c.status)}">${esc(c.status||'')}</span></td>
+                <td class="actions-cell">
+                  <button class="btn btn-secondary btn-xs" data-action="edit-cohort" data-id="${c.id}">Edit</button>
+                  <button class="btn btn-danger btn-xs" data-action="delete-cohort" data-id="${c.id}">Delete</button>
+                </td>
+              </tr>`).join('') || '<tr><td colspan="7" class="empty-row">No cohorts yet</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+/* ---------- Training Delivery ---------- */
+function instTraining() {
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Training</span></div>
+    <section class="page-header">
+      <h1 class="page-title">🎓 Training Delivery</h1>
+      <button class="btn btn-primary" data-action="schedule-session"><i class="fas fa-calendar-plus"></i> Schedule Session</button>
+    </section>
+    <section class="panel">
+      <h3 class="panel-title">Upcoming Sessions</h3>
+      <ul class="list-stack">
+        ${(S.institutionStats?.upcomingSessions || []).map(s => `
+          <li class="list-row">
+            <div class="list-row-main">
+              <span class="list-row-title">${esc(s.title||'')}</span>
+              <span class="list-row-sub">${esc(s.cohort_name||'')} · ${fmtDT(s.scheduled_at)}</span>
+            </div>
+            <span class="chip chip-neutral">${esc(s.mode||'online')}</span>
+          </li>`).join('') || '<li class="empty-row">No sessions scheduled</li>'}
+      </ul>
+    </section>
+    <section class="panel">
+      <h3 class="panel-title">Training Materials</h3>
+      <div class="form-inline">
+        <input id="matTitle" class="form-input" placeholder="Material title" />
+        <select id="matCohort" class="form-select">
+          ${S.cohorts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') || '<option>No cohorts</option>'}
+        </select>
+        <input type="file" id="matFile" class="form-input" />
+        <button class="btn btn-primary" data-action="upload-material">Upload</button>
+      </div>
+    </section>`;
+}
+
+/* ---------- Assessments ---------- */
+function instAssessments() {
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Assessments</span></div>
+    <section class="page-header">
+      <h1 class="page-title">📝 Assessments</h1>
+      <button class="btn btn-primary" data-action="schedule-assessment"><i class="fas fa-plus"></i> New Assessment</button>
+    </section>
+    <section class="panel">
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Title</th><th>Type</th><th>Cohort</th><th>Weight</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${S.assessments.map(a => `
+              <tr>
+                <td>${esc(a.title||'')}</td>
+                <td><span class="chip chip-neutral">${esc(a.type||'')}</span></td>
+                <td>${esc(a.cohort_name || (S.cohorts.find(c=>c.id===a.cohort_id)?.name) || '—')}</td>
+                <td>${a.weight||0}%</td>
+                <td>${fmtDate(a.due_date)}</td>
+                <td><span class="${statusClass(a.status)}">${esc(a.status||'')}</span></td>
+                <td class="actions-cell">
+                  <button class="btn btn-secondary btn-xs" data-action="view-assessment" data-id="${a.id}">View</button>
+                  <button class="btn btn-info btn-xs" data-action="grade-assessment" data-id="${a.id}">Grade</button>
+                  <button class="btn btn-danger btn-xs" data-action="delete-assessment" data-id="${a.id}">Delete</button>
+                </td>
+              </tr>`).join('') || '<tr><td colspan="7" class="empty-row">No assessments yet</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+/* ---------- Projects ---------- */
+function instProjects() {
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Projects</span></div>
+    <section class="page-header">
+      <h1 class="page-title">💼 Capstone Projects</h1>
+      <button class="btn btn-primary" data-action="create-project"><i class="fas fa-plus"></i> New Project</button>
+    </section>
+    <section class="card-grid">
+      ${S.projects.map(p => `
+        <article class="program-card">
+          <span class="chip chip-blue">${esc(p.category||'Project')}</span>
+          <span class="${statusClass(p.status)}" style="margin-left:6px">${esc(p.status)}</span>
+          <h4 class="program-title">${esc(p.title||'')}</h4>
+          <p class="program-desc">${esc((p.description||'').slice(0,110))}</p>
+          <footer class="program-footer">
+            <span class="program-meta">Deadline: ${fmtDate(p.deadline)}</span>
+            <span class="program-meta">${p.submissions_count||0} submissions</span>
+          </footer>
+          <div class="panel-actions" style="margin-top:10px">
+            <button class="btn btn-secondary btn-sm" data-action="view-project" data-id="${p.id}">View</button>
+            <button class="btn btn-info btn-sm" data-action="grade-project" data-id="${p.id}">Grade</button>
+          </div>
+        </article>`).join('') || '<div class="empty-state"><i class="fas fa-briefcase"></i><h3>No projects yet</h3></div>'}
+    </section>`;
+}
+
+/* ---------- Trainees ---------- */
+function instTrainees() {
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Trainees</span></div>
+    <section class="page-header">
+      <h1 class="page-title">👨‍🎓 Trainees</h1>
+      <button class="btn btn-primary" data-action="invite-trainee"><i class="fas fa-user-plus"></i> Invite Trainees</button>
+    </section>
+    <section class="panel">
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Programme</th><th>Cohort</th><th>Progress</th><th>Avg Score</th><th>Status</th></tr></thead>
+          <tbody>
+            ${S.trainees.map(t => `
+              <tr>
+                <td>${esc(t.name||'')}</td>
+                <td>${esc(t.email||'')}</td>
+                <td>${esc(t.programme_title||'—')}</td>
+                <td>${esc(t.cohort_name||'—')}</td>
+                <td>
+                  <div class="progress-bar" style="width:80px"><span style="width:${t.progress||0}%"></span></div>
+                  <small>${t.progress||0}%</small>
+                </td>
+                <td>${t.assessment_avg!=null?t.assessment_avg+'%':'—'}</td>
+                <td><span class="${statusClass(t.status)}">${esc(t.status||'')}</span></td>
+              </tr>`).join('') || '<tr><td colspan="7" class="empty-row">No trainees enrolled</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+/* ---------- Instructors ---------- */
+function instInstructors() {
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Instructors</span></div>
+    <section class="page-header">
+      <h1 class="page-title">🧑‍🏫 Instructors</h1>
+      <button class="btn btn-primary" data-action="assign-instructor"><i class="fas fa-plus"></i> Assign Instructor</button>
+    </section>
+    <section class="card-grid">
+      ${S.instructors.map(i => `
+        <article class="expert-card">
+          <img class="expert-avatar" src="${avatar(i)}" alt="" />
+          <h4 class="expert-name">${esc(i.name||'')}</h4>
+          <p class="expert-expertise">${esc(i.specialization||'—')}</p>
+          <p class="expert-rate">${i.programme_count||0} programme(s)</p>
+          <button class="btn btn-secondary btn-block" data-action="view-instructor" data-id="${i.id}">View Profile</button>
+        </article>`).join('') || '<div class="empty-state"><i class="fas fa-user-tie"></i><h3>No instructors assigned</h3></div>'}
+    </section>`;
+}
+
+/* ---------- Reports ---------- */
+function instReports() {
+  const st = S.institutionStats || {};
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Reports</span></div>
+    <section class="page-header">
+      <h1 class="page-title">📊 Reports & Insights</h1>
+      <button class="btn btn-secondary" data-action="export-institution-report"><i class="fas fa-download"></i> Export CSV</button>
+    </section>
+    <section class="stat-grid">
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Completion Rate</p><p class="stat-value">${st.avg_completion_rate||0}%</p></div><div class="stat-icon stat-icon-green"><i class="fas fa-check-circle"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Avg. Score</p><p class="stat-value">${st.avg_score||0}%</p></div><div class="stat-icon stat-icon-blue"><i class="fas fa-star"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Projects Submitted</p><p class="stat-value">${st.projects_submitted||0}</p></div><div class="stat-icon stat-icon-purple"><i class="fas fa-briefcase"></i></div></div>
+      <div class="dashboard-card stat-card"><div class="stat-info"><p class="stat-label">Certifications Issued</p><p class="stat-value">${st.certificates_issued||0}</p></div><div class="stat-icon stat-icon-yellow"><i class="fas fa-certificate"></i></div></div>
+    </section>
+    <section class="panel-charts">
+      <div class="chart-card"><h3 class="panel-title">Cohort Completion Trend</h3><canvas id="chartInstProgress" height="200"></canvas></div>
+      <div class="chart-card"><h3 class="panel-title">Assessment Distribution</h3><canvas id="chartInstAssess" height="200"></canvas></div>
+    </section>`;
+}
+
+/* ---------- Operations Control (Ops Manager only) ---------- */
+function instOperations() {
+  const isOps = currentUser?.institution_role === 'operations_manager';
+  if (!isOps) {
+    return `<div class="empty-state"><i class="fas fa-lock"></i><h3>Access Restricted</h3><p>Only the Operations Manager can access this area.</p></div>`;
+  }
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Operations Control</span></div>
+    <section class="page-header"><h1 class="page-title">⚙️ Operations Control</h1></section>
+
+    <section class="panel">
+      <h3 class="panel-title">🏢 Institution Settings</h3>
+      <div class="form-grid">
+        <label class="form-group"><span class="form-label">Display name</span><input id="instSetName" class="form-input" value="${esc(S.myInstitution?.name||'')}" /></label>
+        <label class="form-group"><span class="form-label">Contact email</span><input id="instSetEmail" class="form-input" value="${esc(S.myInstitution?.contact_email||'')}" /></label>
+        <label class="form-group"><span class="form-label">Default programme capacity</span><input id="instSetCap" type="number" class="form-input" value="${S.myInstitution?.default_capacity||30}" /></label>
+        <label class="form-group"><span class="form-label">Assessment pass mark (%)</span><input id="instSetPass" type="number" class="form-input" value="${S.myInstitution?.pass_mark||70}" /></label>
+      </div>
+      <div class="panel-actions"><button class="btn btn-primary" data-action="save-institution-settings">Save Settings</button></div>
+    </section>
+
+    <section class="panel">
+      <h3 class="panel-title">👥 Team & Roles</h3>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead><tr><th>Member</th><th>Role</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${S.institutionTeam.map(t => `
+              <tr>
+                <td>${esc(t.name||'')}</td>
+                <td><span class="chip chip-neutral">${esc(t.institution_role||'')}</span></td>
+                <td>${esc(t.email||'')}</td>
+                <td><span class="${statusClass(t.status||'active')}">${esc(t.status||'')}</span></td>
+                <td class="actions-cell">
+                  <button class="btn btn-info btn-xs" data-action="change-team-role" data-id="${t.id}">Change Role</button>
+                  <button class="btn btn-danger btn-xs" data-action="remove-team-member" data-id="${t.id}">Remove</button>
+                </td>
+              </tr>`).join('') || '<tr><td colspan="5" class="empty-row">No team members yet</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-actions">
+        <button class="btn btn-primary" data-action="invite-team-member"><i class="fas fa-user-plus"></i> Invite Team Member</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h3 class="panel-title">✅ Approval Queue</h3>
+      <ul class="list-stack">
+        ${(S.institutionStats?.pendingApprovals||[]).map(a => `
+          <li class="list-row">
+            <div class="list-row-main">
+              <span class="list-row-title">${esc(a.title||'')}</span>
+              <span class="list-row-sub">${esc(a.type||'')} · requested by ${esc(a.requested_by||'')}</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-success btn-xs" data-action="approve-request" data-id="${a.id}">Approve</button>
+              <button class="btn btn-danger btn-xs" data-action="reject-request" data-id="${a.id}">Reject</button>
+            </div>
+          </li>`).join('') || '<li class="empty-row">No pending approvals</li>'}
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h3 class="panel-title">📜 Institution Audit Log</h3>
+      <ul class="list-stack">
+        ${(S.institutionStats?.auditLog||[]).slice(0,20).map(l => `
+          <li class="list-row">
+            <div class="list-row-main">
+              <span class="list-row-title">${esc(l.action||'')}</span>
+              <span class="list-row-sub">by ${esc(l.actor_name||'')}</span>
+            </div>
+            <span class="list-row-meta">${fmtDT(l.created_at)}</span>
+          </li>`).join('') || '<li class="empty-row">No entries</li>'}
+      </ul>
+    </section>`;
+}
+
+/* ---------- Institution Profile ---------- */
+function instProfile() {
+  const inst = S.myInstitution || {};
+  return `
+    <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Institution Profile</span></div>
+    <section class="page-header"><h1 class="page-title">🏢 Institution Profile</h1></section>
+    <section class="panel">
+      <div class="profile-header">
+        <div class="profile-avatar" style="background:var(--brand);display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.6rem"><i class="fas fa-building"></i></div>
+        <div>
+          <h2 class="profile-name">${esc(inst.name || 'Institution')}</h2>
+          <p class="profile-email">${esc(inst.contact_email || '')} · <span class="${statusClass(inst.status||'active')}">${esc(inst.status||'active')}</span></p>
+        </div>
+      </div>
+      <div class="form-grid">
+        <label class="form-group"><span class="form-label">Institution name</span><input id="instProfileName" class="form-input" value="${esc(inst.name||'')}" /></label>
+        <label class="form-group"><span class="form-label">Type</span>
+          <select id="instProfileType" class="form-select">
+            ${CONFIG.INSTITUTION_TYPES.map(t => `<option value="${t}" ${inst.type===t?'selected':''}>${t}</option>`).join('')}
+          </select></label>
+        <label class="form-group"><span class="form-label">Industry</span><input id="instProfileIndustry" class="form-input" value="${esc(inst.industry||'')}" /></label>
+        <label class="form-group"><span class="form-label">Contact phone</span><input id="instProfilePhone" class="form-input" value="${esc(inst.contact_phone||'')}" /></label>
+        <label class="form-group form-group-full"><span class="form-label">Address</span><input id="instProfileAddress" class="form-input" value="${esc(inst.address||'')}" /></label>
+      </div>
+      <div class="panel-actions"><button class="btn btn-primary" data-action="update-institution-profile">Save Changes</button></div>
+    </section>`;
+}
+
+/* ---------- Institution charts ---------- */
+function renderInstitutionCharts() {
+  if (!window.Chart) return;
+  const p = document.getElementById('chartInstProgress');
+  if (p) {
+    new Chart(p, { type:'line', data:{ labels:['W1','W2','W3','W4','W5','W6'], datasets:[{ label:'Progress', data:[10,25,42,58,74,88], borderColor:'#6366f1', tension:.3, fill:true, backgroundColor:'rgba(99,102,241,.1)' }] }, options:{ responsive:true, plugins:{ legend:{ display:false } } } });
+  }
+  const a = document.getElementById('chartInstAssess');
+  if (a) {
+    new Chart(a, { type:'bar', data:{ labels:['0-59','60-69','70-79','80-89','90-100'], datasets:[{ label:'Trainees', data:[3,7,15,22,11], backgroundColor:'#10b981' }] }, options:{ responsive:true, plugins:{ legend:{ display:false } } } });
+  }
 }
 
 /* ============================================================
@@ -1978,7 +2582,6 @@ function attachRoleEvents() {
   };
   document.addEventListener('click', roleClickHandler);
 
-  // Sidebar eschool tab clicks
   document.querySelectorAll('[data-eschool-tab]').forEach(btn => btn.onclick = () => {
     activeESchoolTab = btn.dataset.eschoolTab;
     $$('[data-eschool-tab]').forEach(x => x.classList.remove('tab-btn-active'));
@@ -2033,6 +2636,7 @@ async function handleAction(action, id, el) {
             <select id="euRole" class="form-select">
               <option value="learner" ${u.role==='learner'?'selected':''}>Learner</option>
               <option value="expert" ${u.role==='expert'?'selected':''}>Expert</option>
+              <option value="institution" ${u.role==='institution'?'selected':''}>Institution</option>
               <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
             </select></label>
           <label class="form-group"><span class="form-label">Status</span>
@@ -2085,8 +2689,7 @@ async function handleAction(action, id, el) {
       };
       return;
     }
-    case 'view-consultation':
-      return showConsultationModal(id);
+    case 'view-consultation': return showConsultationModal(id);
     case 'consult-start':
       await apiCall(`/api/common/consultations/${id}/status`,'PUT',{ status:'in_progress' });
       await reloadConsultations(); return rerenderRoleContent();
@@ -2101,6 +2704,44 @@ async function handleAction(action, id, el) {
       if (!await confirmDialog('Delete this event?')) return;
       await apiCall(`/api/admin/events/${id}`,'DELETE');
       await loadAllData(); return showToast('Event deleted','success'), rerenderRoleContent();
+    }
+
+    /* ---------- Admin - Institutions ---------- */
+    case 'create-institution': return openInstitutionModal();
+    case 'edit-institution':   return openInstitutionModal(Number(id));
+    case 'approve-institution':
+      await apiCall(`/api/admin/institutions/${id}/approve`,'PUT');
+      await reloadInstitutions(); showToast('Institution verified','success'); return rerenderRoleContent();
+    case 'reject-institution': {
+      const reason = prompt('Reason for rejection?') || '';
+      await apiCall(`/api/admin/institutions/${id}/reject`,'PUT',{ reason });
+      await reloadInstitutions(); showToast('Institution rejected','warning'); return rerenderRoleContent();
+    }
+    case 'suspend-institution':
+      await apiCall(`/api/admin/institutions/${id}/suspend`,'PUT');
+      await reloadInstitutions(); return rerenderRoleContent();
+    case 'delete-institution': {
+      if (!await confirmDialog('Delete this institution permanently?')) return;
+      await apiCall(`/api/admin/institutions/${id}`,'DELETE');
+      await reloadInstitutions(); showToast('Institution deleted','success'); return rerenderRoleContent();
+    }
+    case 'assign-ops-manager': {
+      openModal({
+        title:'Assign Operations Manager',
+        body:`
+          <label class="form-group"><span class="form-label">Manager name</span><input id="omName" class="form-input" /></label>
+          <label class="form-group"><span class="form-label">Manager email</span><input id="omEmail" type="email" class="form-input" /></label>
+          <p class="form-hint">A temporary password will be generated and shown once.</p>`,
+        footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="omSave" class="btn btn-primary">Assign</button>`,
+      });
+      $('#omSave').onclick = async () => {
+        const d = await apiCall(`/api/admin/institutions/${id}/ops-manager`,'POST',{
+          name:$('#omName').value, email:$('#omEmail').value,
+        });
+        closeModal(); await reloadInstitutions(); rerenderRoleContent();
+        showToast(`Ops manager created. Temp password: ${d.temp_password}`,'success', 8000);
+      };
+      return;
     }
 
     /* ---------- Admin - Payouts ---------- */
@@ -2200,7 +2841,7 @@ async function handleAction(action, id, el) {
       return showToast('Settings saved','success');
     }
 
-    /* ---------- Learner actions ---------- */
+    /* ---------- Learner / User actions ---------- */
     case 'enroll-modal': return openEnrollModal(id);
     case 'update-progress': return openProgressModal(id, Number(el.dataset.current||0));
     case 'new-consultation': return openNewConsultationModal();
@@ -2219,6 +2860,27 @@ async function handleAction(action, id, el) {
       await reloadWallet();
       showLoading(false);
       showToast('Funds added','success'); return rerenderRoleContent();
+    }
+    case 'change-intent': {
+      openModal({
+        title:'Choose your mode',
+        body:`
+          <p class="form-hint">This controls what appears on your dashboard. You can change it anytime.</p>
+          <label class="form-group"><span class="form-label">Mode</span>
+            <select id="intentSel" class="form-select">
+              <option value="both"    ${S.userIntent==='both'?'selected':''}>Both — Learning & Consulting</option>
+              <option value="learn"   ${S.userIntent==='learn'?'selected':''}>Learning only</option>
+              <option value="consult" ${S.userIntent==='consult'?'selected':''}>Consulting only</option>
+            </select></label>`,
+        footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="intentSave" class="btn btn-primary">Save</button>`,
+      });
+      $('#intentSave').onclick = async () => {
+        S.userIntent = $('#intentSel').value;
+        try { await apiCall('/api/user/preferences','PUT',{ intent: S.userIntent }); } catch {}
+        closeModal(); rerenderRoleContent();
+        showToast('Mode updated','success');
+      };
+      return;
     }
     case 'review-expert': return openReviewModal(id, Number(el.dataset.expert));
     case 'print-certificate': {
@@ -2314,15 +2976,142 @@ async function handleAction(action, id, el) {
       return;
     }
 
+    /* ---------- Institution actions ---------- */
+    case 'create-programme': return openProgrammeModal();
+    case 'edit-programme':   return openProgrammeModal(Number(id));
+    case 'view-programme': {
+      const p = S.programmes.find(x => String(x.id) === id);
+      if (!p) return;
+      openModal({
+        title: p.title,
+        body:`<p><strong>Category:</strong> ${esc(p.category||'')}</p>
+              <p><strong>Status:</strong> ${esc(p.status||'')}</p>
+              <p><strong>Dates:</strong> ${fmtDate(p.start_date)} → ${fmtDate(p.end_date)}</p>
+              <p><strong>Capacity:</strong> ${p.enrolled_count||0}/${p.capacity||0}</p>
+              <p><strong>Description:</strong> ${esc(p.description||'')}</p>`,
+        footer:`<button class="btn btn-secondary" data-close-modal>Close</button>`,
+      });
+      return;
+    }
+    case 'delete-programme': {
+      if (!await confirmDialog('Delete this programme?')) return;
+      await apiCall(`/api/institution/programmes/${id}`,'DELETE');
+      await reloadInstitutionProgrammes(); return rerenderRoleContent();
+    }
+    case 'create-cohort': return openCohortModal();
+    case 'edit-cohort':   return openCohortModal(Number(id));
+    case 'delete-cohort': {
+      if (!await confirmDialog('Delete this cohort?')) return;
+      await apiCall(`/api/institution/cohorts/${id}`,'DELETE');
+      await reloadInstitutionCohorts(); return rerenderRoleContent();
+    }
+    case 'schedule-assessment': return openAssessmentModal();
+    case 'delete-assessment': {
+      if (!await confirmDialog('Delete this assessment?')) return;
+      await apiCall(`/api/institution/assessments/${id}`,'DELETE');
+      await loadAllData(); return rerenderRoleContent();
+    }
+    case 'grade-assessment':   return showToast('Grading view opened in demo','info');
+    case 'view-assessment':    return showToast('Assessment detail opened in demo','info');
+    case 'create-project':     return openProjectModal();
+    case 'grade-project':      return showToast('Grading view opened in demo','info');
+    case 'view-project':       return showToast('Project detail opened in demo','info');
+    case 'invite-trainee': {
+      openModal({
+        title:'Invite Trainees',
+        body:`<label class="form-group"><span class="form-label">Emails (comma-separated)</span><textarea id="invEmails" class="form-textarea" rows="3"></textarea></label>
+              <label class="form-group"><span class="form-label">Assign to programme</span>
+                <select id="invProgramme" class="form-select">${S.programmes.map(p=>`<option value="${p.id}">${esc(p.title)}</option>`).join('')}</select></label>`,
+        footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="invSave" class="btn btn-primary">Send Invites</button>`,
+      });
+      $('#invSave').onclick = async () => {
+        const emails = $('#invEmails').value.split(',').map(s=>s.trim()).filter(Boolean);
+        if (!emails.length) return showToast('Enter at least one email','error');
+        await apiCall('/api/institution/trainees/invite','POST',{ emails, programme_id: Number($('#invProgramme').value) });
+        closeModal(); showToast(`${emails.length} invite(s) sent`,'success');
+      };
+      return;
+    }
+    case 'assign-instructor': {
+      openModal({
+        title:'Assign Instructor',
+        body:`<label class="form-group"><span class="form-label">Search expert</span><input id="aiSearch" class="form-input" placeholder="Name or specialization" /></label>
+              <div id="aiResults" class="list-stack">${S.experts.slice(0,10).map(e => `
+                <li class="list-row">
+                  <div class="list-row-main"><span class="list-row-title">${esc(e.name)}</span><span class="list-row-sub">${esc(e.specialization||'')}</span></div>
+                  <button class="btn btn-primary btn-xs" data-pick-instructor="${e.id}">Assign</button>
+                </li>`).join('')}</div>`,
+        footer:`<button class="btn btn-secondary" data-close-modal>Close</button>`,
+      });
+      document.querySelectorAll('[data-pick-instructor]').forEach(b => b.onclick = async () => {
+        await apiCall('/api/institution/instructors','POST',{ expert_id: Number(b.dataset.pickInstructor) });
+        closeModal(); await loadAllData(); rerenderRoleContent();
+        showToast('Instructor assigned','success');
+      });
+      return;
+    }
+    case 'view-instructor': return showToast('Instructor profile opened in demo','info');
+    case 'schedule-session': return showToast('Session scheduler opened in demo','info');
+    case 'upload-material':  return showToast('Material uploaded (demo)','success');
+    case 'save-institution-settings': {
+      await apiCall('/api/institution/settings','PUT',{
+        name:$('#instSetName').value, contact_email:$('#instSetEmail').value,
+        default_capacity:Number($('#instSetCap').value), pass_mark:Number($('#instSetPass').value),
+      });
+      return showToast('Institution settings saved','success');
+    }
+    case 'invite-team-member': {
+      openModal({
+        title:'Invite Team Member',
+        body:`<label class="form-group"><span class="form-label">Name</span><input id="tmName" class="form-input" /></label>
+              <label class="form-group"><span class="form-label">Email</span><input id="tmEmail" type="email" class="form-input" /></label>
+              <label class="form-group"><span class="form-label">Role</span>
+                <select id="tmRole" class="form-select">
+                  ${CONFIG.INSTITUTION_ROLES.map(r => `<option value="${r}">${r.replace('_',' ')}</option>`).join('')}
+                </select></label>`,
+        footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="tmSave" class="btn btn-primary">Send Invite</button>`,
+      });
+      $('#tmSave').onclick = async () => {
+        const d = await apiCall('/api/institution/team/invite','POST',{
+          name:$('#tmName').value, email:$('#tmEmail').value, institution_role:$('#tmRole').value,
+        });
+        closeModal(); showToast(`Invite sent. Temp password: ${d.temp_password||'—'}`,'success',7000);
+      };
+      return;
+    }
+    case 'change-team-role': return showToast('Role change opened in demo','info');
+    case 'remove-team-member': {
+      if (!await confirmDialog('Remove this team member?')) return;
+      await apiCall(`/api/institution/team/${id}`,'DELETE');
+      await loadAllData(); return rerenderRoleContent();
+    }
+    case 'approve-request':
+      await apiCall(`/api/institution/requests/${id}/approve`,'PUT');
+      await loadAllData(); return showToast('Request approved','success'), rerenderRoleContent();
+    case 'reject-request':
+      await apiCall(`/api/institution/requests/${id}/reject`,'PUT');
+      await loadAllData(); return showToast('Request rejected','warning'), rerenderRoleContent();
+    case 'export-institution-report': return downloadCsv('institution-report.csv', S.trainees);
+    case 'update-institution-profile': {
+      await apiCall('/api/institution/profile','PUT',{
+        name:$('#instProfileName').value, type:$('#instProfileType').value,
+        industry:$('#instProfileIndustry').value, contact_phone:$('#instProfilePhone').value,
+        address:$('#instProfileAddress').value,
+      });
+      await loadAllData(); return showToast('Institution profile updated','success');
+    }
+
     /* ---------- Profile generic ---------- */
     case 'update-user-profile': {
       await apiCall('/api/user/profile','PUT',{
         name:$('#profileName')?.value,
         phone:$('#profilePhone')?.value,
         timezone:$('#profileTimezone')?.value,
+        intent:$('#profileIntent')?.value || S.userIntent,
       });
       const me = await apiCall('/api/auth/me');
       currentUser = me.user;
+      if (me.user.intent) S.userIntent = me.user.intent;
       localStorage.setItem('user', JSON.stringify(currentUser));
       return showToast('Profile updated','success');
     }
@@ -2351,14 +3140,18 @@ async function reloadPayoutsAndRerender(msg) {
 function rerenderRoleContent() {
   const el = $('#role-content');
   if (!el) return;
-  el.innerHTML = currentUserRole === 'admin'   ? renderAdminContent()
-              : currentUserRole === 'expert'   ? renderExpertContent()
-                                               : renderUserContent();
+  el.innerHTML = currentUserRole === 'admin'       ? renderAdminContent()
+              : currentUserRole === 'expert'       ? renderExpertContent()
+              : currentUserRole === 'institution'  ? renderInstitutionContent()
+                                                   : renderUserContent();
   attachSidebarEvents();
   renderCharts();
+  if (currentUserRole === 'institution') renderInstitutionCharts();
 }
 
-/* ---------- Modals ---------- */
+/* ============================================================
+   MODAL BUILDERS
+   ============================================================ */
 function showConsultationModal(id) {
   const c = S.consultations.find(x => String(x.id) === id);
   if (!c) return;
@@ -2605,6 +3398,143 @@ function openVideoCall(consultationId) {
     footer:`<button class="btn btn-secondary" data-close-modal>End call</button>`,
   });
 }
+function openInstitutionModal(id=null) {
+  const i = id ? S.institutions.find(x => x.id === id) : {};
+  openModal({
+    title: id ? 'Edit Institution' : 'New Institution',
+    body:`
+      <label class="form-group"><span class="form-label">Institution name</span><input id="instName" class="form-input" value="${esc(i.name||'')}" /></label>
+      <label class="form-group"><span class="form-label">Type</span>
+        <select id="instType" class="form-select">
+          ${CONFIG.INSTITUTION_TYPES.map(t => `<option value="${t}" ${i.type===t?'selected':''}>${t}</option>`).join('')}
+        </select></label>
+      <label class="form-group"><span class="form-label">Industry</span><input id="instIndustry" class="form-input" value="${esc(i.industry||'')}" /></label>
+      <label class="form-group"><span class="form-label">Contact email</span><input id="instEmail" type="email" class="form-input" value="${esc(i.contact_email||'')}" /></label>
+      <label class="form-group"><span class="form-label">Contact phone</span><input id="instPhone" class="form-input" value="${esc(i.contact_phone||'')}" /></label>
+      <label class="form-group"><span class="form-label">Address</span><input id="instAddress" class="form-input" value="${esc(i.address||'')}" /></label>`,
+    footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="instSave" class="btn btn-primary">${id?'Save':'Create'}</button>`,
+  });
+  $('#instSave').onclick = async () => {
+    const payload = {
+      name:$('#instName').value, type:$('#instType').value, industry:$('#instIndustry').value,
+      contact_email:$('#instEmail').value, contact_phone:$('#instPhone').value, address:$('#instAddress').value,
+    };
+    if (id) await apiCall(`/api/admin/institutions/${id}`,'PUT', payload);
+    else    await apiCall('/api/admin/institutions','POST', payload);
+    closeModal(); await reloadInstitutions(); rerenderRoleContent();
+    showToast(id ? 'Institution updated' : 'Institution created','success');
+  };
+}
+function openProgrammeModal(id=null) {
+  const p = id ? S.programmes.find(x => x.id === id) : {};
+  openModal({
+    title: id ? 'Edit Programme' : 'New Programme',
+    body:`
+      <label class="form-group"><span class="form-label">Title</span><input id="prTitle" class="form-input" value="${esc(p.title||'')}" /></label>
+      <label class="form-group"><span class="form-label">Description</span><textarea id="prDesc" class="form-textarea" rows="3">${esc(p.description||'')}</textarea></label>
+      <label class="form-group"><span class="form-label">Category</span><input id="prCat" class="form-input" value="${esc(p.category||'')}" /></label>
+      <label class="form-group"><span class="form-label">Status</span>
+        <select id="prStatus" class="form-select">
+          ${CONFIG.PROGRAMME_STATUSES.map(s => `<option value="${s}" ${p.status===s?'selected':''}>${s}</option>`).join('')}
+        </select></label>
+      <label class="form-group"><span class="form-label">Start date</span><input id="prStart" type="date" class="form-input" value="${p.start_date?new Date(p.start_date).toISOString().slice(0,10):''}" /></label>
+      <label class="form-group"><span class="form-label">End date</span><input id="prEnd" type="date" class="form-input" value="${p.end_date?new Date(p.end_date).toISOString().slice(0,10):''}" /></label>
+      <label class="form-group"><span class="form-label">Capacity</span><input id="prCap" type="number" class="form-input" value="${p.capacity||30}" /></label>`,
+    footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="prSave" class="btn btn-primary">${id?'Save':'Create'}</button>`,
+  });
+  $('#prSave').onclick = async () => {
+    const payload = {
+      title:$('#prTitle').value, description:$('#prDesc').value, category:$('#prCat').value,
+      status:$('#prStatus').value, start_date:$('#prStart').value||null, end_date:$('#prEnd').value||null,
+      capacity:Number($('#prCap').value||30),
+    };
+    if (id) await apiCall(`/api/institution/programmes/${id}`,'PUT', payload);
+    else    await apiCall('/api/institution/programmes','POST', payload);
+    closeModal(); await reloadInstitutionProgrammes(); rerenderRoleContent();
+    showToast(id ? 'Programme updated' : 'Programme created','success');
+  };
+}
+function openCohortModal(id=null) {
+  const c = id ? S.cohorts.find(x => x.id === id) : {};
+  openModal({
+    title: id ? 'Edit Cohort' : 'New Cohort',
+    body:`
+      <label class="form-group"><span class="form-label">Name</span><input id="chName" class="form-input" value="${esc(c.name||'')}" /></label>
+      <label class="form-group"><span class="form-label">Programme</span>
+        <select id="chProg" class="form-select">
+          ${S.programmes.map(p => `<option value="${p.id}" ${c.programme_id===p.id?'selected':''}>${esc(p.title)}</option>`).join('')}
+        </select></label>
+      <label class="form-group"><span class="form-label">Instructor</span>
+        <select id="chInstr" class="form-select">
+          <option value="">— Unassigned —</option>
+          ${S.instructors.map(i => `<option value="${i.id}" ${c.instructor_id===i.id?'selected':''}>${esc(i.name)}</option>`).join('')}
+        </select></label>
+      <label class="form-group"><span class="form-label">Start</span><input id="chStart" type="date" class="form-input" value="${c.start_date?new Date(c.start_date).toISOString().slice(0,10):''}" /></label>
+      <label class="form-group"><span class="form-label">End</span><input id="chEnd" type="date" class="form-input" value="${c.end_date?new Date(c.end_date).toISOString().slice(0,10):''}" /></label>
+      <label class="form-group"><span class="form-label">Capacity</span><input id="chCap" type="number" class="form-input" value="${c.capacity||30}" /></label>`,
+    footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="chSave" class="btn btn-primary">${id?'Save':'Create'}</button>`,
+  });
+  $('#chSave').onclick = async () => {
+    const payload = {
+      name:$('#chName').value, programme_id:Number($('#chProg').value),
+      instructor_id:$('#chInstr').value?Number($('#chInstr').value):null,
+      start_date:$('#chStart').value||null, end_date:$('#chEnd').value||null,
+      capacity:Number($('#chCap').value||30),
+    };
+    if (id) await apiCall(`/api/institution/cohorts/${id}`,'PUT', payload);
+    else    await apiCall('/api/institution/cohorts','POST', payload);
+    closeModal(); await reloadInstitutionCohorts(); rerenderRoleContent();
+    showToast(id ? 'Cohort updated' : 'Cohort created','success');
+  };
+}
+function openAssessmentModal() {
+  openModal({
+    title:'Schedule Assessment',
+    body:`
+      <label class="form-group"><span class="form-label">Title</span><input id="asTitle" class="form-input" /></label>
+      <label class="form-group"><span class="form-label">Type</span>
+        <select id="asType" class="form-select">
+          ${CONFIG.ASSESSMENT_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+        </select></label>
+      <label class="form-group"><span class="form-label">Cohort</span>
+        <select id="asCohort" class="form-select">
+          ${S.cohorts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') || '<option>No cohorts</option>'}
+        </select></label>
+      <label class="form-group"><span class="form-label">Weight (%)</span><input id="asWeight" type="number" class="form-input" value="20" /></label>
+      <label class="form-group"><span class="form-label">Due date</span><input id="asDue" type="date" class="form-input" /></label>`,
+    footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="asSave" class="btn btn-primary">Schedule</button>`,
+  });
+  $('#asSave').onclick = async () => {
+    await apiCall('/api/institution/assessments','POST',{
+      title:$('#asTitle').value, type:$('#asType').value, cohort_id:Number($('#asCohort').value),
+      weight:Number($('#asWeight').value||0), due_date:$('#asDue').value||null,
+    });
+    closeModal(); await loadAllData(); rerenderRoleContent();
+    showToast('Assessment scheduled','success');
+  };
+}
+function openProjectModal() {
+  openModal({
+    title:'New Project',
+    body:`
+      <label class="form-group"><span class="form-label">Title</span><input id="pjTitle" class="form-input" /></label>
+      <label class="form-group"><span class="form-label">Description</span><textarea id="pjDesc" class="form-textarea" rows="3"></textarea></label>
+      <label class="form-group"><span class="form-label">Cohort</span>
+        <select id="pjCohort" class="form-select">
+          ${S.cohorts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') || '<option>No cohorts</option>'}
+        </select></label>
+      <label class="form-group"><span class="form-label">Deadline</span><input id="pjDeadline" type="date" class="form-input" /></label>`,
+    footer:`<button class="btn btn-secondary" data-close-modal>Cancel</button><button id="pjSave" class="btn btn-primary">Create</button>`,
+  });
+  $('#pjSave').onclick = async () => {
+    await apiCall('/api/institution/projects','POST',{
+      title:$('#pjTitle').value, description:$('#pjDesc').value,
+      cohort_id:Number($('#pjCohort').value), deadline:$('#pjDeadline').value||null,
+    });
+    closeModal(); await loadAllData(); rerenderRoleContent();
+    showToast('Project created','success');
+  };
+}
 
 /* ============================================================
    CHARTS
@@ -2612,22 +3542,25 @@ function openVideoCall(consultationId) {
 function renderCharts() {
   if (!window.Chart) return;
   const ug = document.getElementById('chartUserGrowth') || document.getElementById('userGrowthChart');
-  if (ug) {
+  if (ug && !ug.dataset.rendered) {
     const labels = (S.analytics?.usersByMonth||[]).map(r=>r.ym).reverse();
     const data = (S.analytics?.usersByMonth||[]).map(r=>r.c).reverse();
     new Chart(ug, { type:'line', data:{ labels: labels.length?labels:['Jan','Feb','Mar','Apr','May','Jun'], datasets:[{ label:'Users', data: data.length?data:[10,25,40,60,80,120], borderColor:'#6366f1', tension:.3, fill:true, backgroundColor:'rgba(99,102,241,.1)' }] }, options:{ responsive:true, plugins:{ legend:{ display:false } } } });
+    ug.dataset.rendered = '1';
   }
   const rv = document.getElementById('chartRevenue') || document.getElementById('revenueChart');
-  if (rv) {
+  if (rv && !rv.dataset.rendered) {
     const labels = (S.analytics?.revenueByMonth||[]).map(r=>r.ym).reverse();
     const data = (S.analytics?.revenueByMonth||[]).map(r=>Number(r.total)).reverse();
     new Chart(rv, { type:'bar', data:{ labels: labels.length?labels:['Jan','Feb','Mar','Apr','May','Jun'], datasets:[{ label:'Revenue', data: data.length?data:[500,900,1200,1600,2000,2800], backgroundColor:'#10b981' }] }, options:{ responsive:true, plugins:{ legend:{ display:false } } } });
+    rv.dataset.rendered = '1';
   }
   const role = document.getElementById('roleChart');
-  if (role) {
+  if (role && !role.dataset.rendered) {
     const labels = (S.analytics?.usersByRole||[]).map(r=>r.role);
     const data = (S.analytics?.usersByRole||[]).map(r=>r.c);
-    new Chart(role, { type:'doughnut', data:{ labels: labels.length?labels:['Admin','Expert','Learner'], datasets:[{ data: data.length?data:[1,5,100], backgroundColor:['#ef4444','#10b981','#6366f1'] }] }, options:{ responsive:true } });
+    new Chart(role, { type:'doughnut', data:{ labels: labels.length?labels:['Admin','Expert','Institution','Learner'], datasets:[{ data: data.length?data:[1,5,3,100], backgroundColor:['#ef4444','#10b981','#8b5cf6','#6366f1'] }] }, options:{ responsive:true } });
+    role.dataset.rendered = '1';
   }
 }
 
@@ -2646,15 +3579,17 @@ async function route() {
 
   if (!authToken) return renderLanding();
 
-  // Authenticated
   appPhase = 'dashboard';
   if (!currentUser) {
     try {
       const me = await apiCall('/api/auth/me');
       currentUser = me.user; currentUserRole = me.user.role;
+      S.userIntent = me.user.intent || 'both';
     } catch { return logout(); }
   }
-  if (!S.users.length && !S.consultations.length && !S.courses.length) {
+  const needLoad = !S.users.length && !S.consultations.length && !S.courses.length
+                && !S.programmes.length && !S.institutions.length;
+  if (needLoad) {
     showLoading(true);
     try { await loadAllData(); } finally { showLoading(false); }
   }
@@ -2683,6 +3618,7 @@ document.addEventListener('keydown', e => {
     refreshToken = savedRefresh;
     try { currentUser = JSON.parse(savedUser); } catch { currentUser = null; }
     currentUserRole = currentUser?.role || null;
+    S.userIntent = currentUser?.intent || 'both';
     initializeSocket();
   }
   route();
