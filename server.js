@@ -1,8 +1,16 @@
 /* ============================================================
    ExpertHub 2.0 — Express + MySQL + Socket.io backend
    Serves API AND frontend from /public
+   -------------------------------------------
+   Improvements:
+   - All config comes from .env (no hidden defaults for secrets)
+   - Server boots even if MySQL is unreachable (graceful degrade)
+   - Auto-reconnect loop for the DB pool
+   - /api/health endpoint reports DB + uptime
+   - Bootstrap/seed skipped when DB disabled or unavailable
    ============================================================ */
 require('dotenv').config();
+
 const express      = require('express');
 const http         = require('http');
 const path         = require('path');
@@ -14,122 +22,211 @@ const jwt          = require('jsonwebtoken');
 const mysql        = require('mysql2/promise');
 const multer       = require('multer');
 const rateLimit    = require('express-rate-limit');
-const { body, param, query, validationResult } = require('express-validator');
+const { body, validationResult } = require('express-validator');
 const compression  = require('compression');
 const { nanoid }   = require('nanoid');
 const { Server }   = require('socket.io');
 
-/* ---------------- Config ---------------- */
-const PORT         = process.env.PORT || 3000;
-const JWT_SECRET   = process.env.JWT_SECRET || 'dev_secret_change_me_please';
-const JWT_REFRESH  = process.env.JWT_REFRESH_SECRET || 'dev_refresh_change_me_please';
-const JWT_EXPIRES  = process.env.JWT_EXPIRES || '1h';
-const JWT_REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES || '30d';
-const DB_NAME      = process.env.DB_NAME || 'experthub';
-const PLATFORM_COMMISSION = Number(process.env.PLATFORM_COMMISSION || 20);
-const WITHDRAWAL_HOLD_DAYS = Number(process.env.WITHDRAWAL_HOLD_DAYS || 7);
-const MIN_PAYOUT   = Number(process.env.MIN_PAYOUT || 50);
+/* ============================================================
+   CONFIG (all from .env)
+   ============================================================ */
+const config = {
+  env:  process.env.NODE_ENV || 'development',
+  port: Number(process.env.PORT || 3000),
 
-/* ---------------- DB Pool ---------------- */
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 15,
-  namedPlaceholders: true,
-  timezone: 'Z',
-});
+  db: {
+    // Set ENABLE_DB=false to run the server without any DB.
+    enabled: process.env.ENABLE_DB !== 'false',
+    host:     process.env.DB_HOST,
+    port:     Number(process.env.DB_PORT || 3306),
+    user:     process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    poolSize: Number(process.env.DB_POOL_SIZE || 15),
+    retryMs:  Number(process.env.DB_RETRY_MS || 10000),
+  },
 
-/* ---------- Utils ---------- */
-const now = () => new Date();
-const genRef = (p='TX') => `${p}-${Date.now().toString(36).toUpperCase()}-${nanoid(6).toUpperCase()}`;
-const asyncH = fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next);
+  jwt: {
+    secret:           process.env.JWT_SECRET,
+    refreshSecret:    process.env.JWT_REFRESH_SECRET,
+    expiresIn:        process.env.JWT_EXPIRES || '1h',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES || '30d',
+  },
 
-async function logAudit(actorId, action, target, targetId, meta, ip) {
+  platform: {
+    commission:         Number(process.env.PLATFORM_COMMISSION || 20),
+    withdrawalHoldDays: Number(process.env.WITHDRAWAL_HOLD_DAYS || 7),
+    minPayout:          Number(process.env.MIN_PAYOUT || 50),
+  },
+
+  uploads: {
+    dir:         process.env.UPLOAD_DIR || path.join(__dirname, 'public', 'uploads'),
+    maxFileSize: Number(process.env.MAX_FILE_SIZE || 8 * 1024 * 1024),
+  },
+
+  bootstrap: {
+    runSchema: process.env.RUN_SCHEMA !== 'false',
+    seed:      process.env.SEED_DEMO_DATA !== 'false',
+    schemaFile: process.env.SCHEMA_FILE || 'database.sql',
+  },
+
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+  },
+};
+
+/* ---------- Validate required env vars ---------- */
+function validateEnv() {
+  const missing = [];
+  if (!config.jwt.secret)        missing.push('JWT_SECRET');
+  if (!config.jwt.refreshSecret) missing.push('JWT_REFRESH_SECRET');
+  if (config.db.enabled) {
+    if (!config.db.host)     missing.push('DB_HOST');
+    if (!config.db.user)     missing.push('DB_USER');
+    if (!config.db.database) missing.push('DB_NAME');
+  }
+
+  if (missing.length) {
+    const msg = `Missing required env vars: ${missing.join(', ')}`;
+    if (config.env === 'production') {
+      console.error(`❌ ${msg}`);
+      process.exit(1);
+    } else {
+      console.warn(`⚠️  ${msg} — dev mode, using insecure fallbacks. DO NOT use in production.`);
+      if (!config.jwt.secret)        config.jwt.secret        = 'dev_secret_change_me';
+      if (!config.jwt.refreshSecret) config.jwt.refreshSecret = 'dev_refresh_change_me';
+    }
+  }
+}
+validateEnv();
+
+/* ============================================================
+   DATABASE — resilient pool with reconnect
+   ============================================================ */
+const dbState = {
+  pool: null,
+  connected: false,
+  connecting: false,
+  lastError: null,
+  lastAttempt: null,
+  lastSuccess: null,
+};
+
+async function tryConnect() {
+  if (!config.db.enabled) {
+    console.log('[db] disabled via ENABLE_DB=false — API will return 503 for DB routes');
+    return;
+  }
+  if (dbState.connecting || dbState.connected) return;
+
+  dbState.connecting = true;
+  dbState.lastAttempt = new Date();
+
   try {
-    await pool.query(
-      `INSERT INTO audit_logs (actor_id,action,target,target_id,meta,ip) VALUES (?,?,?,?,?,?)`,
-      [actorId||null, action, target||null, targetId||null, meta?JSON.stringify(meta):null, ip||null]
-    );
-  } catch (e) { console.error('audit log failed', e.message); }
+    // Build pool
+    if (!dbState.pool) {
+      dbState.pool = mysql.createPool({
+        host: config.db.host,
+        port: config.db.port,
+        user: config.db.user,
+        password: config.db.password,
+        database: config.db.database,
+        waitForConnections: true,
+        connectionLimit: config.db.poolSize,
+        namedPlaceholders: true,
+        timezone: 'Z',
+        connectTimeout: 5000,
+      });
+    }
+    // Verify connectivity
+    const conn = await dbState.pool.getConnection();
+    await conn.ping();
+    conn.release();
+
+    dbState.connected = true;
+    dbState.lastError = null;
+    dbState.lastSuccess = new Date();
+    console.log(`[db] connected → ${config.db.host}:${config.db.port}/${config.db.database}`);
+
+    // Run bootstrap once connected
+    onDatabaseReady().catch(e => console.error('[db] post-connect bootstrap error:', e.message));
+  } catch (err) {
+    dbState.connected = false;
+    dbState.lastError = err.message;
+    console.warn(`[db] connect failed: ${err.message} — retrying in ${config.db.retryMs}ms`);
+    // Destroy broken pool so we rebuild next attempt
+    if (dbState.pool) { try { await dbState.pool.end(); } catch {} dbState.pool = null; }
+    setTimeout(tryConnect, config.db.retryMs);
+  } finally {
+    dbState.connecting = false;
+  }
 }
 
-async function notify(userId, title, message, type='info', link=null) {
-  const [r] = await pool.query(
-    `INSERT INTO notifications (user_id,title,message,type,link) VALUES (?,?,?,?,?)`,
-    [userId, title, message, type, link]
-  );
-  io.to(`user_${userId}`).emit('notification', { id: r.insertId, user_id: userId, title, message, type, link, is_read: 0, created_at: now() });
-  return r.insertId;
+/** Returns the pool or throws if DB unavailable. */
+function getPool() {
+  if (!dbState.connected || !dbState.pool) {
+    const e = new Error('Database unavailable');
+    e.status = 503;
+    throw e;
+  }
+  return dbState.pool;
 }
 
-async function creditWallet(userId, amount, reason, ref=null) {
-  const conn = await pool.getConnection();
+/** Middleware: block API routes when DB is down. */
+function requireDB(req, res, next) {
+  if (!dbState.connected) {
+    return res.status(503).json({
+      error: 'Database unavailable',
+      hint: 'Configure DB_HOST/DB_USER/DB_PASSWORD/DB_NAME in .env and restart, or wait for auto-reconnect.',
+      last_attempt: dbState.lastAttempt,
+      last_error: dbState.lastError,
+    });
+  }
+  next();
+}
+
+/** Called once when the pool first becomes available. */
+let dbInitialised = false;
+async function onDatabaseReady() {
+  if (dbInitialised) return;
+  dbInitialised = true;
   try {
-    await conn.beginTransaction();
-    await conn.query('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id=?', [amount, userId]);
-    const [[u]] = await conn.query('SELECT wallet_balance FROM users WHERE id=?', [userId]);
-    await conn.query(
-      'INSERT INTO wallet_ledger (user_id,amount,balance_after,reason,reference) VALUES (?,?,?,?,?)',
-      [userId, amount, u.wallet_balance, reason, ref]
-    );
-    await conn.commit();
-    return u.wallet_balance;
-  } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+    if (config.bootstrap.runSchema) await bootstrapDatabase();
+    if (config.bootstrap.seed)     await seedDemoData();
+  } catch (e) {
+    console.error('[db] bootstrap/seed error:', e.message);
+  }
 }
 
-async function debitWallet(userId, amount, reason, ref=null) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const [[u]] = await conn.query('SELECT wallet_balance FROM users WHERE id=? FOR UPDATE', [userId]);
-    if (!u || Number(u.wallet_balance) < Number(amount)) throw new Error('Insufficient balance');
-    await conn.query('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?', [amount, userId]);
-    const [[u2]] = await conn.query('SELECT wallet_balance FROM users WHERE id=?', [userId]);
-    await conn.query(
-      'INSERT INTO wallet_ledger (user_id,amount,balance_after,reason,reference) VALUES (?,?,?,?,?)',
-      [userId, -amount, u2.wallet_balance, reason, ref]
-    );
-    await conn.commit();
-    return u2.wallet_balance;
-  } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
-}
-
-/* ---------- Database bootstrap ---------- */
+/* ---------- Schema bootstrap ---------- */
 async function bootstrapDatabase() {
-  const admin = await mysql.createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    multipleStatements: true,
-  });
-  await admin.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-  await admin.end();
-
-  const schema = fs.readFileSync(path.join(__dirname, 'database.sql'), 'utf8');
-  const conn = await mysql.createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: DB_NAME,
-    multipleStatements: true,
-  });
-  // run only the CREATE/INSERT IGNORE statements from database.sql (skip CREATE DATABASE/USE)
+  const schemaPath = path.join(__dirname, config.bootstrap.schemaFile);
+  if (!fs.existsSync(schemaPath)) {
+    console.warn(`[db] schema file not found at ${schemaPath} — skipping schema bootstrap`);
+    return;
+  }
+  const schema = fs.readFileSync(schemaPath, 'utf8');
   const sanitized = schema
     .split('\n')
     .filter(l => !/^\s*(CREATE DATABASE|USE )/i.test(l))
     .join('\n');
-  await conn.query(sanitized).catch(e => console.warn('schema warning:', e.message));
+
+  const conn = await mysql.createConnection({
+    host: config.db.host,
+    port: config.db.port,
+    user: config.db.user,
+    password: config.db.password,
+    database: config.db.database,
+    multipleStatements: true,
+  });
+  await conn.query(sanitized).catch(e => console.warn('[db] schema warning:', e.message));
   await conn.end();
+  console.log('[db] schema bootstrap complete');
 }
 
-/* ---------- Seed ---------- */
+/* ---------- Demo seed ---------- */
 async function seedDemoData() {
+  const pool = getPool();
   const [[{ c }]] = await pool.query('SELECT COUNT(*) AS c FROM users');
   if (c > 0) return;
 
@@ -156,7 +253,6 @@ async function seedDemoData() {
   const [expertRows] = await pool.query("SELECT id FROM users WHERE role='expert'");
   const expertIds = expertRows.map(r => r.id);
 
-  // Courses
   const courses = [
     ['Full-Stack Web Development','Master modern web development from zero to hero.','Technology','bootcamp','intermediate',499,12,0,120],
     ['Data Science Bootcamp','Python, ML, and real-world projects.','Data','bootcamp','intermediate',599,14,0,140],
@@ -172,8 +268,7 @@ async function seedDemoData() {
        VALUES (?,?,?,?,?,?,?,?,?,?, 'published')`,
       [...c, expertIds[Math.floor(Math.random()*expertIds.length)]||null]
     );
-    const lessonCount = 5;
-    for (let i=1;i<=lessonCount;i++) {
+    for (let i=1;i<=5;i++) {
       await pool.query(
         `INSERT INTO lessons (course_id,title,content,position,duration_minutes) VALUES (?,?,?,?,?)`,
         [r.insertId, `Lesson ${i}`, `Content for lesson ${i}`, i, 20]
@@ -181,7 +276,6 @@ async function seedDemoData() {
     }
   }
 
-  // Events
   const events = [
     ['Live Bootcamp: Intro to AI','Hands-on introduction to machine learning.','Technology',7,500,100,0],
     ['Career Webinar: Tech Jobs','How to break into tech in 2026.','Career',14,300,200,0],
@@ -195,7 +289,6 @@ async function seedDemoData() {
     );
   }
 
-  // Coupons
   await pool.query(
     `INSERT INTO coupons (code,discount_type,discount_value,max_uses,min_spend,applies_to,active) VALUES
      ('WELCOME10','percent',10,1000,0,'all',1),
@@ -203,7 +296,6 @@ async function seedDemoData() {
      ('BOOTCAMP20','percent',20,200,0,'bootcamp',1)`
   );
 
-  // Notifications
   await pool.query(
     `INSERT INTO notifications (title,message,type) VALUES
      ('Welcome to ExpertHub','Your account is ready. Explore the platform!','info'),
@@ -213,18 +305,25 @@ async function seedDemoData() {
   console.log('[seed] demo data inserted');
 }
 
-/* ---------------- App ---------------- */
-const app = express();
-app.use(compression());
-app.use(cors());
-app.use(express.json({ limit:'10mb' }));
-app.use(express.urlencoded({ extended:true }));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+/* ============================================================
+   APP + MIDDLEWARE
+   ============================================================ */
+const now = () => new Date();
+const genRef = (p='TX') => `${p}-${Date.now().toString(36).toUpperCase()}-${nanoid(6).toUpperCase()}`;
+const asyncH = fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next);
 
-const uploadDir = path.join(__dirname, 'public', 'uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
+const app = express();
+app.set('trust proxy', 1);
+app.use(compression());
+app.use(cors({ origin: config.cors.origin }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan(config.env === 'production' ? 'combined' : 'dev'));
+
+/* Uploads */
+fs.mkdirSync(config.uploads.dir, { recursive: true });
 const storage = multer.diskStorage({
-  destination: (_req,_f,cb) => cb(null, uploadDir),
+  destination: (_req,_f,cb) => cb(null, config.uploads.dir),
   filename: (_req,f,cb) => cb(null, `${Date.now()}-${nanoid(8)}${path.extname(f.originalname)}`),
 });
 const ALLOWED_MIME = new Set([
@@ -235,10 +334,10 @@ const ALLOWED_MIME = new Set([
 ]);
 const upload = multer({
   storage,
-  limits: { fileSize: 8*1024*1024 },
+  limits: { fileSize: config.uploads.maxFileSize },
   fileFilter: (_req,f,cb) => ALLOWED_MIME.has(f.mimetype) ? cb(null,true) : cb(new Error('File type not allowed')),
 });
-app.use('/uploads', express.static(uploadDir));
+app.use('/uploads', express.static(config.uploads.dir));
 
 /* Rate limits */
 const loginLimiter = rateLimit({ windowMs: 15*60*1000, max: 20, message:{ error:'Too many login attempts' } });
@@ -246,6 +345,23 @@ const apiLimiter   = rateLimit({ windowMs: 60*1000, max: 300 });
 app.use('/api/', apiLimiter);
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth/forgot', loginLimiter);
+
+/* Health check — no DB required */
+app.get('/api/health', (req,res) => {
+  res.json({
+    ok: true,
+    env: config.env,
+    uptime: process.uptime(),
+    db: {
+      enabled: config.db.enabled,
+      connected: dbState.connected,
+      last_attempt: dbState.lastAttempt,
+      last_success: dbState.lastSuccess,
+      last_error: dbState.lastError,
+    },
+    time: new Date().toISOString(),
+  });
+});
 
 /* Validation helper */
 const validate = (req,res,next) => {
@@ -261,7 +377,7 @@ function auth(roles=null) {
     const tok = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!tok) return res.status(401).json({ error:'No token' });
     try {
-      const payload = jwt.verify(tok, JWT_SECRET);
+      const payload = jwt.verify(tok, config.jwt.secret);
       req.user = payload;
       if (roles && !roles.includes(payload.role)) return res.status(403).json({ error:'Forbidden' });
       next();
@@ -270,7 +386,64 @@ function auth(roles=null) {
 }
 
 /* ============================================================
-   AUTH
+   DATABASE-BACKED HELPERS
+   ============================================================ */
+async function logAudit(actorId, action, target, targetId, meta, ip) {
+  try {
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO audit_logs (actor_id,action,target,target_id,meta,ip) VALUES (?,?,?,?,?,?)`,
+      [actorId||null, action, target||null, targetId||null, meta?JSON.stringify(meta):null, ip||null]
+    );
+  } catch (e) { console.error('audit log failed', e.message); }
+}
+
+async function notify(userId, title, message, type='info', link=null) {
+  const pool = getPool();
+  const [r] = await pool.query(
+    `INSERT INTO notifications (user_id,title,message,type,link) VALUES (?,?,?,?,?)`,
+    [userId, title, message, type, link]
+  );
+  io.to(`user_${userId}`).emit('notification', { id: r.insertId, user_id: userId, title, message, type, link, is_read: 0, created_at: now() });
+  return r.insertId;
+}
+
+async function creditWallet(userId, amount, reason, ref=null) {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id=?', [amount, userId]);
+    const [[u]] = await conn.query('SELECT wallet_balance FROM users WHERE id=?', [userId]);
+    await conn.query(
+      'INSERT INTO wallet_ledger (user_id,amount,balance_after,reason,reference) VALUES (?,?,?,?,?)',
+      [userId, amount, u.wallet_balance, reason, ref]
+    );
+    await conn.commit();
+    return u.wallet_balance;
+  } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+}
+
+async function debitWallet(userId, amount, reason, ref=null) {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[u]] = await conn.query('SELECT wallet_balance FROM users WHERE id=? FOR UPDATE', [userId]);
+    if (!u || Number(u.wallet_balance) < Number(amount)) throw new Error('Insufficient balance');
+    await conn.query('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?', [amount, userId]);
+    const [[u2]] = await conn.query('SELECT wallet_balance FROM users WHERE id=?', [userId]);
+    await conn.query(
+      'INSERT INTO wallet_ledger (user_id,amount,balance_after,reason,reference) VALUES (?,?,?,?,?)',
+      [userId, -amount, u2.wallet_balance, reason, ref]
+    );
+    await conn.commit();
+    return u2.wallet_balance;
+  } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+}
+
+/* ============================================================
+   AUTH ROUTES
    ============================================================ */
 app.post('/api/auth/register', [
   body('name').isLength({ min:2, max:120 }).withMessage('Name required'),
@@ -278,6 +451,7 @@ app.post('/api/auth/register', [
   body('password').isLength({ min:8 }).withMessage('Password must be at least 8 chars'),
   body('role').optional().isIn(['learner','expert']).withMessage('Invalid role'),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { name, email, password, phone='', role='learner', extra={} } = req.body;
   const [[exists]] = await pool.query('SELECT id FROM users WHERE email=?', [email]);
   if (exists) return res.status(409).json({ error:'Email already registered' });
@@ -294,7 +468,6 @@ app.post('/api/auth/register', [
   await pool.query('INSERT INTO notification_prefs (user_id) VALUES (?)', [r.insertId]);
   await notify(r.insertId, 'Welcome!', status==='active' ? 'Your account is ready.' : 'Your account is pending admin approval.');
 
-  // notify admins
   const [admins] = await pool.query("SELECT id FROM users WHERE role='admin'");
   for (const a of admins) {
     await notify(a.id, 'New registration', `${name} (${safeRole}) registered.`, 'info', '/admin/users');
@@ -311,6 +484,7 @@ app.post('/api/auth/login', [
   body('email').isEmail(),
   body('password').notEmpty(),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { email, password } = req.body;
   const [[u]] = await pool.query('SELECT * FROM users WHERE email=?', [email]);
   if (!u) return res.status(401).json({ error:'Invalid email or password' });
@@ -320,8 +494,8 @@ app.post('/api/auth/login', [
   if (u.status === 'suspended') return res.status(403).json({ error:'Account suspended' });
   if (u.status === 'rejected')  return res.status(403).json({ error:'Account rejected. Contact support.' });
 
-  const token = jwt.sign({ id:u.id, role:u.role, email:u.email }, JWT_SECRET, { expiresIn:JWT_EXPIRES });
-  const refresh = jwt.sign({ id:u.id }, JWT_REFRESH, { expiresIn:JWT_REFRESH_EXPIRES });
+  const token = jwt.sign({ id:u.id, role:u.role, email:u.email }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+  const refresh = jwt.sign({ id:u.id }, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshExpiresIn });
   const expiresAt = new Date(Date.now() + 30*24*3600*1000);
   await pool.query('INSERT INTO refresh_tokens (user_id,token,expires_at) VALUES (?,?,?)', [u.id, refresh, expiresAt]);
   await pool.query('UPDATE users SET last_login_at=NOW() WHERE id=?', [u.id]);
@@ -330,27 +504,30 @@ app.post('/api/auth/login', [
 }));
 
 app.post('/api/auth/refresh', asyncH(async (req,res) => {
+  const pool = getPool();
   const { refresh } = req.body;
   if (!refresh) return res.status(400).json({ error:'Refresh token required' });
   let payload;
-  try { payload = jwt.verify(refresh, JWT_REFRESH); } catch { return res.status(401).json({ error:'Invalid refresh token' }); }
+  try { payload = jwt.verify(refresh, config.jwt.refreshSecret); } catch { return res.status(401).json({ error:'Invalid refresh token' }); }
   const [[row]] = await pool.query(
     'SELECT * FROM refresh_tokens WHERE token=? AND revoked=0 AND expires_at > NOW()', [refresh]
   );
   if (!row) return res.status(401).json({ error:'Refresh token revoked or expired' });
   const [[u]] = await pool.query('SELECT * FROM users WHERE id=?', [payload.id]);
   if (!u || u.status !== 'active') return res.status(403).json({ error:'Account not active' });
-  const token = jwt.sign({ id:u.id, role:u.role, email:u.email }, JWT_SECRET, { expiresIn:JWT_EXPIRES });
+  const token = jwt.sign({ id:u.id, role:u.role, email:u.email }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
   res.json({ token });
 }));
 
 app.post('/api/auth/logout', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const { refresh } = req.body || {};
   if (refresh) await pool.query('UPDATE refresh_tokens SET revoked=1 WHERE token=?', [refresh]);
   res.json({ ok:true });
 }));
 
 app.get('/api/auth/me', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[u]] = await pool.query('SELECT * FROM users WHERE id=?', [req.user.id]);
   if (!u) return res.status(404).json({ error:'Not found' });
   delete u.password_hash;
@@ -358,13 +535,13 @@ app.get('/api/auth/me', auth(), asyncH(async (req,res) => {
 }));
 
 app.post('/api/auth/forgot', [body('email').isEmail()], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { email } = req.body;
   const [[u]] = await pool.query('SELECT id FROM users WHERE email=?', [email]);
-  if (!u) return res.json({ ok:true, message:'If the email exists, a reset link was sent.' }); // security: don't leak
+  if (!u) return res.json({ ok:true, message:'If the email exists, a reset link was sent.' });
   const token = nanoid(40);
   const expires = new Date(Date.now() + 3600*1000);
   await pool.query('INSERT INTO password_resets (user_id,token,expires_at) VALUES (?,?,?)', [u.id, token, expires]);
-  // In production send email. Here log to console.
   console.log(`[PASSWORD RESET] ${email} → /#/reset?token=${token}`);
   res.json({ ok:true, message:'If the email exists, a reset link was sent.' });
 }));
@@ -373,6 +550,7 @@ app.post('/api/auth/reset', [
   body('token').notEmpty(),
   body('password').isLength({ min:8 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { token, password } = req.body;
   const [[row]] = await pool.query(
     'SELECT * FROM password_resets WHERE token=? AND used=0 AND expires_at > NOW()', [token]
@@ -389,6 +567,7 @@ app.put('/api/auth/password', auth(), [
   body('old_password').notEmpty(),
   body('new_password').isLength({ min:8 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const [[u]] = await pool.query('SELECT password_hash FROM users WHERE id=?', [req.user.id]);
   const ok = await bcrypt.compare(req.body.old_password, u.password_hash);
   if (!ok) return res.status(400).json({ error:'Current password is incorrect' });
@@ -402,6 +581,7 @@ app.put('/api/auth/password', auth(), [
    COMMON
    ============================================================ */
 app.get('/api/common/notifications', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const limit = Math.min(Number(req.query.limit||30), 100);
   const [rows] = await pool.query(
     `SELECT * FROM notifications WHERE user_id IS NULL OR user_id=? ORDER BY created_at DESC LIMIT ?`,
@@ -415,16 +595,19 @@ app.get('/api/common/notifications', auth(), asyncH(async (req,res) => {
 }));
 
 app.put('/api/common/notifications/:id/read', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query('UPDATE notifications SET is_read=1 WHERE id=? AND (user_id=? OR user_id IS NULL)', [req.params.id, req.user.id]);
   res.json({ ok:true });
 }));
 
 app.put('/api/common/notifications/read-all', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query('UPDATE notifications SET is_read=1 WHERE user_id=?', [req.user.id]);
   res.json({ ok:true });
 }));
 
 app.get('/api/common/consultations', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const page = Math.max(Number(req.query.page||1),1);
   const per  = Math.min(Number(req.query.per||20),100);
   const offset = (page-1)*per;
@@ -448,6 +631,7 @@ app.get('/api/common/consultations', auth(), asyncH(async (req,res) => {
 }));
 
 app.get('/api/common/events', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(
     `SELECT e.*, u.name AS expert_name,
        (SELECT COUNT(*) FROM event_registrations er WHERE er.event_id=e.id AND er.status='registered') AS registered_count
@@ -458,6 +642,7 @@ app.get('/api/common/events', auth(), asyncH(async (req,res) => {
 }));
 
 app.post('/api/common/events/:id/register', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const eventId = Number(req.params.id);
   const [[ev]] = await pool.query('SELECT * FROM events WHERE id=?', [eventId]);
   if (!ev) return res.status(404).json({ error:'Event not found' });
@@ -470,9 +655,10 @@ app.post('/api/common/events/:id/register', auth(), asyncH(async (req,res) => {
 }));
 
 /* ============================================================
-   ESCHOOL (courses)
+   ESCHOOL
    ============================================================ */
 app.get('/api/eschool/courses', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const type = req.query.type || null;
   const q = req.query.q || null;
   const page = Math.max(Number(req.query.page||1),1);
@@ -492,6 +678,7 @@ app.get('/api/eschool/courses', auth(), asyncH(async (req,res) => {
 }));
 
 app.get('/api/eschool/courses/:id', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[c]] = await pool.query(
     `SELECT c.*, u.name AS expert_name FROM courses c LEFT JOIN users u ON u.id=c.expert_id WHERE c.id=?`,
     [req.params.id]
@@ -504,6 +691,7 @@ app.get('/api/eschool/courses/:id', auth(), asyncH(async (req,res) => {
 app.post('/api/eschool/enroll', auth(), [
   body('course_id').isInt(),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { course_id, coupon_code } = req.body;
   const [[c]] = await pool.query('SELECT * FROM courses WHERE id=?', [course_id]);
   if (!c) return res.status(404).json({ error:'Course not found' });
@@ -532,9 +720,8 @@ app.post('/api/eschool/enroll', auth(), [
        VALUES (?,?,?,?,?,'succeeded','out')`,
       [req.user.id, genRef('ENR'), c.title, finalPrice, 'wallet']
     );
-    // credit expert 80%
     if (c.expert_id) {
-      const expertCut = finalPrice * ((100 - PLATFORM_COMMISSION)/100);
+      const expertCut = finalPrice * ((100 - config.platform.commission)/100);
       await creditWallet(c.expert_id, expertCut, `Course sale: ${c.title}`, null);
       await pool.query('UPDATE users SET total_earnings = total_earnings + ? WHERE id=?', [expertCut, c.expert_id]);
       await notify(c.expert_id, 'New enrollment', `A learner enrolled in "${c.title}".`);
@@ -551,6 +738,7 @@ app.post('/api/eschool/enroll', auth(), [
 }));
 
 app.get('/api/user/enrollments', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(
     `SELECT e.*, c.thumbnail, c.total_lessons FROM enrollments e
      LEFT JOIN courses c ON c.id=e.course_id
@@ -562,6 +750,7 @@ app.get('/api/user/enrollments', auth(), asyncH(async (req,res) => {
 app.put('/api/user/enrollments/:id/progress', auth(), [
   body('progress').isInt({ min:0, max:100 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { progress } = req.body;
   await pool.query(
     `UPDATE enrollments SET progress=?, status=CASE WHEN ?>=100 THEN 'completed' ELSE status END WHERE id=? AND user_id=?`,
@@ -582,6 +771,7 @@ app.put('/api/user/enrollments/:id/progress', auth(), [
 }));
 
 app.get('/api/user/certificates', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM certificates WHERE user_id=? ORDER BY issued_at DESC', [req.user.id]);
   res.json({ certificates: rows });
 }));
@@ -590,6 +780,7 @@ app.get('/api/user/certificates', auth(), asyncH(async (req,res) => {
    EXPERTS
    ============================================================ */
 app.get('/api/user/experts', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const q = req.query.q || null;
   const spec = req.query.spec || null;
   const page = Math.max(Number(req.query.page||1),1);
@@ -609,6 +800,7 @@ app.get('/api/user/experts', auth(), asyncH(async (req,res) => {
 }));
 
 app.get('/api/user/experts/:id', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[e]] = await pool.query(
     `SELECT id,name,email,avatar,bio,specialization,hourly_rate,average_rating FROM users WHERE id=? AND role='expert'`,
     [req.params.id]
@@ -630,6 +822,7 @@ app.post('/api/user/consultations', auth(), [
   body('title').isLength({ min:3, max:200 }),
   body('description').isLength({ min:5 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { title, description, consultation_type='general', expert_id=null, priority='normal', scheduled_at=null } = req.body;
   const [r] = await pool.query(
     `INSERT INTO consultations (user_id,expert_id,title,description,consultation_type,priority,status,scheduled_at)
@@ -643,6 +836,7 @@ app.post('/api/user/consultations', auth(), [
 app.put('/api/common/consultations/:id/status', auth(), [
   body('status').isIn(['pending','assigned','in_progress','completed','cancelled','disputed']),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { status } = req.body;
   const [[c]] = await pool.query('SELECT * FROM consultations WHERE id=?', [req.params.id]);
   if (!c) return res.status(404).json({ error:'Not found' });
@@ -652,7 +846,7 @@ app.put('/api/common/consultations/:id/status', auth(), [
   if (status === 'completed' && c.expert_id) {
     const fee = Number(c.expert_fee||0);
     if (fee > 0) {
-      const cut = fee * ((100 - PLATFORM_COMMISSION)/100);
+      const cut = fee * ((100 - config.platform.commission)/100);
       await creditWallet(c.expert_id, cut, `Consultation completed: ${c.title}`, null);
       await pool.query('UPDATE users SET total_earnings = total_earnings + ? WHERE id=?', [cut, c.expert_id]);
     }
@@ -663,12 +857,14 @@ app.put('/api/common/consultations/:id/status', auth(), [
 app.put('/api/common/consultations/:id/assign', auth(['admin']), [
   body('expert_id').isInt(),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query("UPDATE consultations SET expert_id=?, status='assigned' WHERE id=?", [req.body.expert_id, req.params.id]);
   await notify(req.body.expert_id, 'Consultation assigned', 'A new consultation has been assigned to you.', 'info', '/expert/consultations');
   res.json({ ok:true });
 }));
 
 app.get('/api/common/consultations/:id', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[c]] = await pool.query(
     `SELECT c.*, u.name AS client_name, u.email AS client_email, e.name AS expert_name, e.email AS expert_email
      FROM consultations c
@@ -681,12 +877,12 @@ app.get('/api/common/consultations/:id', auth(), asyncH(async (req,res) => {
 }));
 
 app.get('/api/common/consultations/:id/messages', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(
     `SELECT m.*, u.name AS sender_name, u.avatar AS sender_avatar
      FROM messages m LEFT JOIN users u ON u.id=m.sender_id
      WHERE m.consultation_id=? ORDER BY m.created_at ASC`, [req.params.id]
   );
-  // mark incoming as read
   await pool.query(
     `UPDATE messages SET read_at=NOW() WHERE consultation_id=? AND sender_id<>? AND read_at IS NULL`,
     [req.params.id, req.user.id]
@@ -697,6 +893,7 @@ app.get('/api/common/consultations/:id/messages', auth(), asyncH(async (req,res)
 app.post('/api/common/consultations/:id/messages', auth(), [
   body('message').optional({ nullable:true }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { message } = req.body;
   const [r] = await pool.query(
     `INSERT INTO messages (consultation_id,sender_id,message) VALUES (?,?,?)`,
@@ -716,6 +913,7 @@ app.post('/api/common/consultations/:id/messages', auth(), [
 }));
 
 app.post('/api/common/consultations/:id/attachments', auth(), upload.single('attachments'), asyncH(async (req,res) => {
+  const pool = getPool();
   if (!req.file) return res.status(400).json({ error:'No file uploaded' });
   const url = `/uploads/${req.file.filename}`;
   const [r] = await pool.query(
@@ -731,6 +929,7 @@ app.post('/api/common/consultations/:id/attachments', auth(), upload.single('att
 }));
 
 app.put('/api/common/consultations/:id/meeting', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const { meeting_url } = req.body;
   await pool.query('UPDATE consultations SET meeting_url=? WHERE id=?', [meeting_url, req.params.id]);
   res.json({ ok:true });
@@ -740,6 +939,7 @@ app.put('/api/common/consultations/:id/meeting', auth(), asyncH(async (req,res) 
    EXPERT ROUTES
    ============================================================ */
 app.get('/api/expert/earnings', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[summary]] = await pool.query(
     `SELECT COALESCE(SUM(amount),0) AS total_earned,
             COALESCE(SUM(CASE WHEN status='paid' THEN amount ELSE 0 END),0) AS total_paid_out,
@@ -760,6 +960,7 @@ app.get('/api/expert/earnings', auth(['expert']), asyncH(async (req,res) => {
 }));
 
 app.get('/api/expert/reviews', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(
     `SELECT r.*, u.name AS author_name FROM reviews r LEFT JOIN users u ON u.id=r.author_id
      WHERE r.expert_id=? ORDER BY r.created_at DESC`, [req.user.id]
@@ -770,6 +971,7 @@ app.get('/api/expert/reviews', auth(['expert']), asyncH(async (req,res) => {
 app.post('/api/expert/reviews/:id/reply', auth(['expert']), [
   body('reply').isLength({ min:2, max:500 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const [[r]] = await pool.query('SELECT expert_id FROM reviews WHERE id=?', [req.params.id]);
   if (!r || r.expert_id !== req.user.id) return res.status(403).json({ error:'Forbidden' });
   await pool.query('UPDATE reviews SET reply=?, replied_at=NOW() WHERE id=?', [req.body.reply, req.params.id]);
@@ -780,8 +982,9 @@ app.post('/api/expert/withdrawals', auth(['expert']), [
   body('amount').isFloat({ gt:0 }),
   body('method').isIn(['bank_transfer','mobile_money','paypal','stripe']),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { amount, method, account_details={} } = req.body;
-  if (amount < MIN_PAYOUT) return res.status(400).json({ error:`Minimum withdrawal is ${MIN_PAYOUT}` });
+  if (amount < config.platform.minPayout) return res.status(400).json({ error:`Minimum withdrawal is ${config.platform.minPayout}` });
   const [[u]] = await pool.query('SELECT wallet_balance FROM users WHERE id=?', [req.user.id]);
   if (Number(u.wallet_balance) < Number(amount)) return res.status(400).json({ error:'Insufficient balance' });
   await debitWallet(req.user.id, Number(amount), 'Withdrawal request', null);
@@ -794,16 +997,19 @@ app.post('/api/expert/withdrawals', auth(['expert']), [
 }));
 
 app.get('/api/expert/withdrawals', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM payouts WHERE expert_id=? ORDER BY created_at DESC', [req.user.id]);
   res.json({ payouts: rows });
 }));
 
 app.get('/api/expert/availability', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM availability WHERE expert_id=? ORDER BY day_of_week', [req.user.id]);
   res.json({ availability: rows });
 }));
 
 app.put('/api/expert/availability', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const { schedule = [] } = req.body;
   await pool.query('DELETE FROM availability WHERE expert_id=?', [req.user.id]);
   for (const s of schedule) {
@@ -819,6 +1025,7 @@ app.post('/api/expert/time-off', auth(['expert']), [
   body('start_date').isISO8601(),
   body('end_date').isISO8601(),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { start_date, end_date, reason='' } = req.body;
   const [r] = await pool.query(
     `INSERT INTO time_off (expert_id,start_date,end_date,reason) VALUES (?,?,?,?)`,
@@ -828,11 +1035,13 @@ app.post('/api/expert/time-off', auth(['expert']), [
 }));
 
 app.get('/api/expert/time-off', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM time_off WHERE expert_id=? ORDER BY start_date DESC', [req.user.id]);
   res.json({ timeOff: rows });
 }));
 
 app.put('/api/expert/profile', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const { specialization, hourly_rate, bio } = req.body;
   await pool.query('UPDATE users SET specialization=?, hourly_rate=?, bio=? WHERE id=?',
     [specialization, hourly_rate, bio, req.user.id]);
@@ -840,6 +1049,7 @@ app.put('/api/expert/profile', auth(['expert']), asyncH(async (req,res) => {
 }));
 
 app.get('/api/expert/dashboard-stats', auth(['expert']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[stats]] = await pool.query(
     `SELECT
       (SELECT COUNT(*) FROM consultations WHERE expert_id=?) AS total_consultations,
@@ -855,6 +1065,7 @@ app.get('/api/expert/dashboard-stats', auth(['expert']), asyncH(async (req,res) 
    ADMIN
    ============================================================ */
 app.get('/api/admin/users', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const page = Math.max(Number(req.query.page||1),1);
   const per = Math.min(Number(req.query.per||20),100);
   const offset = (page-1)*per;
@@ -876,6 +1087,7 @@ app.get('/api/admin/users', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.put('/api/admin/users/:id/approve', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query("UPDATE users SET status='active' WHERE id=?", [req.params.id]);
   await notify(req.params.id, 'Account approved', 'Your account has been approved. Welcome!');
   await logAudit(req.user.id, 'approve_user', 'users', req.params.id, null, req.ip);
@@ -883,6 +1095,7 @@ app.put('/api/admin/users/:id/approve', auth(['admin']), asyncH(async (req,res) 
 }));
 
 app.put('/api/admin/users/:id/suspend', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query("UPDATE users SET status='suspended' WHERE id=?", [req.params.id]);
   await notify(req.params.id, 'Account suspended', 'Your account has been suspended. Contact support.');
   await logAudit(req.user.id, 'suspend_user', 'users', req.params.id, null, req.ip);
@@ -892,12 +1105,14 @@ app.put('/api/admin/users/:id/suspend', auth(['admin']), asyncH(async (req,res) 
 app.put('/api/admin/users/:id/reject', auth(['admin']), [
   body('reason').optional().isString(),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query("UPDATE users SET status='rejected', rejected_reason=? WHERE id=?", [req.body.reason||null, req.params.id]);
   await notify(req.params.id, 'Registration rejected', req.body.reason || 'Your application was rejected.');
   res.json({ ok:true });
 }));
 
 app.put('/api/admin/users/:id', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const { name, phone, role, status, hourly_rate, specialization, bio } = req.body;
   await pool.query(
     `UPDATE users SET name=COALESCE(?,name), phone=COALESCE(?,phone), role=COALESCE(?,role),
@@ -910,12 +1125,14 @@ app.put('/api/admin/users/:id', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.delete('/api/admin/users/:id', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query('DELETE FROM users WHERE id=?', [req.params.id]);
   await logAudit(req.user.id, 'delete_user', 'users', req.params.id, null, req.ip);
   res.json({ ok:true });
 }));
 
 app.get('/api/admin/experts', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const page = Math.max(Number(req.query.page||1),1);
   const per = Math.min(Number(req.query.per||20),100);
   const offset = (page-1)*per;
@@ -936,6 +1153,7 @@ app.post('/api/admin/experts/create', auth(['admin']), [
   body('name').isLength({ min:2 }),
   body('email').isEmail(),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { name, email, password='Expert@123', specialization='', hourly_rate=0, bio='', phone='' } = req.body;
   const [[ex]] = await pool.query('SELECT id FROM users WHERE email=?', [email]);
   if (ex) return res.status(409).json({ error:'Email already registered' });
@@ -951,6 +1169,7 @@ app.post('/api/admin/experts/create', auth(['admin']), [
 }));
 
 app.get('/api/admin/analytics', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[totals]] = await pool.query(`
     SELECT
       (SELECT COUNT(*) FROM users) AS total_users,
@@ -979,6 +1198,7 @@ app.get('/api/admin/analytics', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.get('/api/admin/transactions', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const page = Math.max(Number(req.query.page||1),1);
   const per = Math.min(Number(req.query.per||30),100);
   const offset = (page-1)*per;
@@ -991,6 +1211,7 @@ app.get('/api/admin/transactions', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.get('/api/admin/payouts', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(`
     SELECT p.*, u.name AS expert_name, u.email AS expert_email FROM payouts p
     LEFT JOIN users u ON u.id=p.expert_id ORDER BY p.created_at DESC`);
@@ -1000,11 +1221,11 @@ app.get('/api/admin/payouts', auth(['admin']), asyncH(async (req,res) => {
 app.put('/api/admin/payouts/:id', auth(['admin']), [
   body('status').isIn(['approved','rejected','paid','processing']),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { status, reason } = req.body;
   const [[p]] = await pool.query('SELECT * FROM payouts WHERE id=?', [req.params.id]);
   if (!p) return res.status(404).json({ error:'Not found' });
   if (status === 'rejected') {
-    // refund wallet
     await creditWallet(p.expert_id, p.amount, 'Withdrawal rejected — refund', null);
   }
   await pool.query('UPDATE payouts SET status=?, rejection_reason=?, processed_at=NOW() WHERE id=?', [status, reason||null, req.params.id]);
@@ -1014,6 +1235,7 @@ app.put('/api/admin/payouts/:id', auth(['admin']), [
 }));
 
 app.get('/api/admin/coupons', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM coupons ORDER BY created_at DESC');
   res.json({ coupons:rows });
 }));
@@ -1023,6 +1245,7 @@ app.post('/api/admin/coupons', auth(['admin']), [
   body('discount_type').isIn(['percent','fixed']),
   body('discount_value').isFloat({ gt:0 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { code, discount_type, discount_value, max_uses=null, min_spend=0, applies_to='all', expires_at=null } = req.body;
   const [r] = await pool.query(
     `INSERT INTO coupons (code,discount_type,discount_value,max_uses,min_spend,applies_to,expires_at) VALUES (?,?,?,?,?,?,?)`,
@@ -1032,16 +1255,19 @@ app.post('/api/admin/coupons', auth(['admin']), [
 }));
 
 app.put('/api/admin/coupons/:id/toggle', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query('UPDATE coupons SET active = 1 - active WHERE id=?', [req.params.id]);
   res.json({ ok:true });
 }));
 
 app.delete('/api/admin/coupons/:id', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query('DELETE FROM coupons WHERE id=?', [req.params.id]);
   res.json({ ok:true });
 }));
 
 app.get('/api/admin/claims', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(`
     SELECT c.*, u.name AS user_name FROM claims c LEFT JOIN users u ON u.id=c.user_id
     ORDER BY c.created_at DESC`);
@@ -1051,11 +1277,13 @@ app.get('/api/admin/claims', auth(['admin']), asyncH(async (req,res) => {
 app.put('/api/admin/claims/:id', auth(['admin']), [
   body('status').isIn(['open','investigating','resolved','rejected']),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query('UPDATE claims SET status=?, resolution=?, resolved_at=NOW() WHERE id=?', [req.body.status, req.body.resolution||null, req.params.id]);
   res.json({ ok:true });
 }));
 
 app.get('/api/admin/tickets', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(`
     SELECT t.*, u.name AS user_name FROM support_tickets t LEFT JOIN users u ON u.id=t.user_id
     ORDER BY t.created_at DESC`);
@@ -1063,6 +1291,7 @@ app.get('/api/admin/tickets', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.put('/api/admin/tickets/:id', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const { status, priority, assigned_to } = req.body;
   await pool.query(
     `UPDATE support_tickets SET status=COALESCE(?,status), priority=COALESCE(?,priority), assigned_to=COALESCE(?,assigned_to) WHERE id=?`,
@@ -1072,6 +1301,7 @@ app.put('/api/admin/tickets/:id', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.get('/api/admin/reviews', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(`
     SELECT r.*, u.name AS author_name, e.name AS expert_name
     FROM reviews r
@@ -1082,12 +1312,14 @@ app.get('/api/admin/reviews', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.put('/api/admin/reviews/:id', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const { status } = req.body;
   await pool.query('UPDATE reviews SET status=? WHERE id=?', [status, req.params.id]);
   res.json({ ok:true });
 }));
 
 app.get('/api/admin/audit-logs', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(`
     SELECT a.*, u.name AS actor_name FROM audit_logs a
     LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 300`);
@@ -1099,6 +1331,7 @@ app.post('/api/admin/notifications/broadcast', auth(['admin']), [
   body('message').isLength({ min:2 }),
   body('audience').optional().isIn(['all','experts','learners','admins']),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { title, message, audience='all' } = req.body;
   let whereSQL = '';
   if (audience === 'experts')  whereSQL = "WHERE role='expert'";
@@ -1114,6 +1347,7 @@ app.post('/api/admin/notifications/broadcast', auth(['admin']), [
 }));
 
 app.get('/api/admin/settings', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM settings');
   const s = {};
   rows.forEach(r => s[r.setting_key] = r.setting_value);
@@ -1121,6 +1355,7 @@ app.get('/api/admin/settings', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.put('/api/admin/settings', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const { settings = {} } = req.body;
   for (const [k,v] of Object.entries(settings)) {
     await pool.query(
@@ -1135,6 +1370,7 @@ app.put('/api/admin/settings', auth(['admin']), asyncH(async (req,res) => {
 app.post('/api/admin/events', auth(['admin']), [
   body('title').isLength({ min:3, max:200 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { title, description='', category='General', expert_id=null, date=null, start_time=null, end_time=null, location='', meeting_url='', capacity=100, price=0, expert_payment=0 } = req.body;
   const [r] = await pool.query(
     `INSERT INTO events (title,description,category,expert_id,date,start_time,end_time,location,meeting_url,capacity,price,expert_payment,status)
@@ -1145,6 +1381,7 @@ app.post('/api/admin/events', auth(['admin']), [
 }));
 
 app.put('/api/admin/events/:id', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   const fields = ['title','description','category','expert_id','date','start_time','end_time','location','meeting_url','capacity','price','expert_payment','status'];
   const updates = []; const args = [];
   for (const f of fields) if (f in req.body) { updates.push(`${f}=?`); args.push(req.body[f]); }
@@ -1155,6 +1392,7 @@ app.put('/api/admin/events/:id', auth(['admin']), asyncH(async (req,res) => {
 }));
 
 app.delete('/api/admin/events/:id', auth(['admin']), asyncH(async (req,res) => {
+  const pool = getPool();
   await pool.query('DELETE FROM events WHERE id=?', [req.params.id]);
   res.json({ ok:true });
 }));
@@ -1166,6 +1404,7 @@ app.post('/api/user/claims', auth(), [
   body('claim_title').isLength({ min:3, max:200 }),
   body('claim_description').isLength({ min:5 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { consultation_id=null, claim_type='general', claim_title, claim_description, claim_amount=null } = req.body;
   const [r] = await pool.query(
     `INSERT INTO claims (user_id,consultation_id,claim_type,claim_title,claim_description,claim_amount)
@@ -1178,6 +1417,7 @@ app.post('/api/user/claims', auth(), [
 }));
 
 app.get('/api/user/claims', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM claims WHERE user_id=? ORDER BY created_at DESC', [req.user.id]);
   res.json({ claims:rows });
 }));
@@ -1186,6 +1426,7 @@ app.post('/api/user/tickets', auth(), [
   body('subject').isLength({ min:3, max:200 }),
   body('description').isLength({ min:5 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { subject, description, priority='normal', category='general' } = req.body;
   const ref = `TKT-${Date.now().toString(36).toUpperCase()}-${nanoid(5).toUpperCase()}`;
   const [r] = await pool.query(
@@ -1196,6 +1437,7 @@ app.post('/api/user/tickets', auth(), [
 }));
 
 app.get('/api/user/tickets', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query('SELECT * FROM support_tickets WHERE user_id=? ORDER BY created_at DESC', [req.user.id]);
   res.json({ tickets:rows });
 }));
@@ -1203,6 +1445,7 @@ app.get('/api/user/tickets', auth(), asyncH(async (req,res) => {
 app.post('/api/user/tickets/:id/replies', auth(), [
   body('message').isLength({ min:1 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const [r] = await pool.query(
     `INSERT INTO ticket_replies (ticket_id,sender_id,message) VALUES (?,?,?)`,
     [req.params.id, req.user.id, req.body.message]
@@ -1211,6 +1454,7 @@ app.post('/api/user/tickets/:id/replies', auth(), [
 }));
 
 app.get('/api/user/wallet', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [[u]] = await pool.query('SELECT wallet_balance FROM users WHERE id=?', [req.user.id]);
   const [ledger] = await pool.query('SELECT * FROM wallet_ledger WHERE user_id=? ORDER BY created_at DESC LIMIT 30', [req.user.id]);
   res.json({ balance: Number(u.wallet_balance), ledger });
@@ -1220,9 +1464,9 @@ app.post('/api/user/wallet/topup', auth(), [
   body('amount').isFloat({ gt:0 }),
   body('provider').isIn(['stripe','paystack','flutterwave','paypal','demo']),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { amount, provider } = req.body;
   const ref = genRef('TOP');
-  // In production: create provider session. Here: mark succeeded (demo).
   await pool.query(
     `INSERT INTO transactions (user_id,reference,description,amount,provider,status,direction)
      VALUES (?,?,?,?,?,'succeeded','in')`,
@@ -1233,6 +1477,7 @@ app.post('/api/user/wallet/topup', auth(), [
 }));
 
 app.get('/api/user/transactions', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const [rows] = await pool.query(
     `SELECT * FROM transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 200`, [req.user.id]
   );
@@ -1240,6 +1485,7 @@ app.get('/api/user/transactions', auth(), asyncH(async (req,res) => {
 }));
 
 app.put('/api/user/profile', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const { name, phone, timezone, theme, language } = req.body;
   await pool.query(
     `UPDATE users SET name=COALESCE(?,name), phone=COALESCE(?,phone), timezone=COALESCE(?,timezone),
@@ -1250,6 +1496,7 @@ app.put('/api/user/profile', auth(), asyncH(async (req,res) => {
 }));
 
 app.post('/api/user/avatar', auth(), upload.single('avatar'), asyncH(async (req,res) => {
+  const pool = getPool();
   if (!req.file) return res.status(400).json({ error:'No file' });
   const url = `/uploads/${req.file.filename}`;
   await pool.query('UPDATE users SET avatar=? WHERE id=?', [url, req.user.id]);
@@ -1257,12 +1504,14 @@ app.post('/api/user/avatar', auth(), upload.single('avatar'), asyncH(async (req,
 }));
 
 app.get('/api/user/notification-prefs', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   let [[p]] = await pool.query('SELECT * FROM notification_prefs WHERE user_id=?', [req.user.id]);
   if (!p) { await pool.query('INSERT INTO notification_prefs (user_id) VALUES (?)', [req.user.id]); p = { user_id:req.user.id, email_notifications:1, push_notifications:1, marketing:0 }; }
   res.json({ prefs:p });
 }));
 
 app.put('/api/user/notification-prefs', auth(), asyncH(async (req,res) => {
+  const pool = getPool();
   const { email_notifications, push_notifications, marketing } = req.body;
   await pool.query(
     `INSERT INTO notification_prefs (user_id,email_notifications,push_notifications,marketing)
@@ -1273,17 +1522,16 @@ app.put('/api/user/notification-prefs', auth(), asyncH(async (req,res) => {
   res.json({ ok:true });
 }));
 
-/* Reviews (learner submits) */
 app.post('/api/user/reviews', auth(), [
   body('expert_id').isInt(),
   body('rating').isInt({ min:1, max:5 }),
 ], validate, asyncH(async (req,res) => {
+  const pool = getPool();
   const { expert_id, consultation_id=null, rating, comment='' } = req.body;
   const [r] = await pool.query(
     `INSERT INTO reviews (expert_id,author_id,consultation_id,rating,comment) VALUES (?,?,?,?,?)`,
     [expert_id, req.user.id, consultation_id, rating, comment]
   );
-  // update expert avg rating
   const [[agg]] = await pool.query('SELECT AVG(rating) AS avg_r FROM reviews WHERE expert_id=? AND status="published"', [expert_id]);
   await pool.query('UPDATE users SET average_rating=? WHERE id=?', [agg.avg_r||0, expert_id]);
   res.status(201).json({ id:r.insertId });
@@ -1295,7 +1543,14 @@ app.post('/api/user/reviews', auth(), [
 app.use(express.static(path.join(__dirname, 'public')));
 app.get(/.*/, (req,res,next) => {
   if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const indexHtml = path.join(__dirname, 'public', 'index.html');
+  if (!fs.existsSync(indexHtml)) {
+    return res.status(200).send(
+      '<h1>ExpertHub API</h1><p>API is running. Frontend not yet built.</p>' +
+      '<p><a href="/api/health">Health</a></p>'
+    );
+  }
+  res.sendFile(indexHtml);
 });
 
 /* Global error handler */
@@ -1308,12 +1563,12 @@ app.use((err, req, res, _next) => {
    SOCKET.IO
    ============================================================ */
 const server = http.createServer(app);
-const io = new Server(server, { cors:{ origin:'*' } });
+const io = new Server(server, { cors: { origin: config.cors.origin } });
 
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next();
-  try { socket.user = jwt.verify(token, JWT_SECRET); next(); } catch { next(); }
+  try { socket.user = jwt.verify(token, config.jwt.secret); next(); } catch { next(); }
 });
 
 const onlineUsers = new Map(); // userId → count
@@ -1349,21 +1604,36 @@ io.on('connection', (socket) => {
 });
 
 /* ============================================================
-   START
+   START — HTTP first, DB in background
    ============================================================ */
-(async () => {
-  try {
-    await bootstrapDatabase();
-    await seedDemoData();
-    server.listen(PORT, () => {
-      console.log(`\n✅ ExpertHub 2.0 running at http://localhost:${PORT}`);
-      console.log('   Demo accounts:');
-      console.log('     admin@platform.com   / admin123');
-      console.log('     expert@platform.com  / expert123');
-      console.log('     learner@platform.com / learner123\n');
-    });
-  } catch (err) {
-    console.error('❌ Startup failed:', err);
-    process.exit(1);
+server.listen(config.port, () => {
+  console.log(`\n✅ ExpertHub 2.0 API running at http://localhost:${config.port}`);
+  console.log(`   Environment: ${config.env}`);
+  console.log(`   Health:      http://localhost:${config.port}/api/health`);
+  if (config.db.enabled) {
+    console.log(`   DB target:   ${config.db.host}:${config.db.port}/${config.db.database}`);
+    console.log('   Connecting to database in background...');
+  } else {
+    console.log('   DB disabled (ENABLE_DB=false) — API will return 503 for DB routes.');
   }
-})();
+  if (config.env !== 'production') {
+    console.log('\n   Demo accounts (only created on first seed):');
+    console.log('     admin@platform.com   / admin123');
+    console.log('     expert@platform.com  / expert123');
+    console.log('     learner@platform.com / learner123\n');
+  }
+  // Kick off DB connection (non-blocking)
+  tryConnect();
+});
+
+/* ---------- Graceful shutdown ---------- */
+async function shutdown(signal) {
+  console.log(`\n[${signal}] shutting down...`);
+  try { if (dbState.pool) await dbState.pool.end(); } catch {}
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
+process.on('uncaughtException',  (err) => { console.error('[uncaughtException]', err); });
