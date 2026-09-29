@@ -4,20 +4,82 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6366f1" />
-  <title>ExpertHub 2.0 | E-School & Consultation Platform</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>ðŸŽ“</text></svg>" />
+  <meta name="description" content="ExpertHub 2.0 — E-School, 1-on-1 expert consultations, and corporate training in one platform." />
+  <meta name="color-scheme" content="light dark" />
+  <title>ExpertHub 2.0 | E-School &amp; Consultation Platform</title>
+
+  <!-- Favicon (inline SVG) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Chart.js (used by renderCharts and renderInstitutionCharts) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+
+  <!--
+    Socket.IO client.
+    MUST load before /js/04-api.js runs initializeSocket().
+    Do NOT add `defer` — server.js serves this synchronously and
+    the split files below depend on `io` being defined globally.
+  -->
   <script src="/socket.io/socket.io.js"></script>
+
+  <!-- App styles -->
   <link rel="stylesheet" href="styles.css" />
+
+  <!-- Avoid flash of unstyled theme: apply saved dark mode before paint -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {}
+    })();
+  </script>
 </head>
+
 <body>
+  <!-- SPA mount points -->
   <div id="app-root"></div>
   <div id="toast-container"></div>
   <div id="modal-root"></div>
-  <script src="app.js"></script>
+
+  <!--
+    ============================================================
+    App modules — 15-file split of the original app.js.
+    Load order matters ONLY for the first and last file:
+      01-state.js   must load FIRST   (defines CONFIG, S, tokens, etc.)
+      15-router.js  must load LAST    (runs init() and route() on parse)
+    Files 02–14 can technically be in any order because every function
+    is hoisted globally across classic <script> tags.
+
+    DO NOT add type="module" to any of these — it would give each file
+    its own scope and break the shared globals the app relies on.
+    DO NOT add `defer` or `async` — 15-router.js must run after all
+    render functions are defined.
+    ============================================================
+  -->
+  <script src="js/01-state.js"></script>
+  <script src="js/02-utils.js"></script>
+  <script src="js/03-ui.js"></script>
+  <script src="js/04-api.js"></script>
+  <script src="js/05-auth.js"></script>
+  <script src="js/06-data.js"></script>
+  <script src="js/07-landing.js"></script>
+  <script src="js/08-shell.js"></script>
+  <script src="js/09-admin.js"></script>
+  <script src="js/10-expert.js"></script>
+  <script src="js/11-user.js"></script>
+  <script src="js/12-institution.js"></script>
+  <script src="js/13-modals.js"></script>
+  <script src="js/14-actions.js"></script>
+  <script src="js/15-router.js"></script>
 </body>
 </html>
