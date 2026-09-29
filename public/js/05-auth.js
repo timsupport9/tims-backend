@@ -145,7 +145,7 @@ function renderRegister() {
         </header>
         <form id="registerForm" class="auth-form">
           <div class="role-picker">
-            <button type="button" data-role="learner" class="role-pick role-pick-active">Client</button>
+            <button type="button" data-role="learner" class="role-pick role-pick-active">User&learner/</button>
             <button type="button" data-role="expert"  class="role-pick">Expert</button>
             <button type="button" data-role="institution" class="role-pick">Institution</button>
           </div>
