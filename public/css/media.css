@@ -1,0 +1,328 @@
+/*
+ * ExpertHub 2.0 — Media & Visual System
+ * Companion layer for the seven modular CSS files from Comprehensive.css.
+ */
+
+:root {
+    --eh-media-radius: 1.25rem;
+    --eh-media-radius-lg: 1.75rem;
+    --eh-media-shadow: 0 1.25rem 3.5rem rgba(0, 0, 0, .18);
+    --eh-media-overlay: rgba(0, 0, 0, .48);
+    --eh-media-transition: 600ms cubic-bezier(.2, .7, .2, 1);
+}
+
+.eh-media {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--eh-media-radius);
+    isolation: isolate;
+}
+
+.eh-media img,
+.eh-media video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.eh-media--16x9 { aspect-ratio: 16 / 9; }
+.eh-media--4x3 { aspect-ratio: 4 / 3; }
+.eh-media--square { aspect-ratio: 1 / 1; }
+.eh-media--portrait { aspect-ratio: 4 / 5; }
+
+.eh-media--zoom img,
+.eh-media--zoom video {
+    transition: transform var(--eh-media-transition);
+}
+
+.eh-media--zoom:hover img,
+.eh-media--zoom:hover video {
+    transform: scale(1.06);
+}
+
+.eh-media__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(
+        180deg,
+        rgba(0, 0, 0, .05) 0%,
+        rgba(0, 0, 0, .12) 40%,
+        var(--eh-media-overlay) 100%
+    );
+    pointer-events: none;
+}
+
+.eh-media__content {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 2;
+    padding: clamp(1rem, 3vw, 2rem);
+    color: #fff;
+}
+
+.eh-media__badge {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 3;
+}
+
+.eh-hero {
+    position: relative;
+    min-height: clamp(34rem, 78vh, 52rem);
+    overflow: hidden;
+    isolation: isolate;
+    display: grid;
+    align-items: center;
+}
+
+.eh-hero__media {
+    position: absolute;
+    inset: 0;
+    z-index: -3;
+}
+
+.eh-hero__media img,
+.eh-hero__media video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.eh-hero__media--motion img {
+    animation: ehHeroKenBurns 16s ease-in-out infinite alternate;
+}
+
+.eh-hero__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    background:
+        linear-gradient(
+            90deg,
+            rgba(0, 0, 0, .78) 0%,
+            rgba(0, 0, 0, .48) 48%,
+            rgba(0, 0, 0, .18) 100%
+        );
+}
+
+.eh-hero__content {
+    position: relative;
+    z-index: 2;
+    max-width: 76rem;
+    width: min(100% - 2rem, 76rem);
+    margin-inline: auto;
+    color: #fff;
+    padding-block: clamp(5rem, 12vw, 9rem);
+}
+
+.eh-hero__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: 1rem;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.eh-hero__title {
+    max-width: 52rem;
+    margin: 0;
+    font-size: clamp(2.5rem, 7vw, 6.5rem);
+    line-height: .98;
+    text-wrap: balance;
+}
+
+.eh-hero__text {
+    max-width: 42rem;
+    margin-top: 1.25rem;
+    font-size: clamp(1rem, 2vw, 1.3rem);
+    line-height: 1.65;
+}
+
+.eh-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-top: 2rem;
+}
+
+.eh-photo-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--eh-media-radius-lg);
+}
+
+.eh-photo-card__image {
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+}
+
+.eh-photo-card__image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--eh-media-transition);
+}
+
+.eh-photo-card:hover .eh-photo-card__image img {
+    transform: scale(1.055);
+}
+
+.eh-expert-photo {
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: 50%;
+}
+
+.eh-expert-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.eh-service-media {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+}
+
+.eh-service-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--eh-media-transition);
+}
+
+.eh-service-media:hover img {
+    transform: scale(1.06);
+}
+
+.eh-event-media {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: var(--eh-media-radius);
+}
+
+.eh-event-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.eh-event-media__date {
+    position: absolute;
+    left: 1rem;
+    top: 1rem;
+    z-index: 2;
+    min-width: 4rem;
+    padding: .65rem;
+    text-align: center;
+    border-radius: .8rem;
+    background: rgba(255, 255, 255, .94);
+    color: #111;
+    box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .16);
+}
+
+.eh-icon {
+    width: 2.75rem;
+    height: 2.75rem;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+}
+
+.eh-icon svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.eh-floating {
+    animation: ehFloat 6s ease-in-out infinite;
+}
+
+.eh-fade-up {
+    animation: ehFadeUp 700ms cubic-bezier(.2, .7, .2, 1) both;
+}
+
+.eh-delay-1 { animation-delay: 100ms; }
+.eh-delay-2 { animation-delay: 200ms; }
+.eh-delay-3 { animation-delay: 300ms; }
+.eh-delay-4 { animation-delay: 400ms; }
+
+@keyframes ehHeroKenBurns {
+    from { transform: scale(1); }
+    to { transform: scale(1.08); }
+}
+
+@keyframes ehFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-12px); }
+}
+
+@keyframes ehFadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 768px) {
+    .eh-hero {
+        min-height: 38rem;
+    }
+
+    .eh-hero__overlay {
+        background:
+            linear-gradient(
+                180deg,
+                rgba(0, 0, 0, .48) 0%,
+                rgba(0, 0, 0, .76) 100%
+            );
+    }
+
+    .eh-hero__content {
+        width: min(100% - 1.5rem, 76rem);
+    }
+
+    .eh-hero__actions > * {
+        flex: 1 1 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .eh-hero__media--motion img,
+    .eh-floating,
+    .eh-fade-up {
+        animation: none !important;
+    }
+
+    .eh-photo-card__image img,
+    .eh-service-media img,
+    .eh-media--zoom img,
+    .eh-media--zoom video {
+        transition: none !important;
+    }
+
+    .eh-photo-card:hover .eh-photo-card__image img,
+    .eh-service-media:hover img,
+    .eh-media--zoom:hover img,
+    .eh-media--zoom:hover video {
+        transform: none !important;
+    }
+}
