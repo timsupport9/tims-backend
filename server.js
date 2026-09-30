@@ -3893,6 +3893,28 @@ async function handleDemo(req, res) {
   return false;
 }
 
+/* ============================================================
+   CLIENT COMPATIBILITY LAYER
+   Keeps the public/js SPA contract aligned with this backend.
+   ============================================================ */
+registerClientCompatibility({
+  app,
+  auth,
+  poolOrThrow,
+  demo,
+  nextId,
+  bcrypt,
+  jwt,
+  config,
+  asyncH,
+  safeRoute,
+  logAudit,
+  institutionAudit,
+  notify,
+});
+
+/* Final catch-all for unknown /api/* */
+
 app.use('/api', demoRouter);
 
 /* ============================================================
@@ -6957,7 +6979,7 @@ app.get('/api/institution/blockchain-certs', auth(), requireDB, requireInstituti
   res.json({ certificates: rows });
 }, { certificates: [] }));
 
-/* Final catch-all for unknown /api/* */
+
 app.use('/api/', (req, res) => {
   res.status(404).json({ error: 'Endpoint not found', path: req.path, method: req.method });
 });
