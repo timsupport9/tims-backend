@@ -1,1777 +1,2201 @@
 /* ============================================================
-   ExpertHub 2.0 — 07-landing.js  (FINAL v2)
-   Public landing page — single-file, self-contained.
-   Uses global helpers: $, $$, appPhase
+   ExpertHub 2.0 — 07-landing.js
+   Public "front door" for ExpertHub.
+
+   Responsibilities
+   ----------------
+   • Landing page ............ hero + unified search + live discovery
+   • Discovery pages ......... courses, experts, events, resources
+   • Detail pages ............ course, expert, event
+   • Info pages .............. about, contact, institutions
+   • Unified public search ... courses + experts + events + resources
+   • Service layer ........... Course/Expert/Event/Resource/Search services
+
+   Router wiring (add to 15-router.js)
+   -----------------------------------
+     const page = window.Landing && window.Landing.handleRoute(location.hash);
+     if (page) return;                    // handled by the front door
+
+   Routes owned by this file
+   -------------------------
+     #/                      renderLanding()
+     #/courses               renderPublicCourses()
+     #/courses/:id           renderCourseDetail(id)
+     #/experts               renderPublicExperts()
+     #/experts/:id           renderExpertDetail(id)
+     #/events                renderPublicEvents()
+     #/events/:id            renderEventDetail(id)
+     #/resources             renderPublicResources()
+     #/about                 renderAbout()
+     #/contact               renderContact()
+     #/institutions          renderInstitutions()
+
+   The whole file is wrapped in an IIFE and publishes its public API on
+   `window.Landing`, so it never collides with the other 14 app modules.
    ============================================================ */
+(function () {
+  'use strict';
 
-/* ============================================================
-   MAIN RENDER
-   ============================================================ */
-function renderLanding() {
-  appPhase = 'landing';
-  window.scrollTo(0, 0);
+  /* ==========================================================
+     0. LOCAL UTILITIES
+     ========================================================== */
+  var $  = function (sel, root) { return (root || document).querySelector(sel); };
+  var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
-  $('#app-root').innerHTML = `
-    <div class="landing">
-      <a class="skip-link" href="#main">Skip to main content</a>
-      <div class="read-progress" id="readProgress" role="progressbar"
-           aria-label="Page reading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
-
-      <!-- ============================================================
-           NAVIGATION
-           ============================================================ -->
-      <header class="landing-header" id="publicHeader">
-        <nav class="landing-nav" aria-label="Primary">
-          <a href="#/" class="landing-brand" data-nav="/" aria-label="ExpertHub home">
-            <div class="landing-brand-icon"><i class="fas fa-graduation-cap"></i></div>
-            <span>ExpertHub</span>
-          </a>
-
-          <button class="nav-toggle" id="navToggle"
-                  aria-expanded="false" aria-controls="primaryNav"
-                  aria-label="Toggle navigation menu">
-            <i class="fas fa-bars"></i>
-          </button>
-
-          <ul class="landing-nav-links" id="primaryNav">
-            <li><a class="nav-link" href="#/courses"       data-nav="/courses"><i class="fas fa-book-open"></i> Courses</a></li>
-            <li><a class="nav-link" href="#/experts"       data-nav="/experts"><i class="fas fa-user-tie"></i> Experts</a></li>
-            <li><a class="nav-link" href="#/consultations" data-nav="/consultations"><i class="fas fa-comments"></i> Consultations</a></li>
-            <li><a class="nav-link" href="#/events"        data-nav="/events"><i class="fas fa-calendar-days"></i> Events</a></li>
-            <li><a class="nav-link" href="#/institutions"  data-nav="/institutions"><i class="fas fa-building-columns"></i> Institutions</a></li>
-            <li><a class="nav-link" href="#/resources"     data-nav="/resources"><i class="fas fa-graduation-cap"></i> Resources</a></li>
-            <li><a class="nav-link" href="#/about"         data-nav="/about"><i class="fas fa-info-circle"></i> About</a></li>
-            <li><a class="nav-link" href="#/contact"       data-nav="/contact"><i class="fas fa-envelope"></i> Contact</a></li>
-          </ul>
-
-          <div class="landing-nav-actions">
-            <button class="btn btn-ghost"   id="navLogin"    data-nav="/login"><i class="fas fa-right-to-bracket"></i> Sign in</button>
-            <button class="btn btn-primary" id="navRegister" data-nav="/register"><i class="fas fa-user-plus"></i> Create account</button>
-          </div>
-        </nav>
-      </header>
-
-      <main id="main">
-
-        <!-- ============================================================
-             HERO
-             ============================================================ -->
-        <section class="hero" id="hero">
-          <div class="hero-copy">
-            <span class="hero-badge">
-              <span class="live-indicator"></span>
-              Trusted by learners, experts and institutions
-            </span>
-
-            <h1 class="hero-title">
-              Learn. Connect. Get Expert Help.
-              <span class="hero-title-accent">Build Your Future.</span>
-            </h1>
-
-            <p class="hero-subtitle">
-              ExpertHub combines an E-School, bootcamps, short courses, tuition, exam prep,
-              1-on-1 consultations and full corporate training in one modern platform.
-            </p>
-
-            <form class="hero-search" id="heroSearch" role="search" aria-label="Search">
-              <i class="fas fa-magnifying-glass hero-search-icon"></i>
-              <label for="heroSearchInput" class="sr-only">What do you want to learn?</label>
-              <input id="heroSearchInput" type="search"
-                     placeholder="What do you want to learn?" autocomplete="off" />
-              <button class="btn btn-primary" type="submit">
-                <i class="fas fa-arrow-right"></i> Search
-              </button>
-            </form>
-
-            <div class="hero-chips" id="heroChips" aria-label="Popular categories">
-              ${[
-                ['Web Development','web development'],
-                ['Data Science','data science'],
-                ['Digital Marketing','digital marketing'],
-                ['Graphic Design','graphic design'],
-                ['Business & Finance','business'],
-                ['Exam Prep','exam prep'],
-                ['Languages','languages'],
-                ['Cybersecurity','cybersecurity']
-              ].map(([label, q]) =>
-                `<button type="button" class="chip" data-q="${q}">${label}</button>`
-              ).join('')}
-            </div>
-
-            <div class="hero-cta">
-              <button class="btn btn-primary" data-nav="/courses"><i class="fas fa-compass"></i> Explore courses</button>
-              <button class="btn btn-secondary" data-nav="/experts"><i class="fas fa-user-tie"></i> Find an expert</button>
-              <button class="btn btn-outline" data-nav="/register?role=expert"><i class="fas fa-chalkboard-user"></i> Become an expert</button>
-              <button class="btn btn-outline" data-nav="/institutions"><i class="fas fa-building-columns"></i> For institutions</button>
-            </div>
-
-            <div class="hero-trust">
-              <button class="hero-link" data-scroll="howItWorks" type="button">
-                <i class="fas fa-circle-play"></i> How it works
-              </button>
-              <span class="hero-trust-sep">•</span>
-              <span class="hero-trust-item"><i class="fas fa-shield-halved"></i> Verified experts</span>
-              <span class="hero-trust-sep">•</span>
-              <span class="hero-trust-item"><i class="fas fa-lock"></i> Secure payments</span>
-            </div>
-          </div>
-
-          <div class="hero-visual" aria-hidden="true">
-            <div class="hero-card">
-              <div class="hero-card-row">
-                <div class="hero-card-icon"><i class="fas fa-school"></i></div>
-                <div><div class="hero-card-title">E-School hub</div><div class="hero-card-desc">Bootcamps, courses, tuition and exams</div></div>
-              </div>
-              <div class="hero-card-row">
-                <div class="hero-card-icon green"><i class="fas fa-comments"></i></div>
-                <div><div class="hero-card-title">1-on-1 consultations</div><div class="hero-card-desc">Chat, audio and video calls</div></div>
-              </div>
-              <div class="hero-card-row">
-                <div class="hero-card-icon yellow"><i class="fas fa-user-tie"></i></div>
-                <div><div class="hero-card-title">Verified experts</div><div class="hero-card-desc">Approved by our admin team</div></div>
-              </div>
-            </div>
-            <div class="hero-card">
-              <div class="hero-card-row">
-                <div class="hero-card-icon purple"><i class="fas fa-building-columns"></i></div>
-                <div><div class="hero-card-title">Corporate training</div><div class="hero-card-desc">Programmes, cohorts, assessments, compliance</div></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             TRUSTED-BY STRIP
-             ============================================================ -->
-        <section class="section trusted-strip" aria-labelledby="trustedHeading">
-          <h2 id="trustedHeading" class="sr-only">Organisations using ExpertHub</h2>
-          <p class="trusted-label">Trusted by teams, schools and companies building skills with ExpertHub</p>
-          <div class="trusted-logos" aria-label="Partner logos">
-            ${['Acme Academy','Nairobi Tech','BlueSky University','FinServe Bank',
-               'Kigali Institute','Mara Health','Savannah Retail','Zenith Labs'].map(name => `
-              <span class="trusted-logo" title="${name}">
-                <i class="fas fa-building-columns" aria-hidden="true"></i>
-                <span>${name}</span>
-              </span>`).join('')}
-          </div>
-        </section>
-
-        <!-- ============================================================
-             DYNAMIC STATISTICS
-             ============================================================ -->
-        <section class="section stats-section" id="statsSection">
-          <h2 class="sr-only">ExpertHub platform statistics</h2>
-          <div class="stats-grid" id="statsGrid" aria-live="polite">
-            ${skeletonLines(3)}
-          </div>
-        </section>
-
-        <!-- ============================================================
-             HOW EXPERTHUB WORKS
-             ============================================================ -->
-        <section class="section alt" id="howItWorks">
-          <h2 class="section-title">How ExpertHub works</h2>
-          <p class="section-sub">One platform, three journeys. Pick the one that fits you.</p>
-
-          <div class="hiw-tabs" role="tablist" aria-label="How ExpertHub works journeys">
-            <button class="hiw-tab active" data-journey="learners"     role="tab" aria-selected="true"  tabindex="0"  aria-controls="hiwPanel-learners">For Learners</button>
-            <button class="hiw-tab"        data-journey="experts"      role="tab" aria-selected="false" tabindex="-1" aria-controls="hiwPanel-experts">For Experts</button>
-            <button class="hiw-tab"        data-journey="institutions" role="tab" aria-selected="false" tabindex="-1" aria-controls="hiwPanel-institutions">For Institutions</button>
-          </div>
-
-          <div class="hiw-panel active" id="hiwPanel-learners" role="tabpanel">
-            <ol class="hiw-steps">
-              <li class="hiw-step"><span class="hiw-step-num">1</span><div><h3>Create your account</h3><p>Sign up free in seconds — learners are approved instantly.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">2</span><div><h3>Discover courses or experts</h3><p>Browse by category, skill, level, rating or price.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">3</span><div><h3>Enroll or book</h3><p>Pay securely and reserve your seat or session.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">4</span><div><h3>Learn and consult</h3><p>Attend live sessions, complete activities and chat with experts.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">5</span><div><h3>Track progress and achieve</h3><p>Earn certificates, build a portfolio and level up your career.</p></div></li>
-            </ol>
-          </div>
-
-          <div class="hiw-panel" id="hiwPanel-experts" role="tabpanel" hidden>
-            <ol class="hiw-steps">
-              <li class="hiw-step"><span class="hiw-step-num">1</span><div><h3>Apply</h3><p>Submit your profile, credentials and areas of expertise.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">2</span><div><h3>Get verified</h3><p>Our admin team reviews and approves qualified experts.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">3</span><div><h3>Publish</h3><p>Create courses, bootcamps and consultation offerings.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">4</span><div><h3>Teach</h3><p>Run live sessions and 1-on-1 consultations with students.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">5</span><div><h3>Earn and withdraw</h3><p>Get paid securely with scheduled payouts after the 7-day hold.</p></div></li>
-            </ol>
-          </div>
-
-          <div class="hiw-panel" id="hiwPanel-institutions" role="tabpanel" hidden>
-            <ol class="hiw-steps">
-              <li class="hiw-step"><span class="hiw-step-num">1</span><div><h3>Register</h3><p>Set up your institution workspace and admin team.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">2</span><div><h3>Create programmes</h3><p>Design curricula, cohorts, activities and certifications.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">3</span><div><h3>Add learners</h3><p>Onboard trainees individually or in bulk.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">4</span><div><h3>Manage cohorts</h3><p>Track attendance, assignments and engagement in real time.</p></div></li>
-              <li class="hiw-step"><span class="hiw-step-num">5</span><div><h3>Assess and certify</h3><p>Run assessments, capstones and issue verifiable certificates.</p></div></li>
-            </ol>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             FEATURES
-             ============================================================ -->
-        <section class="section" id="features">
-          <h2 class="section-title">Everything you need to learn, earn and train</h2>
-          <p class="section-sub">A complete platform for learners, experts, institutions and administrators.</p>
-          <div class="features-grid">
-            <div class="feature-card"><div class="feature-icon"><i class="fas fa-graduation-cap"></i></div><h3>Learn anything</h3><p>Bootcamps, short courses, tuition and exam prep curated by experts.</p></div>
-            <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#10b981,#059669)"><i class="fas fa-user-tie"></i></div><h3>Teach and earn</h3><p>Experts get verified, manage consultations and withdraw earnings.</p></div>
-            <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)"><i class="fas fa-comments"></i></div><h3>Real-time chat</h3><p>Live messaging, attachments, typing indicator and video calls.</p></div>
-            <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)"><i class="fas fa-building-columns"></i></div><h3>Corporate training</h3><p>Programmes, cohorts, assessments, certifications and compliance.</p></div>
-            <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#ef4444,#b91c1c)"><i class="fas fa-shield-halved"></i></div><h3>Admin controlled</h3><p>Approvals, moderation, payouts and full audit logging built in.</p></div>
-            <div class="feature-card"><div class="feature-icon" style="background:linear-gradient(135deg,#0ea5e9,#0369a1)"><i class="fas fa-chart-line"></i></div><h3>Deep analytics</h3><p>Track progress, scores and completion across all cohorts.</p></div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             BOOTCAMP SPOTLIGHT
-             ============================================================ -->
-        <section class="section spotlight-section" aria-labelledby="spotlightHeading">
-          <div class="spotlight" id="spotlight" aria-live="polite">
-            ${skeletonLines(2)}
-          </div>
-        </section>
-
-        <!-- ============================================================
-             POPULAR COURSES
-             ============================================================ -->
-        <section class="section" id="popularCourses">
-          <div class="section-head">
-            <div>
-              <h2 class="section-title">Popular courses</h2>
-              <p class="section-sub">Hand-picked by our community this month.</p>
-            </div>
-            <button class="btn btn-secondary" data-nav="/courses">View all courses <i class="fas fa-arrow-right"></i></button>
-          </div>
-          <div class="courses-grid" id="coursesGrid" aria-live="polite">${skeletonLines(2)}</div>
-        </section>
-
-        <!-- ============================================================
-             MEET OUR EXPERTS
-             ============================================================ -->
-        <section class="section alt" id="meetExperts">
-          <div class="section-head">
-            <div>
-              <h2 class="section-title">Meet our experts</h2>
-              <p class="section-sub">Verified professionals ready to help you grow.</p>
-            </div>
-            <button class="btn btn-secondary" data-nav="/experts">View all experts <i class="fas fa-arrow-right"></i></button>
-          </div>
-          <div class="experts-grid" id="expertsGrid" aria-live="polite">${skeletonLines(2)}</div>
-        </section>
-
-        <!-- ============================================================
-             UPCOMING EVENTS
-             ============================================================ -->
-        <section class="section" id="events" aria-labelledby="eventsHeading">
-          <div class="section-head">
-            <div>
-              <h2 id="eventsHeading" class="section-title">Upcoming events</h2>
-              <p class="section-sub">Live workshops, webinars and info sessions — free to attend.</p>
-            </div>
-            <button class="btn btn-secondary" data-nav="/events">View calendar <i class="fas fa-arrow-right"></i></button>
-          </div>
-          <div class="events-grid" id="eventsGrid" aria-live="polite">${skeletonLines(2)}</div>
-        </section>
-
-        <!-- ============================================================
-             CONSULTATIONS
-             ============================================================ -->
-        <section class="section alt" id="consultations">
-          <h2 class="section-title">1-on-1 consultations, your way</h2>
-          <p class="section-sub">Book the format that works best for you — chat, audio or video.</p>
-          <div class="consult-grid">
-            <div class="consult-card"><div class="consult-icon"><i class="fas fa-comment-dots"></i></div><h3>Chat consultation</h3><p>Text-based Q&A with file sharing and async replies within your session window.</p></div>
-            <div class="consult-card"><div class="consult-icon"><i class="fas fa-phone"></i></div><h3>Audio call</h3><p>Voice-only sessions, ideal for coaching, interviews and quick advice.</p></div>
-            <div class="consult-card"><div class="consult-icon"><i class="fas fa-video"></i></div><h3>Video call</h3><p>Face-to-face sessions with screen sharing, whiteboard and optional recording.</p></div>
-          </div>
-          <div class="consult-cta">
-            <button class="btn btn-primary" data-nav="/consultations"><i class="fas fa-calendar-plus"></i> Book a consultation</button>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             INSTITUTIONS
-             ============================================================ -->
-        <section class="section" id="institutions">
-          <div class="inst-split">
-            <div>
-              <h2 class="section-title">Corporate training, built for scale</h2>
-              <p class="section-sub">Run cohorts, track learners, assess outcomes and issue certificates — all from one console.</p>
-              <ul class="inst-list">
-                <li><i class="fas fa-check"></i> Team accounts and ops manager</li>
-                <li><i class="fas fa-check"></i> Programmes, cohorts and trainees</li>
-                <li><i class="fas fa-check"></i> Assessments and capstone projects</li>
-                <li><i class="fas fa-check"></i> Attendance and engagement tracking</li>
-                <li><i class="fas fa-check"></i> Certification and compliance</li>
-                <li><i class="fas fa-check"></i> Custom branding and SSO</li>
-                <li><i class="fas fa-check"></i> Reporting and analytics</li>
-                <li><i class="fas fa-check"></i> Dedicated support</li>
-              </ul>
-              <div class="inst-cta">
-                <button class="btn btn-primary" data-nav="/register?role=institution"><i class="fas fa-building-columns"></i> Register institution</button>
-                <button class="btn btn-outline" data-nav="/contact?topic=institutions">Talk to our team</button>
-              </div>
-            </div>
-            <div class="inst-visual" aria-hidden="true">
-              <div class="inst-mock">
-                <div class="inst-mock-row">
-                  <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
-                </div>
-                <div class="inst-mock-body">
-                  <div class="inst-mock-line lg"></div>
-                  <div class="inst-mock-line"></div>
-                  <div class="inst-mock-line"></div>
-                  <div class="inst-mock-grid">
-                    <div class="inst-mock-tile"></div><div class="inst-mock-tile"></div>
-                    <div class="inst-mock-tile"></div><div class="inst-mock-tile"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             WHY EXPERTHUB (comparison)
-             ============================================================ -->
-        <section class="section alt" id="whyExpertHub" aria-labelledby="whyHeading">
-          <h2 id="whyHeading" class="section-title">Why ExpertHub?</h2>
-          <p class="section-sub">See how we compare to typical online-learning platforms.</p>
-
-          <div class="compare-vendor" role="region" aria-label="Platform comparison">
-            <table class="compare-vendor-table">
-              <thead>
-                <tr>
-                  <th scope="col">Capability</th>
-                  <th scope="col" class="col-eh">ExpertHub</th>
-                  <th scope="col">Typical course site</th>
-                  <th scope="col">Typical consultation site</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${[
-                  ['Courses + bootcamps',              'yes','partial','no'],
-                  ['1-on-1 consultations (chat/A/V)',  'yes','no','yes'],
-                  ['Corporate cohorts & compliance',   'yes','no','no'],
-                  ['Assessments & capstones',          'yes','partial','no'],
-                  ['Verifiable certificates',          'yes','partial','no'],
-                  ['Admin moderation & audit log',     'yes','no','partial'],
-                  ['Transparent 20% commission',       'yes','varies','varies'],
-                  ['Wallet & scheduled payouts',       'yes','partial','yes'],
-                  ['M-Pesa & card payments',           'yes','partial','no']
-                ].map(([label, eh, a, b]) => `
-                  <tr>
-                    <th scope="row">${esc(label)}</th>
-                    <td class="cell-${eh}">${yesNoPartial(eh)}</td>
-                    <td class="cell-${a}">${yesNoPartial(a)}</td>
-                    <td class="cell-${b}">${yesNoPartial(b)}</td>
-                  </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             AUDIENCE SECTIONS
-             ============================================================ -->
-        <section class="section" id="audiences">
-          <h2 class="section-title">Built for every journey</h2>
-          <p class="section-sub">Whether you learn, teach or train, ExpertHub is designed around you.</p>
-          <div class="audience-grid">
-            <article class="audience-card">
-              <div class="audience-icon"><i class="fas fa-user-graduate"></i></div>
-              <h3>For Learners</h3>
-              <ul class="audience-list">
-                <li><i class="fas fa-check"></i> Courses</li>
-                <li><i class="fas fa-check"></i> Bootcamps</li>
-                <li><i class="fas fa-check"></i> Exam preparation</li>
-                <li><i class="fas fa-check"></i> Tuition</li>
-                <li><i class="fas fa-check"></i> Expert consultations</li>
-                <li><i class="fas fa-check"></i> Academic assistance</li>
-                <li><i class="fas fa-check"></i> Progress tracking</li>
-                <li><i class="fas fa-check"></i> Certificates</li>
-              </ul>
-              <button class="btn btn-secondary btn-block" data-nav="/courses">Explore courses</button>
-            </article>
-
-            <article class="audience-card">
-              <div class="audience-icon"><i class="fas fa-chalkboard-user"></i></div>
-              <h3>For Experts</h3>
-              <ul class="audience-list">
-                <li><i class="fas fa-check"></i> Create courses</li>
-                <li><i class="fas fa-check"></i> Manage students</li>
-                <li><i class="fas fa-check"></i> Consultations</li>
-                <li><i class="fas fa-check"></i> Messaging</li>
-                <li><i class="fas fa-check"></i> Earnings</li>
-                <li><i class="fas fa-check"></i> Wallet</li>
-                <li><i class="fas fa-check"></i> Analytics</li>
-                <li><i class="fas fa-check"></i> Reviews</li>
-              </ul>
-              <button class="btn btn-secondary btn-block" data-nav="/register?role=expert">Become an expert</button>
-            </article>
-
-            <article class="audience-card">
-              <div class="audience-icon"><i class="fas fa-building-columns"></i></div>
-              <h3>For Institutions</h3>
-              <ul class="audience-list">
-                <li><i class="fas fa-check"></i> Cohorts</li>
-                <li><i class="fas fa-check"></i> Learner management</li>
-                <li><i class="fas fa-check"></i> Corporate training</li>
-                <li><i class="fas fa-check"></i> Assessments</li>
-                <li><i class="fas fa-check"></i> Attendance</li>
-                <li><i class="fas fa-check"></i> Certification</li>
-                <li><i class="fas fa-check"></i> Analytics</li>
-                <li><i class="fas fa-check"></i> Compliance</li>
-              </ul>
-              <button class="btn btn-secondary btn-block" data-nav="/register?role=institution">Register institution</button>
-            </article>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             PRICING + COMPARE + PAYMENTS
-             ============================================================ -->
-        <section class="section alt" id="pricing">
-          <h2 class="section-title">Simple, transparent pricing</h2>
-          <p class="section-sub">Choose the plan that fits your journey.</p>
-
-          <div class="pricing-grid">
-            <div class="pricing-card">
-              <span class="pricing-badge">Learner</span>
-              <h3 style="margin:0">Free</h3>
-              <div class="pricing-price">$0<span>/mo</span></div>
-              <ul class="pricing-features">
-                <li><i class="fas fa-check"></i> Browse all courses</li>
-                <li><i class="fas fa-check"></i> 1 free consultation per month</li>
-                <li><i class="fas fa-check"></i> Community access</li>
-                <li><i class="fas fa-check"></i> Progress tracking</li>
-              </ul>
-              <button class="btn btn-secondary btn-block" data-nav="/register">Get started</button>
-            </div>
-
-            <div class="pricing-card featured">
-              <span class="pricing-badge">Expert</span>
-              <h3 style="margin:0">Pro</h3>
-              <div class="pricing-price">20%<span> commission</span></div>
-              <ul class="pricing-features">
-                <li><i class="fas fa-check"></i> Create unlimited courses</li>
-                <li><i class="fas fa-check"></i> Accept consultations</li>
-                <li><i class="fas fa-check"></i> Scheduled withdrawals after 7-day security hold</li>
-                <li><i class="fas fa-check"></i> Priority support</li>
-              </ul>
-              <button class="btn btn-primary btn-block" data-nav="/register?role=expert">Become an expert</button>
-            </div>
-
-            <div class="pricing-card">
-              <span class="pricing-badge">Enterprise</span>
-              <h3 style="margin:0">Institution</h3>
-              <div class="pricing-price">Let's talk</div>
-              <ul class="pricing-features">
-                <li><i class="fas fa-check"></i> Team accounts and ops manager</li>
-                <li><i class="fas fa-check"></i> Programmes, cohorts and trainees</li>
-                <li><i class="fas fa-check"></i> Assessments and capstone projects</li>
-                <li><i class="fas fa-check"></i> Custom branding and SSO</li>
-              </ul>
-              <button class="btn btn-secondary btn-block" data-nav="/register?role=institution">Register institution</button>
-            </div>
-          </div>
-
-          <div class="pricing-compare">
-            <button class="btn btn-outline" id="toggleCompare" aria-expanded="false" aria-controls="compareTable">
-              <i class="fas fa-table-columns"></i> Compare plans
-            </button>
-            <div id="compareTable" class="compare-wrap" hidden>
-              <table class="compare-table">
-                <thead>
-                  <tr><th>Feature</th><th>Learner</th><th>Expert</th><th>Institution</th></tr>
-                </thead>
-                <tbody>
-                  <tr><th>Browse courses</th>       <td>✓</td>       <td>✓</td>       <td>✓</td></tr>
-                  <tr><th>Free consultations</th>   <td>1 / month</td><td>Unlimited for own students</td><td>Unlimited</td></tr>
-                  <tr><th>Publish courses</th>      <td>—</td>       <td>✓</td>       <td>✓</td></tr>
-                  <tr><th>Cohort management</th>    <td>—</td>       <td>—</td>       <td>✓</td></tr>
-                  <tr><th>Analytics</th>            <td>Basic</td>   <td>Full</td>    <td>Full + custom</td></tr>
-                  <tr><th>Commission</th>           <td>—</td>       <td>20%</td>     <td>Custom</td></tr>
-                  <tr><th>SSO &amp; branding</th>   <td>—</td>       <td>—</td>       <td>✓</td></tr>
-                  <tr><th>Support</th>              <td>Community</td><td>Priority</td><td>Dedicated</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="payment-methods" id="paymentMethods">
-            <h3>Supported payment methods</h3>
-            <div class="payment-row" id="paymentRow">Loading…</div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             TRUST & SECURITY
-             ============================================================ -->
-        <section class="section" id="trust">
-          <h2 class="section-title">Why trust ExpertHub</h2>
-          <p class="section-sub">Built with security, transparency and moderation at the core.</p>
-          <div class="trust-grid">
-            ${[
-              ['fa-circle-check',    'Verified experts',            'Every expert is reviewed and approved by our admin team.'],
-              ['fa-lock',            'Secure payments',             'PCI-compliant payment handling with encrypted transactions.'],
-              ['fa-user-shield',     'Protected accounts',          'Two-factor authentication and session monitoring available.'],
-              ['fa-gavel',           'Admin moderation',            'Content, users and disputes are actively moderated.'],
-              ['fa-percent',         'Transparent commission',      'Flat 20% commission, no hidden fees.'],
-              ['fa-comments',        'Secure consultations',        'Encrypted messaging and call sessions.'],
-              ['fa-star',            'Reviews and ratings',         'Verified reviews from real learners and clients.'],
-              ['fa-clipboard-list',  'Audit logging',               'Full audit trail for admin actions and payouts.'],
-              ['fa-scale-balanced',  'Refund and dispute process',  'Clear dispute resolution with admin mediation.'],
-              ['fa-fingerprint',     'Data privacy',                'Your data is protected under applicable privacy laws.'],
-              ['fa-certificate',     'Secure certificates',         'Verifiable certificates with unique IDs and QR checks.']
-            ].map(([icon, title, desc]) => `
-              <div class="trust-card">
-                <div class="trust-icon"><i class="fas ${icon}"></i></div>
-                <h3>${title}</h3>
-                <p>${desc}</p>
-              </div>
-            `).join('')}
-          </div>
-        </section>
-
-        <!-- ============================================================
-             TESTIMONIALS (carousel)
-             ============================================================ -->
-        <section class="section alt" id="testimonials">
-          <h2 class="section-title">What our community will experience</h2>
-          <p class="section-sub">
-            We're just getting started. Real testimonials will appear here once verified.
-          </p>
-          <div class="testimonial-carousel" aria-roledescription="carousel" aria-label="Community preview">
-            <div class="testimonial-viewport">
-              <div class="testimonial-track" id="testimonialTrack">${skeletonLines(2)}</div>
-            </div>
-            <div class="testimonial-dots" role="tablist" aria-label="Testimonial slides">
-              <button class="dot" data-testimonial-dot="0" role="tab" aria-selected="true"  aria-label="Slide 1"></button>
-              <button class="dot" data-testimonial-dot="1" role="tab" aria-selected="false" aria-label="Slide 2"></button>
-              <button class="dot" data-testimonial-dot="2" role="tab" aria-selected="false" aria-label="Slide 3"></button>
-            </div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             RESOURCES / BLOG
-             ============================================================ -->
-        <section class="section" id="resources" aria-labelledby="resourcesHeading">
-          <div class="section-head">
-            <div>
-              <h2 id="resourcesHeading" class="section-title">Learn from our resources</h2>
-              <p class="section-sub">Guides, expert insights and study tips from the ExpertHub team.</p>
-            </div>
-            <button class="btn btn-secondary" data-nav="/resources">Browse all resources <i class="fas fa-arrow-right"></i></button>
-          </div>
-          <div class="resources-grid" id="resourcesGrid" aria-live="polite">${skeletonLines(2)}</div>
-        </section>
-
-        <!-- ============================================================
-             FAQ
-             ============================================================ -->
-        <section class="section alt" id="faq">
-          <h2 class="section-title">Frequently asked questions</h2>
-          <p class="section-sub">Everything you need to know. Search or pick a category.</p>
-
-          <div class="faq-controls">
-            <label for="faqSearch" class="sr-only">Search FAQs</label>
-            <input id="faqSearch" type="search" placeholder="Search questions…" autocomplete="off" />
-            <div class="faq-filters" id="faqFilters">
-              <button class="faq-filter active" data-cat="all">All</button>
-              <button class="faq-filter" data-cat="account">Account</button>
-              <button class="faq-filter" data-cat="learning">Learning</button>
-              <button class="faq-filter" data-cat="experts">Experts</button>
-              <button class="faq-filter" data-cat="payments">Payments</button>
-              <button class="faq-filter" data-cat="institutions">Institutions</button>
-              <button class="faq-filter" data-cat="security">Security</button>
-            </div>
-          </div>
-
-          <div class="faq-list" id="faqList">${buildFaqItems()}</div>
-          <p class="faq-empty" id="faqEmpty" hidden>No matching questions. Try another search.</p>
-        </section>
-
-        <!-- ============================================================
-             NEWSLETTER
-             ============================================================ -->
-        <section class="section newsletter-section" id="newsletter">
-          <div class="newsletter-card">
-            <h2 class="section-title">Get learning opportunities in your inbox</h2>
-            <p class="section-sub">New courses, expert insights and events — no spam. Unsubscribe anytime.</p>
-
-            <form class="newsletter-form" id="newsletterForm" novalidate>
-              <label for="newsletterEmail" class="sr-only">Email address</label>
-              <input id="newsletterEmail" type="email" name="email" required
-                     placeholder="you@example.com" autocomplete="email" />
-              <button type="submit" class="btn btn-primary">
-                <i class="fas fa-paper-plane"></i> Subscribe
-              </button>
-            </form>
-
-            <p class="newsletter-consent">
-              By subscribing you agree to our
-              <a href="#/legal/privacy" data-nav="/legal/privacy">Privacy Policy</a>.
-            </p>
-            <p class="newsletter-msg" id="newsletterMsg" role="status" aria-live="polite"></p>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             FINAL CTA
-             ============================================================ -->
-        <section class="section alt cta-section" id="finalCTA">
-          <h2 class="sr-only">Get started with ExpertHub</h2>
-          <div class="cta-grid">
-            <div class="cta-card">
-              <h3>Ready to start learning?</h3>
-              <p>Explore thousands of courses, bootcamps and expert consultations.</p>
-              <button class="btn btn-primary" data-nav="/courses"><i class="fas fa-compass"></i> Explore courses</button>
-            </div>
-            <div class="cta-card">
-              <h3>Have knowledge worth sharing?</h3>
-              <p>Join as an expert, get verified and start earning on your terms.</p>
-              <button class="btn btn-primary" data-nav="/register?role=expert"><i class="fas fa-chalkboard-user"></i> Become an expert</button>
-            </div>
-            <div class="cta-card">
-              <h3>Build better learning programmes.</h3>
-              <p>Empower your teams with structured cohorts, assessments and reporting.</p>
-              <button class="btn btn-primary" data-nav="/contact?topic=institutions"><i class="fas fa-building-columns"></i> Talk to our team</button>
-            </div>
-          </div>
-        </section>
-
-      </main>
-
-      <!-- ============================================================
-           FOOTER
-           ============================================================ -->
-      <footer class="landing-footer">
-        <div class="footer-grid">
-          <div class="footer-brand">
-            <div class="landing-brand">
-              <span class="landing-brand-icon"><i class="fas fa-graduation-cap"></i></span>
-              <span>ExpertHub</span>
-            </div>
-            <p class="footer-tag">E-School, Consultation and Corporate Training Platform.</p>
-            <div class="footer-social" aria-label="Social links">
-              <a href="https://facebook.com/"  target="_blank" rel="noopener noreferrer" aria-label="Facebook"><i class="fab fa-facebook"></i></a>
-              <a href="https://linkedin.com/"  target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><i class="fab fa-linkedin"></i></a>
-              <a href="https://instagram.com/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
-              <a href="https://x.com/"         target="_blank" rel="noopener noreferrer" aria-label="X"><i class="fab fa-x-twitter"></i></a>
-              <a href="https://youtube.com/"   target="_blank" rel="noopener noreferrer" aria-label="YouTube"><i class="fab fa-youtube"></i></a>
-            </div>
-          </div>
-
-          <nav class="footer-col" aria-label="Platform">
-            <h3>Platform</h3>
-            <ul>
-              <li><a href="#/courses"       data-nav="/courses">Courses</a></li>
-              <li><a href="#/experts"       data-nav="/experts">Experts</a></li>
-              <li><a href="#/consultations" data-nav="/consultations">Consultations</a></li>
-              <li><a href="#/events"        data-nav="/events">Events</a></li>
-              <li><a href="#/institutions"  data-nav="/institutions">Institutions</a></li>
-            </ul>
-          </nav>
-
-          <nav class="footer-col" aria-label="Company">
-            <h3>Company</h3>
-            <ul>
-              <li><a href="#/about"   data-nav="/about">About</a></li>
-              <li><a href="#/contact" data-nav="/contact">Contact</a></li>
-              <li><a href="#/careers" data-nav="/careers">Careers</a></li>
-              <li><a href="#/blog"    data-nav="/blog">Blog</a></li>
-            </ul>
-          </nav>
-
-          <nav class="footer-col" aria-label="Support">
-            <h3>Support</h3>
-            <ul>
-              <li><a href="#/help"            data-nav="/help">Help Center</a></li>
-              <li><a href="#/faq"             data-nav="/faq">FAQ</a></li>
-              <li><a href="#/contact/support" data-nav="/contact/support">Contact Support</a></li>
-              <li><a href="#/legal/refunds"   data-nav="/legal/refunds">Refund Policy</a></li>
-            </ul>
-          </nav>
-
-          <nav class="footer-col" aria-label="Legal">
-            <h3>Legal</h3>
-            <ul>
-              <li><a href="#/legal/terms"     data-nav="/legal/terms">Terms</a></li>
-              <li><a href="#/legal/privacy"   data-nav="/legal/privacy">Privacy</a></li>
-              <li><a href="#/legal/cookies"   data-nav="/legal/cookies">Cookie Policy</a></li>
-              <li><a href="#/legal/community" data-nav="/legal/community">Community Guidelines</a></li>
-            </ul>
-          </nav>
-        </div>
-
-        <div class="footer-bottom">
-          <span>&copy; ${new Date().getFullYear()} ExpertHub. Made for learners, experts and institutions.</span>
-        </div>
-      </footer>
-
-      <!-- ============================================================
-           FLOATING UI
-           ============================================================ -->
-      <button class="back-to-top" id="backToTop" type="button" aria-label="Back to top">
-        <i class="fas fa-arrow-up" aria-hidden="true"></i>
-      </button>
-
-      <div class="sticky-cta" id="stickyCTA" role="region" aria-label="Quick actions">
-        <button class="btn btn-primary" data-nav="/courses">
-          <i class="fas fa-compass" aria-hidden="true"></i> Explore courses
-        </button>
-        <button class="btn btn-secondary" data-nav="/experts">
-          <i class="fas fa-user-tie" aria-hidden="true"></i> Find an expert
-        </button>
-      </div>
-
-      <aside class="cookie-banner" id="cookieBanner" role="region"
-             aria-label="Cookie consent" aria-live="polite">
-        <div class="cookie-inner">
-          <div class="cookie-text">
-            <strong>We use cookies.</strong>
-            Essential cookies keep ExpertHub working. Optional ones help us improve
-            your experience. See our
-            <a href="#/legal/cookies" data-nav="/legal/cookies">Cookie Policy</a>.
-          </div>
-          <div class="cookie-actions">
-            <button class="btn btn-ghost btn-sm" id="cookieSettings" type="button">Settings</button>
-            <button class="btn btn-outline btn-sm" id="cookieEssential" type="button">Essential only</button>
-            <button class="btn btn-primary btn-sm" id="cookieAccept" type="button">Accept all</button>
-          </div>
-        </div>
-      </aside>
-    </div>`;
-
-  /* ============================================================
-     POST-RENDER WIRING
-     ============================================================ */
-  wireLandingNav();
-  wireLandingHero();
-  wireHowItWorks();
-  wirePricingCompare();
-  wireFAQ();
-  wireNewsletter();
-
-  wireScrollReveal();
-  initReadingProgress();
-  initBackToTop();
-  initStickyCTA();
-  initCookieConsent();
-
-  /* Auto-close mobile nav on internal navigation */
-  document.querySelectorAll('.landing [data-nav]').forEach(el => {
-    el.addEventListener('click', () => {
-      const header = document.getElementById('publicHeader');
-      if (header) header.classList.remove('nav-open');
+  function esc(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
-  });
-
-  /* Async data loaders */
-  loadLandingStats();
-  loadPopularCourses();
-  loadFeaturedExperts();
-  loadTestimonials();
-  loadPaymentMethods();
-  loadSpotlight();
-  loadEvents();
-  loadResources();
-
-  /* SEO + JSON-LD */
-  injectLandingSEO();
-
-  /* Hash-based hero search prefill */
-  applyHashToSearchInput();
-}
-
-/* ============================================================
-   HELPERS
-   ============================================================ */
-function skeletonLines(n) {
-  return `<div class="skeleton-block" aria-hidden="true">${
-    Array.from({ length: n }).map(() => '<div class="skeleton-line"></div>').join('')
-  }</div>`;
-}
-
-function esc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function fmtNum(n) {
-  if (n == null) return '—';
-  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
-  return String(n);
-}
-
-function fmtMoney(v, currency = 'USD') {
-  if (v == null) return '';
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(v);
-  } catch (_) { return `${currency} ${v}`; }
-}
-
-function initials(name) {
-  return String(name || '?').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase();
-}
-
-function yesNoPartial(v) {
-  if (v === 'yes')     return '<i class="fas fa-circle-check cmp-yes" aria-label="Yes" title="Yes"></i>';
-  if (v === 'partial') return '<i class="fas fa-circle-half-stroke cmp-partial" aria-label="Partial" title="Partial"></i>';
-  if (v === 'varies')  return '<i class="fas fa-circle-question cmp-partial" aria-label="Varies" title="Varies"></i>';
-  return '<i class="fas fa-circle-xmark cmp-no" aria-label="No" title="No"></i>';
-}
-
-async function publicFetch(path, opts = {}) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), opts.timeout || 6000);
-  try {
-    const res = await fetch('/api' + path, {
-      method: opts.method || 'GET',
-      headers: { 'Accept': 'application/json', ...(opts.headers || {}) },
-      body: opts.body,
-      signal: ctrl.signal,
-      credentials: 'same-origin'
-    });
-    clearTimeout(t);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const ct = res.headers.get('content-type') || '';
-    const data = ct.includes('application/json') ? await res.json() : await res.text();
-    return { ok: true, data };
-  } catch (e) {
-    clearTimeout(t);
-    return { ok: false, data: null, error: e };
-  }
-}
-
-function trackLanding(event, props = {}) {
-  try {
-    if (typeof window.gtag === 'function') window.gtag('event', event, props);
-    if (Array.isArray(window.dataLayer)) window.dataLayer.push({ event, ...props });
-  } catch (_) {}
-}
-
-function prefersReducedMotion() {
-  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-}
-
-function countUp(el, target, opts = {}) {
-  const { duration = 1200, suffix = '', decimals = 0 } = opts;
-
-  if (prefersReducedMotion() || typeof target !== 'number' || !isFinite(target)) {
-    el.textContent = target.toFixed(decimals) + suffix;
-    return;
   }
 
-  const start = performance.now();
-  function tick(now) {
-    const p = Math.min(1, (now - start) / duration);
-    const eased = 1 - Math.pow(1 - p, 3);
-    const val = target * eased;
-    el.textContent = val.toFixed(decimals) + suffix;
-    if (p < 1) requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-}
-
-function reveal(el, opts = {}) {
-  if (!el) return;
-  if (prefersReducedMotion() || !('IntersectionObserver' in window)) {
-    el.classList.add('is-revealed');
-    return;
-  }
-  const obs = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('is-revealed');
-        obs.unobserve(entry.target);
-      }
-    });
-  }, { threshold: opts.threshold || 0.15, rootMargin: opts.rootMargin || '0px 0px -40px 0px' });
-  obs.observe(el);
-}
-
-function wireScrollReveal() {
-  document.querySelectorAll('.landing .section, .landing .hero').forEach((el, i) => {
-    el.classList.add('reveal-on-scroll');
-    el.style.transitionDelay = Math.min(i * 40, 240) + 'ms';
-    reveal(el);
-  });
-}
-
-const LS = {
-  get(key, fallback = null) {
-    try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); }
-    catch (_) { return fallback; }
-  },
-  set(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
-  }
-};
-
-function initReadingProgress() {
-  const bar = document.getElementById('readProgress');
-  if (!bar) return;
-  const onScroll = () => {
-    const h = document.documentElement;
-    const max = h.scrollHeight - h.clientHeight;
-    const pct = max > 0 ? (h.scrollTop / max) * 100 : 0;
-    bar.style.transform = `scaleX(${pct / 100})`;
-    bar.setAttribute('aria-valuenow', Math.round(pct));
-  };
-  onScroll();
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', onScroll);
-}
-
-function initBackToTop() {
-  const btn = document.getElementById('backToTop');
-  if (!btn) return;
-  const onScroll = () => btn.classList.toggle('visible', window.scrollY > 600);
-  onScroll();
-  window.addEventListener('scroll', onScroll, { passive: true });
-  btn.addEventListener('click', () => {
-    window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  });
-}
-
-function initStickyCTA() {
-  const bar = document.getElementById('stickyCTA');
-  const hero = document.getElementById('hero');
-  if (!bar || !hero) return;
-  if (!('IntersectionObserver' in window)) { bar.classList.add('visible'); return; }
-  const obs = new IntersectionObserver(([e]) => {
-    bar.classList.toggle('visible', !e.isIntersecting);
-  }, { threshold: 0.05 });
-  obs.observe(hero);
-}
-
-function initCookieConsent() {
-  const banner = document.getElementById('cookieBanner');
-  if (!banner) return;
-  const saved = LS.get('eh_cookie_consent');
-  if (saved) return;
-  setTimeout(() => banner.classList.add('visible'), 1200);
-
-  document.getElementById('cookieAccept')?.addEventListener('click', () => {
-    LS.set('eh_cookie_consent', { choice: 'all', ts: Date.now() });
-    banner.classList.remove('visible');
-    trackLanding('cookie_consent', { choice: 'all' });
-  });
-  document.getElementById('cookieEssential')?.addEventListener('click', () => {
-    LS.set('eh_cookie_consent', { choice: 'essential', ts: Date.now() });
-    banner.classList.remove('visible');
-    trackLanding('cookie_consent', { choice: 'essential' });
-  });
-  document.getElementById('cookieSettings')?.addEventListener('click', () => {
-    location.hash = '#/legal/cookies';
-  });
-}
-
-function initTestimonialCarousel() {
-  const track = document.getElementById('testimonialTrack');
-  if (!track) return;
-  const dots = Array.from(document.querySelectorAll('[data-testimonial-dot]'));
-  if (!dots.length) return;
-
-  let idx = 0;
-  let timer = null;
-
-  function go(i, userDriven) {
-    idx = (i + dots.length) % dots.length;
-    track.style.transform = `translateX(-${idx * 100}%)`;
-    dots.forEach((d, k) => {
-      d.classList.toggle('active', k === idx);
-      d.setAttribute('aria-selected', String(k === idx));
-    });
-    if (userDriven) trackLanding('testimonial_dot', { idx });
-  }
-  function next() { go(idx + 1); }
-  function start() {
-    if (prefersReducedMotion()) return;
-    stop();
-    timer = setInterval(next, 7000);
-  }
-  function stop() { if (timer) { clearInterval(timer); timer = null; } }
-
-  dots.forEach((d, k) => d.addEventListener('click', () => { go(k, true); start(); }));
-
-  const shell = track.closest('.testimonial-carousel');
-  if (shell) {
-    shell.addEventListener('mouseenter', stop);
-    shell.addEventListener('mouseleave', start);
-    shell.addEventListener('focusin', stop);
-    shell.addEventListener('focusout', start);
-  }
-  start();
-}
-
-/* ============================================================
-   NAV WIRING
-   ============================================================ */
-function wireLandingNav() {
-  const header = document.getElementById('publicHeader');
-  const toggle = document.getElementById('navToggle');
-  const nav    = document.getElementById('primaryNav');
-  if (!header || !toggle || !nav) return;
-
-  toggle.addEventListener('click', () => {
-    const open = header.classList.toggle('nav-open');
-    toggle.setAttribute('aria-expanded', String(open));
-    toggle.querySelector('i').className = open ? 'fas fa-times' : 'fas fa-bars';
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!header.classList.contains('nav-open')) return;
-    if (!header.contains(e.target)) {
-      header.classList.remove('nav-open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.querySelector('i').className = 'fas fa-bars';
+  function pick(obj) {
+    if (!obj) return undefined;
+    for (var i = 1; i < arguments.length; i++) {
+      var k = arguments[i];
+      if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
     }
-  });
+    return undefined;
+  }
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && header.classList.contains('nav-open')) {
-      header.classList.remove('nav-open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.focus();
+  function num(v, fallback) {
+    var n = parseFloat(v);
+    return isFinite(n) ? n : (fallback === undefined ? 0 : fallback);
+  }
+
+  function fmtMoney(amount, currency) {
+    var n = num(amount, 0);
+    if (!n) return 'Free';
+    var cur = (currency || 'USD').toUpperCase();
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency', currency: cur, maximumFractionDigits: n % 1 ? 2 : 0
+      }).format(n);
+    } catch (_) {
+      return cur + ' ' + n.toLocaleString();
     }
-  });
-
-  const onScroll = () => header.classList.toggle('is-stuck', window.scrollY > 8);
-  onScroll();
-  window.addEventListener('scroll', onScroll, { passive: true });
-
-  document.querySelectorAll('[data-scroll]').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.preventDefault();
-      const target = document.getElementById(el.getAttribute('data-scroll'));
-      if (target) target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
-    });
-  });
-}
-
-/* ============================================================
-   HERO WIRING
-   ============================================================ */
-function wireLandingHero() {
-  const form  = document.getElementById('heroSearch');
-  const input = document.getElementById('heroSearchInput');
-  const chips = document.getElementById('heroChips');
-
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const q = (input.value || '').trim();
-      trackLanding('hero_search', { q });
-      location.hash = '#/courses' + (q ? '?q=' + encodeURIComponent(q) : '');
-    });
   }
 
-  if (chips) {
-    chips.addEventListener('click', (e) => {
-      const btn = e.target.closest('.chip');
-      if (!btn) return;
-      const q = btn.getAttribute('data-q');
-      trackLanding('hero_chip', { q });
-      location.hash = '#/courses?q=' + encodeURIComponent(q);
-    });
-  }
-}
-
-function applyHashToSearchInput() {
-  const input = document.getElementById('heroSearchInput');
-  if (!input) return;
-  const m = location.hash.match(/[?&]q=([^&]+)/);
-  if (m) input.value = decodeURIComponent(m[1]);
-}
-
-/* ============================================================
-   HOW IT WORKS (keyboard-friendly tabs)
-   ============================================================ */
-function wireHowItWorks() {
-  const tabs   = $$('.hiw-tab');
-  const panels = $$('.hiw-panel');
-  if (!tabs.length) return;
-
-  function activate(key, focus) {
-    tabs.forEach(t => {
-      const on = t.dataset.journey === key;
-      t.classList.toggle('active', on);
-      t.setAttribute('aria-selected', String(on));
-      t.setAttribute('tabindex', on ? '0' : '-1');
-      if (on && focus) t.focus();
-    });
-    panels.forEach(p => {
-      const on = p.id === 'hiwPanel-' + key;
-      p.classList.toggle('active', on);
-      if (on) p.removeAttribute('hidden'); else p.setAttribute('hidden', '');
-    });
+  function fmtDate(iso) {
+    if (!iso) return 'Date TBA';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    try {
+      return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch (_) {
+      return d.toDateString();
+    }
   }
 
-  tabs.forEach((t, i) => {
-    t.addEventListener('click', () => activate(t.dataset.journey));
-    t.addEventListener('keydown', (e) => {
-      const keys = { ArrowRight: 1, ArrowLeft: -1, Home: -i, End: tabs.length - 1 - i };
-      if (e.key in keys) {
-        e.preventDefault();
-        const next = (i + keys[e.key] + tabs.length) % tabs.length;
-        activate(tabs[next].dataset.journey, true);
+  function fmtDateTime(iso) {
+    if (!iso) return 'Date TBA';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    try {
+      return d.toLocaleString(undefined, {
+        day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+    } catch (_) { return d.toString(); }
+  }
+
+  function initials(name) {
+    return String(name || '?').trim().split(/\s+/).slice(0, 2)
+      .map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '?';
+  }
+
+  function avatarUrl(name, bg) {
+    var safe = encodeURIComponent(name || 'ExpertHub');
+    var colour = (bg || '6366f1').replace('#', '');
+    return 'https://ui-avatars.com/api/?background=' + colour + '&color=fff&bold=true&name=' + safe;
+  }
+
+  function safeImage(url, fallbackName) {
+    if (url && /^(https?:|\/|data:)/i.test(url)) return url;
+    return avatarUrl(fallbackName || 'ExpertHub');
+  }
+
+  function debounce(fn, wait) {
+    var t;
+    return function () {
+      var args = arguments, self = this;
+      clearTimeout(t);
+      t = setTimeout(function () { fn.apply(self, args); }, wait);
+    };
+  }
+
+  function cleanParams(obj) {
+    var out = {};
+    Object.keys(obj || {}).forEach(function (k) {
+      var v = obj[k];
+      if (v !== undefined && v !== null && v !== '' && v !== 'all') out[k] = v;
+    });
+    return out;
+  }
+
+  function setPhase(phase) {
+    try { appPhase = phase; }
+    catch (_) { try { window.appPhase = phase; } catch (__) {} }
+  }
+
+  function isAuthed() {
+    try {
+      if (window.S && (S.user || S.token || S.accessToken)) return true;
+    } catch (_) {}
+    try { return !!localStorage.getItem('token'); } catch (_) { return false; }
+  }
+
+  /* ==========================================================
+     1. STYLES  (injected once — keeps this file drop-in safe)
+     ========================================================== */
+  var STYLE_ID = 'expertHub-landing-styles';
+
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    var css = [
+      /* nav */
+      '.lp-nav{position:sticky;top:0;z-index:40;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 24px;background:rgba(255,255,255,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid rgba(15,23,42,.08)}',
+      '.dark .lp-nav{background:rgba(17,24,39,.88);border-bottom-color:rgba(255,255,255,.08)}',
+      '.lp-nav-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}',
+      '.lp-nav-link{background:none;border:0;cursor:pointer;font:inherit;font-size:.9rem;font-weight:600;color:inherit;opacity:.72;padding:8px 12px;border-radius:10px;transition:.18s}',
+      '.lp-nav-link:hover{opacity:1;background:rgba(99,102,241,.1)}',
+      '.lp-nav-link.is-active{opacity:1;color:#6366f1}',
+      '@media(max-width:900px){.lp-nav-links{display:none}}',
+
+      /* hero */
+      '.lp-hero{display:grid;grid-template-columns:1.15fr .85fr;gap:56px;align-items:center;max-width:1200px;margin:0 auto;padding:72px 24px 48px}',
+      '@media(max-width:980px){.lp-hero{grid-template-columns:1fr;gap:40px;padding-top:48px}}',
+      '.lp-badge{display:inline-flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700;letter-spacing:.02em;text-transform:uppercase;padding:7px 14px;border-radius:999px;background:rgba(99,102,241,.12);color:#4f46e5;margin-bottom:20px}',
+      '.lp-hero-title{font-size:clamp(2.1rem,5vw,3.5rem);line-height:1.08;font-weight:800;letter-spacing:-.03em;margin:0 0 18px}',
+      '.lp-accent{background:linear-gradient(120deg,#6366f1,#0ea5e9);-webkit-background-clip:text;background-clip:text;color:transparent}',
+      '.lp-hero-sub{font-size:1.06rem;line-height:1.65;opacity:.72;max-width:56ch;margin:0 0 26px}',
+
+      /* unified search */
+      '.lp-search{position:relative;display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid rgba(15,23,42,.1);border-radius:16px;padding:8px 8px 8px 18px;max-width:620px;box-shadow:0 12px 32px -18px rgba(15,23,42,.35);transition:.2s}',
+      '.dark .lp-search{background:#111827;border-color:rgba(255,255,255,.12)}',
+      '.lp-search:focus-within{border-color:#6366f1;box-shadow:0 0 0 4px rgba(99,102,241,.14)}',
+      '.lp-search>i{opacity:.45}',
+      '.lp-search input{flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:.98rem;padding:10px 0;color:inherit;min-width:0}',
+      '.lp-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}',
+      '.lp-chip{border:1px solid rgba(15,23,42,.12);background:transparent;color:inherit;font:inherit;font-size:.8rem;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;opacity:.75;transition:.18s}',
+      '.lp-chip:hover{opacity:1;border-color:#6366f1;color:#6366f1}',
+      '.lp-search-results{position:absolute;top:calc(100% + 10px);left:0;right:0;background:#fff;border:1px solid rgba(15,23,42,.1);border-radius:16px;box-shadow:0 24px 60px -24px rgba(15,23,42,.45);max-height:64vh;overflow:auto;z-index:60;padding:8px}',
+      '.dark .lp-search-results{background:#111827;border-color:rgba(255,255,255,.12)}',
+      '.lp-sr-group{padding:8px 10px 4px;font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.45}',
+      '.lp-sr-item{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:none;border:0;font:inherit;color:inherit;padding:10px;border-radius:12px;cursor:pointer}',
+      '.lp-sr-item:hover{background:rgba(99,102,241,.09)}',
+      '.lp-sr-item img{width:38px;height:38px;border-radius:10px;object-fit:cover;flex:none}',
+      '.lp-sr-item b{display:block;font-size:.9rem;font-weight:650}',
+      '.lp-sr-item span{display:block;font-size:.76rem;opacity:.6}',
+      '.lp-sr-empty{padding:26px 16px;text-align:center;font-size:.88rem;opacity:.6}',
+
+      /* cards / grids */
+      '.lp-grid{display:grid;gap:20px}',
+      '.lp-grid-3{grid-template-columns:repeat(auto-fill,minmax(290px,1fr))}',
+      '.lp-grid-4{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}',
+      '.lp-card{display:flex;flex-direction:column;background:var(--surface,#fff);border:1px solid rgba(15,23,42,.09);border-radius:18px;overflow:hidden;transition:transform .2s,box-shadow .2s;text-align:left}',
+      '.dark .lp-card{background:#111827;border-color:rgba(255,255,255,.1)}',
+      '.lp-card:hover{transform:translateY(-3px);box-shadow:0 22px 44px -26px rgba(15,23,42,.5)}',
+      '.lp-card-media{position:relative;aspect-ratio:16/9;background:linear-gradient(135deg,#6366f1,#0ea5e9);overflow:hidden}',
+      '.lp-card-media img{width:100%;height:100%;object-fit:cover;display:block}',
+      '.lp-card-tag{position:absolute;top:10px;left:10px;font-size:.68rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.92);color:#111827}',
+      '.lp-card-price{position:absolute;top:10px;right:10px;font-size:.75rem;font-weight:800;padding:5px 10px;border-radius:999px;background:#6366f1;color:#fff}',
+      '.lp-card-body{padding:16px 16px 18px;display:flex;flex-direction:column;gap:8px;flex:1}',
+      '.lp-card-title{font-size:1rem;font-weight:700;line-height:1.35;margin:0}',
+      '.lp-card-text{font-size:.85rem;line-height:1.55;opacity:.66;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
+      '.lp-card-meta{display:flex;align-items:center;gap:10px;font-size:.76rem;opacity:.62;margin-top:auto;padding-top:10px;flex-wrap:wrap}',
+      '.lp-card-meta i{opacity:.8}',
+      '.lp-author{display:flex;align-items:center;gap:9px}',
+      '.lp-author img{width:26px;height:26px;border-radius:50%;object-fit:cover}',
+      '.lp-verified{color:#10b981;font-size:.78rem}',
+
+      /* expert card */
+      '.lp-expert{align-items:center;text-align:center;padding:26px 18px}',
+      '.lp-expert img.lp-expert-avatar{width:78px;height:78px;border-radius:50%;object-fit:cover;margin-bottom:12px}',
+      '.lp-expert h3{margin:0 0 4px;font-size:1rem}',
+      '.lp-expert .lp-expert-role{font-size:.82rem;opacity:.62;margin:0 0 10px}',
+      '.lp-tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:12px}',
+      '.lp-tag{font-size:.7rem;font-weight:600;padding:4px 9px;border-radius:999px;background:rgba(99,102,241,.12);color:#4f46e5}',
+      '.lp-stars{color:#f59e0b;font-size:.8rem;margin-bottom:12px}',
+
+      /* event / resource rows */
+      '.lp-row-card{display:flex;gap:16px;align-items:center;padding:16px;border-radius:16px;border:1px solid rgba(15,23,42,.09);background:var(--surface,#fff)}',
+      '.dark .lp-row-card{background:#111827;border-color:rgba(255,255,255,.1)}',
+      '.lp-date-chip{flex:none;width:58px;height:58px;border-radius:14px;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05}',
+      '.lp-date-chip b{font-size:1.15rem;font-weight:800}',
+      '.lp-date-chip span{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;opacity:.85}',
+
+      /* skeleton + states */
+      '.lp-skel{border-radius:18px;background:linear-gradient(90deg,rgba(148,163,184,.16) 25%,rgba(148,163,184,.28) 37%,rgba(148,163,184,.16) 63%);background-size:400% 100%;animation:lpShimmer 1.3s ease-in-out infinite;min-height:220px}',
+      '@keyframes lpShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}',
+      '.lp-empty{padding:44px 20px;text-align:center;border:1px dashed rgba(15,23,42,.18);border-radius:18px;opacity:.72}',
+      '.lp-empty i{font-size:1.6rem;margin-bottom:10px;display:block;opacity:.5}',
+      '.lp-notice{display:flex;align-items:center;gap:10px;font-size:.82rem;padding:10px 14px;border-radius:12px;background:rgba(245,158,11,.12);color:#b45309;margin-bottom:18px}',
+
+      /* section helpers */
+      '.lp-section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:26px}',
+      '.lp-link{background:none;border:0;font:inherit;font-weight:700;color:#6366f1;cursor:pointer;font-size:.9rem;display:inline-flex;align-items:center;gap:7px}',
+      '.lp-link:hover{text-decoration:underline}',
+
+      /* CTA band + footer */
+      '.lp-cta{max-width:1080px;margin:0 auto;padding:48px 32px;border-radius:26px;background:linear-gradient(135deg,#4f46e5,#0ea5e9);color:#fff;text-align:center}',
+      '.lp-cta h2{margin:0 0 10px;font-size:clamp(1.5rem,3vw,2.2rem);font-weight:800}',
+      '.lp-cta p{margin:0 auto 24px;max-width:56ch;opacity:.9}',
+      '.lp-footer{max-width:1200px;margin:0 auto;padding:44px 24px 60px;display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:32px;font-size:.88rem}',
+      '@media(max-width:800px){.lp-footer{grid-template-columns:1fr 1fr}}',
+      '.lp-footer h4{margin:0 0 12px;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;opacity:.5}',
+      '.lp-footer ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}',
+      '.lp-footer button{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;opacity:.75;text-align:left}',
+      '.lp-footer button:hover{opacity:1;color:#6366f1}',
+      '.lp-copy{grid-column:1/-1;border-top:1px solid rgba(15,23,42,.1);padding-top:20px;opacity:.55;font-size:.82rem}',
+
+      /* detail pages */
+      '.lp-page{max-width:1120px;margin:0 auto;padding:44px 24px 72px}',
+      '.lp-detail-hero{display:grid;grid-template-columns:1.2fr .8fr;gap:36px;align-items:start;margin-bottom:40px}',
+      '@media(max-width:900px){.lp-detail-hero{grid-template-columns:1fr}}',
+      '.lp-detail-cover{border-radius:20px;overflow:hidden;aspect-ratio:16/9;background:linear-gradient(135deg,#6366f1,#0ea5e9)}',
+      '.lp-detail-cover img{width:100%;height:100%;object-fit:cover;display:block}',
+      '.lp-side{position:sticky;top:92px;border:1px solid rgba(15,23,42,.1);border-radius:20px;padding:22px;background:var(--surface,#fff);display:flex;flex-direction:column;gap:14px}',
+      '.dark .lp-side{background:#111827;border-color:rgba(255,255,255,.1)}',
+      '.lp-side-price{font-size:1.9rem;font-weight:800}',
+      '.lp-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}',
+      '.lp-list li{display:flex;gap:11px;align-items:flex-start;font-size:.92rem;line-height:1.55}',
+      '.lp-list i{color:#10b981;margin-top:4px}',
+
+      /* forms */
+      '.lp-form{display:grid;gap:14px;max-width:620px}',
+      '.lp-field{display:flex;flex-direction:column;gap:6px}',
+      '.lp-field label{font-size:.8rem;font-weight:700;opacity:.7}',
+      '.lp-field input,.lp-field textarea,.lp-field select{font:inherit;padding:12px 14px;border-radius:12px;border:1.5px solid rgba(15,23,42,.12);background:var(--surface,#fff);color:inherit;outline:0;transition:.18s;width:100%;box-sizing:border-box}',
+      '.dark .lp-field input,.dark .lp-field textarea,.dark .lp-field select{background:#111827;border-color:rgba(255,255,255,.14)}',
+      '.lp-field input:focus,.lp-field textarea:focus,.lp-field select:focus{border-color:#6366f1;box-shadow:0 0 0 4px rgba(99,102,241,.13)}'
+    ].join('\n');
+
+    var el = document.createElement('style');
+    el.id = STYLE_ID;
+    el.textContent = css;
+    document.head.appendChild(el);
+  }
+
+  /* ==========================================================
+     2. SERVICE LAYER
+     ----------------------------------------------------------
+     landingRequest → services → render functions.
+     Every service degrades gracefully to bundled demo data so the
+     front door never renders an empty shell if the API is down.
+     ========================================================== */
+  var API_BASE = (function () {
+    var c = window.CONFIG || {};
+    var base = c.API_BASE || c.API_URL || c.API_BASE_URL || c.baseUrl || window.API_BASE ||
+               'https://timbackend-ylc0.onrender.com/api';
+    return String(base).replace(/\/+$/, '');
+  })();
+
+  function authToken() {
+    try {
+      if (window.S) {
+        var t = S.token || S.accessToken || (S.auth && S.auth.token);
+        if (t) return t;
       }
+    } catch (_) {}
+    try {
+      return localStorage.getItem('token') || localStorage.getItem('expertHubToken') || null;
+    } catch (_) { return null; }
+  }
+
+  async function landingRequest(path, opts) {
+    opts = opts || {};
+    var url = /^https?:\/\//i.test(path)
+      ? path
+      : API_BASE + (path.charAt(0) === '/' ? path : '/' + path);
+
+    var headers = Object.assign({ Accept: 'application/json' }, opts.headers || {});
+    var token = authToken();
+    if (token) headers.Authorization = 'Bearer ' + token;
+
+    var init = { method: opts.method || 'GET', headers: headers, credentials: 'include' };
+    if (opts.body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(opts.body);
+    }
+    if (opts.signal) init.signal = opts.signal;
+
+    var res = await fetch(url, init);
+    var text = await res.text();
+    var data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
+
+    if (!res.ok) {
+      var err = new Error(
+        (data && (data.message || data.error || data.detail)) || ('Request failed (' + res.status + ')')
+      );
+      err.status = res.status;
+      err.payload = data;
+      throw err;
+    }
+    return data;
+  }
+
+  /** Pull an array out of whatever envelope the API uses. */
+  function listOf(payload, keys) {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+
+    var d = payload.data !== undefined ? payload.data : payload;
+    if (Array.isArray(d)) return d;
+
+    var candidates = ['items', 'results', 'rows', 'records', 'docs'].concat(keys || []);
+    for (var i = 0; i < candidates.length; i++) {
+      if (d && Array.isArray(d[candidates[i]])) return d[candidates[i]];
+    }
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
+  }
+
+  function oneOf(payload, keys) {
+    if (!payload) return null;
+    var d = payload.data !== undefined ? payload.data : payload;
+    if (Array.isArray(d)) return d[0] || null;
+    for (var i = 0; i < (keys || []).length; i++) {
+      if (d && d[keys[i]]) return d[keys[i]];
+    }
+    return d && typeof d === 'object' ? d : null;
+  }
+
+  /* ---------- tiny TTL cache ---------- */
+  var cache = new Map();
+
+  function cached(key, ttlMs, loader) {
+    var hit = cache.get(key);
+    var now = Date.now();
+    if (hit && now - hit.t < ttlMs) return Promise.resolve(hit.v);
+    return loader().then(function (v) {
+      cache.set(key, { t: now, v: v });
+      return v;
     });
-  });
-}
+  }
 
-/* ============================================================
-   PRICING COMPARE
-   ============================================================ */
-function wirePricingCompare() {
-  const toggle = document.getElementById('toggleCompare');
-  const table  = document.getElementById('compareTable');
-  if (!toggle || !table) return;
-  toggle.addEventListener('click', () => {
-    const willOpen = table.hasAttribute('hidden');
-    if (willOpen) table.removeAttribute('hidden'); else table.setAttribute('hidden', '');
-    toggle.setAttribute('aria-expanded', String(willOpen));
-    trackLanding('pricing_compare_toggle', { open: willOpen });
-  });
-}
+  function invalidateCache(prefix) {
+    if (!prefix) { cache.clear(); return; }
+    Array.from(cache.keys()).forEach(function (k) {
+      if (k.indexOf(prefix) === 0) cache.delete(k);
+    });
+  }
 
-/* ============================================================
-   FAQ
-   ============================================================ */
-function buildFaqItems() {
-  const cats = {
-    account: [
-      ['How do I register?',        'Click Create account, choose your role (learner, expert or institution) and complete the sign-up form. Learners are approved instantly.'],
-      ['How do I verify my email?', 'We send a verification link to your email after sign-up. Click it to activate your account.'],
-      ['Can I change my role?',     'Yes. You can apply to become an expert from your dashboard. Institution accounts are reviewed by our team.']
-    ],
-    learning: [
-      ['How do courses work?',       'Courses include video lessons, readings, activities and assessments. Bootcamps add live sessions and mentorship.'],
-      ['Do I receive certificates?', 'Yes. On successful completion you receive a verifiable certificate with a unique ID.'],
-      ['Can I learn on mobile?',     'Yes. ExpertHub is fully responsive and works on modern mobile browsers.']
+  /* ---------- normalisers ---------- */
+  function normalizeExpert(raw) {
+    raw = raw || {};
+    var user = raw.user || raw.profile || raw.account || {};
+    var name = pick(raw, 'name', 'fullName', 'displayName') ||
+               pick(user, 'name', 'fullName', 'displayName') || 'ExpertHub Expert';
+    return {
+      id: pick(raw, 'id', '_id', 'slug', 'userId'),
+      name: name,
+      avatar: pick(raw, 'avatar', 'avatarUrl', 'photo', 'image') ||
+              pick(user, 'avatar', 'avatarUrl', 'photo') || '',
+      headline: pick(raw, 'headline', 'title', 'bio', 'tagline', 'description', 'about') || '',
+      specializations: (function () {
+        var s = pick(raw, 'specializations', 'specialities', 'skills', 'expertise', 'tags');
+        if (Array.isArray(s)) return s.map(function (x) { return typeof x === 'string' ? x : (x.name || x.title); }).filter(Boolean);
+        if (typeof s === 'string') return s.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+        var cat = pick(raw, 'category', 'field', 'industry');
+        return cat ? [cat] : [];
+      })(),
+      rating: num(pick(raw, 'rating', 'averageRating', 'avgRating'), 0),
+      reviews: num(pick(raw, 'reviews', 'reviewsCount', 'ratingCount'), 0),
+      sessions: num(pick(raw, 'sessions', 'sessionsCount', 'consultations'), 0),
+      rate: num(pick(raw, 'hourlyRate', 'rate', 'price', 'consultationFee'), 0),
+      currency: pick(raw, 'currency') || 'USD',
+      verified: !!(pick(raw, 'verified', 'isVerified', 'approved') || raw.status === 'approved'),
+      experienceYears: num(pick(raw, 'experienceYears', 'yearsOfExperience', 'experience'), 0)
+    };
+  }
+
+  function normalizeCourse(raw) {
+    raw = raw || {};
+    var expertRaw = raw.expert || raw.instructor || raw.tutor || raw.owner || raw.teacher || {};
+    var expert = normalizeExpert(expertRaw);
+    return {
+      id: pick(raw, 'id', '_id', 'slug'),
+      title: pick(raw, 'title', 'name', 'courseName') || 'Untitled course',
+      summary: pick(raw, 'summary', 'shortDescription', 'excerpt', 'description', 'overview') || '',
+      thumbnail: pick(raw, 'thumbnail', 'image', 'cover', 'coverImage', 'imageUrl', 'banner') || '',
+      category: pick(raw, 'category', 'categoryName', 'subject', 'field') || 'General',
+      level: pick(raw, 'level', 'difficulty', 'skillLevel') || 'All levels',
+      price: num(pick(raw, 'price', 'amount', 'fee', 'cost'), 0),
+      currency: pick(raw, 'currency') || 'USD',
+      rating: num(pick(raw, 'rating', 'averageRating', 'avgRating'), 0),
+      ratingCount: num(pick(raw, 'ratingCount', 'reviewsCount', 'reviews'), 0),
+      durationWeeks: num(pick(raw, 'durationWeeks', 'weeks'), 0) || null,
+      durationLabel: pick(raw, 'duration', 'durationLabel') || null,
+      lessons: num(pick(raw, 'lessons', 'lessonsCount', 'modules'), 0) || null,
+      learners: num(pick(raw, 'learners', 'enrollments', 'studentsCount', 'students'), 0),
+      expert: expert,
+      type: pick(raw, 'type', 'courseType', 'format') || 'Course'
+    };
+  }
+
+  function normalizeEvent(raw) {
+    raw = raw || {};
+    var host = normalizeExpert(raw.host || raw.organizer || raw.expert || {});
+    return {
+      id: pick(raw, 'id', '_id', 'slug'),
+      title: pick(raw, 'title', 'name') || 'ExpertHub event',
+      summary: pick(raw, 'summary', 'description', 'excerpt', 'about') || '',
+      cover: pick(raw, 'cover', 'image', 'banner', 'thumbnail') || '',
+      startsAt: pick(raw, 'startsAt', 'startDate', 'startTime', 'date', 'starts_at'),
+      endsAt: pick(raw, 'endsAt', 'endDate', 'endTime', 'ends_at'),
+      mode: (function () {
+        var m = pick(raw, 'mode', 'format', 'type', 'deliveryMode');
+        if (m) return String(m).toLowerCase();
+        return pick(raw, 'location', 'venue') ? 'physical' : 'online';
+      })(),
+      location: pick(raw, 'location', 'venue', 'address', 'city') || '',
+      meetingUrl: pick(raw, 'meetingUrl', 'joinUrl', 'link') || '',
+      price: num(pick(raw, 'price', 'amount', 'fee'), 0),
+      currency: pick(raw, 'currency') || 'USD',
+      seats: num(pick(raw, 'seats', 'capacity', 'seatsTotal'), 0) || null,
+      seatsLeft: num(pick(raw, 'seatsLeft', 'seatsAvailable', 'remainingSeats'), 0) || null,
+      host: host
+    };
+  }
+
+  function normalizeResource(raw) {
+    raw = raw || {};
+    return {
+      id: pick(raw, 'id', '_id', 'slug'),
+      title: pick(raw, 'title', 'name') || 'Resource',
+      summary: pick(raw, 'summary', 'description', 'excerpt') || '',
+      cover: pick(raw, 'cover', 'image', 'thumbnail') || '',
+      type: (pick(raw, 'type', 'category', 'kind', 'format') || 'Article'),
+      readMinutes: num(pick(raw, 'readMinutes', 'readingTime', 'minutes'), 0) || null,
+      url: pick(raw, 'url', 'link', 'fileUrl', 'href') || '',
+      author: pick(raw, 'author', 'authorName', 'by') || 'ExpertHub',
+      publishedAt: pick(raw, 'publishedAt', 'createdAt', 'date')
+    };
+  }
+
+  function normalizeTestimonial(raw) {
+    raw = raw || {};
+    var who = raw.user || raw.author || raw.person || {};
+    var name = pick(raw, 'name', 'authorName') || pick(who, 'name', 'fullName') || 'ExpertHub member';
+    return {
+      quote: pick(raw, 'quote', 'text', 'content', 'message', 'body') || '',
+      name: name,
+      role: pick(raw, 'role', 'position', 'title', 'occupation') || pick(who, 'role') || 'Member',
+      avatar: pick(raw, 'avatar', 'avatarUrl', 'photo') || pick(who, 'avatar') || '',
+      rating: num(pick(raw, 'rating', 'stars'), 5)
+    };
+  }
+
+  /* ---------- demo fallback data ---------- */
+  var DEMO = {
+    courses: [
+      { id: 'demo-c1', title: 'Full-Stack Web Development Bootcamp', summary: 'From HTML to deployed APIs in 12 intensive weeks with live mentor support.', category: 'Web Development', level: 'Beginner', price: 480, currency: 'USD', rating: 4.9, ratingCount: 214, durationWeeks: 12, lessons: 86, learners: 1240, expert: { name: 'Jane Doe', verified: true } },
+      { id: 'demo-c2', title: 'Data Science & Machine Learning', summary: 'Python, pandas, scikit-learn and model deployment for real business problems.', category: 'Data Science', level: 'Intermediate', price: 620, currency: 'USD', rating: 4.8, ratingCount: 168, durationWeeks: 16, lessons: 104, learners: 890, expert: { name: 'Dr. Sarah Kim', verified: true } },
+      { id: 'demo-c3', title: 'IELTS & Academic English Prep', summary: 'Targeted exam preparation with weekly mock tests and 1-on-1 feedback.', category: 'Exam Prep', level: 'All levels', price: 180, currency: 'USD', rating: 4.7, ratingCount: 302, durationWeeks: 8, lessons: 40, learners: 2110, expert: { name: 'Michael Otieno', verified: true } },
+      { id: 'demo-c4', title: 'Corporate Leadership Essentials', summary: 'Build high-performing teams with practical management frameworks.', category: 'Business', level: 'Advanced', price: 0, currency: 'USD', rating: 4.6, ratingCount: 74, durationWeeks: 6, lessons: 28, learners: 430, expert: { name: 'Acme Academy', verified: true } }
     ],
     experts: [
-      ['How do I become an expert?',  'Apply from your dashboard with your credentials and areas of expertise. Our admin team reviews each application.'],
-      ['How does verification work?', 'We verify identity, qualifications and, where relevant, professional references before approval.'],
-      ['How are experts paid?',       'Earnings accrue in your wallet. Withdrawals have a 7-day security hold, then process within 3–5 business days.']
+      { id: 'demo-e1', name: 'Dr. Sarah Kim', headline: 'Data scientist & former university lecturer', specializations: ['Data Science', 'Python', 'Statistics'], rating: 4.9, reviews: 142, sessions: 610, rate: 45, currency: 'USD', verified: true, experienceYears: 11 },
+      { id: 'demo-e2', name: 'Jane Doe', headline: 'Senior software engineer, ex-FAANG', specializations: ['JavaScript', 'React', 'Node.js'], rating: 4.8, reviews: 98, sessions: 410, rate: 40, currency: 'USD', verified: true, experienceYears: 8 },
+      { id: 'demo-e3', name: 'Michael Otieno', headline: 'IELTS examiner & academic English coach', specializations: ['IELTS', 'English', 'Study Abroad'], rating: 4.9, reviews: 221, sessions: 980, rate: 25, currency: 'USD', verified: true, experienceYears: 14 }
     ],
-    payments: [
-      ['What payment methods are supported?', 'Supported methods are shown in the pricing section and depend on your region. We enable methods only when they are live on the backend.'],
-      ['What is the refund policy?',          'Refunds are governed by our refund policy. Contact support within the eligible window if you have an issue.'],
-      ['How does the withdrawal hold work?',  'Once a withdrawal is requested, funds are held for 7 days for security, then released for processing.']
+    events: [
+      { id: 'demo-v1', title: 'Live workshop: Build your first React app', summary: 'A hands-on 90-minute session with Jane Doe. Bring a laptop.', startsAt: new Date(Date.now() + 3 * 864e5).toISOString(), mode: 'online', price: 0, currency: 'USD', host: { name: 'Jane Doe', verified: true } },
+      { id: 'demo-v2', title: 'Data careers panel: breaking into analytics', summary: 'Three hiring managers answer your questions live.', startsAt: new Date(Date.now() + 9 * 864e5).toISOString(), mode: 'online', price: 10, currency: 'USD', host: { name: 'Dr. Sarah Kim', verified: true } },
+      { id: 'demo-v3', title: 'Corporate training open day', summary: 'Meet our programme leads and see cohort dashboards in action.', startsAt: new Date(Date.now() + 15 * 864e5).toISOString(), mode: 'physical', location: 'Nairobi, Kenya', price: 0, currency: 'USD', host: { name: 'Acme Academy', verified: true } }
     ],
-    institutions: [
-      ['Can schools register?',                'Yes. Institutions register for a workspace with team accounts, cohorts and reporting.'],
-      ['Can companies create cohorts?',        'Yes. Companies can create programmes, add learners and manage cohorts from the institution console.'],
-      ['Can institutions issue certificates?', 'Yes. Institutions can issue verifiable certificates on completion of programmes or assessments.']
+    resources: [
+      { id: 'demo-r1', title: 'The 2025 tech career roadmap', summary: 'Skills, timelines and salaries across eight in-demand tracks.', type: 'Guide', readMinutes: 14, url: '#' },
+      { id: 'demo-r2', title: 'How to choose the right bootcamp', summary: 'Seven questions to ask before you pay a deposit.', type: 'Article', readMinutes: 7, url: '#' },
+      { id: 'demo-r3', title: 'Corporate training RFP template', summary: 'A ready-to-use template for L&D teams evaluating vendors.', type: 'Template', readMinutes: 5, url: '#' },
+      { id: 'demo-r4', title: 'Revision planner for exam prep', summary: 'A weekly schedule that balances new material and past papers.', type: 'Template', readMinutes: 6, url: '#' }
     ],
-    security: [
-      ['How is my information protected?', 'We use encryption in transit, access controls and audit logging. Personal data is handled under our privacy policy.'],
-      ['How are experts verified?',        'Experts are verified by our admin team through document and credential checks before they can offer services.']
+    testimonials: [
+      { quote: 'ExpertHub helped me switch careers in 6 months. The bootcamp was intense but amazing.', name: 'Jane D.', role: 'Software Engineer', rating: 5 },
+      { quote: 'As an expert, I doubled my income in 3 months. The platform handles payments automatically.', name: 'Dr. Sarah K.', role: 'Data Science Expert', rating: 5 },
+      { quote: 'We run 12 cohorts a year through ExpertHub. Trainee tracking and assessments just work.', name: 'Acme Academy', role: 'Corporate Training', rating: 5 }
     ]
   };
 
-  let html = '';
-  let i = 0;
-  Object.keys(cats).forEach(cat => {
-    cats[cat].forEach(([q, a]) => {
-      const id = 'faq-' + (i++);
-      html += `
-        <div class="faq-item" data-cat="${cat}">
-          <button class="faq-q" id="${id}-btn" type="button"
-                  aria-expanded="false" aria-controls="${id}-panel">
-            <span>${esc(q)}</span>
-            <i class="fas fa-chevron-down"></i>
-          </button>
-          <div class="faq-a" id="${id}-panel" role="region" aria-labelledby="${id}-btn" hidden>
-            <p>${esc(a)}</p>
-          </div>
-        </div>`;
-    });
-  });
-  return html;
-}
+  /* ---------- services ---------- */
+  var CourseService = {
+    list: function (params) {
+      var qs = new URLSearchParams(cleanParams(params || {})).toString();
+      return cached('courses:' + qs, 60000, function () {
+        return landingRequest('/courses' + (qs ? '?' + qs : ''))
+          .then(function (raw) { return listOf(raw, ['courses']).map(normalizeCourse); })
+          .catch(function () { return DEMO.courses.slice(); });
+      });
+    },
+    get: function (id) {
+      return cached('course:' + id, 60000, function () {
+        return landingRequest('/courses/' + encodeURIComponent(id))
+          .then(function (raw) {
+            var c = oneOf(raw, ['course']);
+            return c ? normalizeCourse(c) : null;
+          })
+          .catch(function () {
+            for (var i = 0; i < DEMO.courses.length; i++) {
+              if (String(DEMO.courses[i].id) === String(id)) return normalizeCourse(DEMO.courses[i]);
+            }
+            return null;
+          });
+      });
+    },
+    featured: function (limit) {
+      return CourseService.list({ featured: true, limit: limit || 6 })
+        .then(function (list) { return list.length ? list : CourseService.list({ limit: limit || 6 }); });
+    }
+  };
 
-function wireFAQ() {
-  const list = document.getElementById('faqList');
-  if (!list) return;
+  var ExpertService = {
+    list: function (params) {
+      var qs = new URLSearchParams(cleanParams(params || {})).toString();
+      return cached('experts:' + qs, 60000, function () {
+        return landingRequest('/experts' + (qs ? '?' + qs : ''))
+          .then(function (raw) { return listOf(raw, ['experts']).map(normalizeExpert); })
+          .catch(function () { return DEMO.experts.slice(); });
+      });
+    },
+    get: function (id) {
+      return cached('expert:' + id, 60000, function () {
+        return landingRequest('/experts/' + encodeURIComponent(id))
+          .then(function (raw) {
+            var e = oneOf(raw, ['expert']);
+            return e ? normalizeExpert(e) : null;
+          })
+          .catch(function () {
+            for (var i = 0; i < DEMO.experts.length; i++) {
+              if (String(DEMO.experts[i].id) === String(id)) return normalizeExpert(DEMO.experts[i]);
+            }
+            return null;
+          });
+      });
+    }
+  };
 
-  const search  = document.getElementById('faqSearch');
-  const filters = $$('.faq-filter');
-  const empty   = document.getElementById('faqEmpty');
+  var EventService = {
+    list: function (params) {
+      var qs = new URLSearchParams(cleanParams(params || {})).toString();
+      return cached('events:' + qs, 60000, function () {
+        return landingRequest('/events' + (qs ? '?' + qs : ''))
+          .then(function (raw) { return listOf(raw, ['events']).map(normalizeEvent); })
+          .catch(function () { return DEMO.events.slice(); });
+      });
+    },
+    get: function (id) {
+      return cached('event:' + id, 60000, function () {
+        return landingRequest('/events/' + encodeURIComponent(id))
+          .then(function (raw) {
+            var e = oneOf(raw, ['event']);
+            return e ? normalizeEvent(e) : null;
+          })
+          .catch(function () {
+            for (var i = 0; i < DEMO.events.length; i++) {
+              if (String(DEMO.events[i].id) === String(id)) return normalizeEvent(DEMO.events[i]);
+            }
+            return null;
+          });
+      });
+    }
+  };
 
-  list.addEventListener('click', (e) => {
-    const btn = e.target.closest('.faq-q');
-    if (!btn) return;
-    const panel = document.getElementById(btn.getAttribute('aria-controls'));
-    const open  = btn.getAttribute('aria-expanded') === 'true';
-    btn.setAttribute('aria-expanded', String(!open));
-    if (open) panel.setAttribute('hidden', ''); else panel.removeAttribute('hidden');
-    btn.parentElement.classList.toggle('open', !open);
-  });
+  var ResourceService = {
+    list: function (params) {
+      var qs = new URLSearchParams(cleanParams(params || {})).toString();
+      return cached('resources:' + qs, 60000, function () {
+        return landingRequest('/resources' + (qs ? '?' + qs : ''))
+          .then(function (raw) { return listOf(raw, ['resources']).map(normalizeResource); })
+          .catch(function () { return DEMO.resources.slice(); });
+      });
+    }
+  };
 
-  function apply() {
-    const q = (search.value || '').trim().toLowerCase();
-    const activeFilter = filters.find(f => f.classList.contains('active'));
-    const activeCat = activeFilter ? activeFilter.dataset.cat : 'all';
+  var TestimonialService = {
+    list: function () {
+      return cached('testimonials', 300000, function () {
+        return landingRequest('/testimonials')
+          .then(function (raw) { return listOf(raw, ['testimonials']).map(normalizeTestimonial); })
+          .catch(function () { return DEMO.testimonials.slice(); });
+      });
+    }
+  };
 
-    let visible = 0;
-    $$('.faq-item').forEach(item => {
-      const matchCat = activeCat === 'all' || item.dataset.cat === activeCat;
-      const text     = item.textContent.toLowerCase();
-      const matchQ   = !q || text.includes(q);
-      const show     = matchCat && matchQ;
-      item.hidden    = !show;
-      if (show) visible++;
-    });
-    if (empty) empty.hidden = visible !== 0;
+  /**
+   * Unified public search.
+   * One query fans out across every public collection and returns
+   * grouped results — courses, experts, events, resources.
+   */
+  var SearchService = {
+    search: async function (query, opts) {
+      var q = String(query || '').trim();
+      if (q.length < 2) return { query: q, courses: [], experts: [], events: [], resources: [], total: 0 };
+
+      opts = opts || {};
+      var limit = opts.limit || 4;
+
+      /* Prefer a single backend endpoint if one exists. */
+      try {
+        var raw = await landingRequest('/search?q=' + encodeURIComponent(q) + '&limit=' + limit);
+        var d = raw && raw.data !== undefined ? raw.data : raw;
+        if (d && (d.courses || d.experts || d.events || d.resources)) {
+          var groups = {
+            query: q,
+            courses: listOf(d.courses).map(normalizeCourse),
+            experts: listOf(d.experts).map(normalizeExpert),
+            events: listOf(d.events).map(normalizeEvent),
+            resources: listOf(d.resources).map(normalizeResource)
+          };
+          groups.total = groups.courses.length + groups.experts.length +
+                         groups.events.length + groups.resources.length;
+          return groups;
+        }
+      } catch (_) { /* fall through to fan-out */ }
+
+      /* Fan-out fallback. */
+      var results = await Promise.all([
+        CourseService.list({ q: q, limit: limit }).catch(function () { return []; }),
+        ExpertService.list({ q: q, limit: limit }).catch(function () { return []; }),
+        EventService.list({ q: q, limit: limit }).catch(function () { return []; }),
+        ResourceService.list({ q: q, limit: limit }).catch(function () { return []; })
+      ]);
+
+      return {
+        query: q,
+        courses: results[0].slice(0, limit),
+        experts: results[1].slice(0, limit),
+        events: results[2].slice(0, limit),
+        resources: results[3].slice(0, limit),
+        total: results[0].length + results[1].length + results[2].length + results[3].length
+      };
+    }
+  };
+
+  /* ==========================================================
+     3. ROUTES
+     ========================================================== */
+  var ROUTES = {
+    home: '#/',
+    courses: '#/courses',
+    experts: '#/experts',
+    events: '#/events',
+    resources: '#/resources',
+    about: '#/about',
+    contact: '#/contact',
+    institutions: '#/institutions',
+    login: '#/login',
+    register: '#/register'
+  };
+
+  function go(hash) {
+    if (!hash) return;
+    if (String(hash).charAt(0) !== '#') hash = '#' + hash;
+    if (location.hash === hash) {
+      /* Same route — force a re-render. */
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } else {
+      location.hash = hash;
+    }
   }
 
-  if (search) search.addEventListener('input', apply);
+  function courseUrl(id) { return '#/courses/' + encodeURIComponent(id); }
+  function expertUrl(id) { return '#/experts/' + encodeURIComponent(id); }
+  function eventUrl(id)  { return '#/events/' + encodeURIComponent(id); }
 
-  filters.forEach(f => f.addEventListener('click', () => {
-    filters.forEach(x => x.classList.remove('active'));
-    f.classList.add('active');
-    apply();
-  }));
-}
+  /* ==========================================================
+     4. SHARED CHROME (nav + footer)
+     ========================================================== */
+  function publicNav(active) {
+    var links = [
+      ['courses', 'Courses', ROUTES.courses],
+      ['experts', 'Experts', ROUTES.experts],
+      ['events', 'Events', ROUTES.events],
+      ['resources', 'Resources', ROUTES.resources],
+      ['institutions', 'For institutions', ROUTES.institutions],
+      ['about', 'About', ROUTES.about]
+    ];
 
-/* ============================================================
-   NEWSLETTER
-   ============================================================ */
-function wireNewsletter() {
-  const form = document.getElementById('newsletterForm');
-  if (!form) return;
-  const msg = document.getElementById('newsletterMsg');
+    return '' +
+      '<nav class="lp-nav">' +
+        '<div class="landing-brand" data-lp-action="goto" data-lp-href="' + ROUTES.home + '" style="cursor:pointer">' +
+          '<div class="landing-brand-icon"><i class="fas fa-graduation-cap"></i></div>' +
+          '<span>ExpertHub</span>' +
+        '</div>' +
+        '<div class="lp-nav-links">' +
+          links.map(function (l) {
+            return '<button class="lp-nav-link' + (active === l[0] ? ' is-active' : '') +
+                   '" data-lp-action="goto" data-lp-href="' + l[2] + '">' + esc(l[1]) + '</button>';
+          }).join('') +
+        '</div>' +
+        '<div class="landing-nav-actions">' +
+          '<button class="btn btn-ghost" data-lp-action="goto" data-lp-href="' + ROUTES.login + '">' +
+            '<i class="fas fa-right-to-bracket"></i> Sign in</button>' +
+          '<button class="btn btn-primary" data-lp-action="goto" data-lp-href="' + ROUTES.register + '">' +
+            '<i class="fas fa-user-plus"></i> Create account</button>' +
+        '</div>' +
+      '</nav>';
+  }
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('newsletterEmail');
-    const email = (input.value || '').trim();
+  function publicFooter() {
+    var cols = [
+      ['Explore', [['Courses', ROUTES.courses], ['Experts', ROUTES.experts], ['Events', ROUTES.events], ['Resources', ROUTES.resources]]],
+      ['Platform', [['For institutions', ROUTES.institutions], ['Pricing', ROUTES.home + '#pricing'], ['About us', ROUTES.about], ['Contact', ROUTES.contact]]],
+      ['Account', [['Sign in', ROUTES.login], ['Create account', ROUTES.register]]]
+    ];
 
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      msg.textContent = 'Please enter a valid email address.';
-      msg.className = 'newsletter-msg error';
-      input.focus();
+    return '' +
+      '<footer class="lp-footer">' +
+        '<div>' +
+          '<div class="landing-brand" style="margin-bottom:12px">' +
+            '<div class="landing-brand-icon"><i class="fas fa-graduation-cap"></i></div>' +
+            '<span>ExpertHub</span>' +
+          '</div>' +
+          '<p style="opacity:.65;line-height:1.6;margin:0;max-width:34ch">' +
+            'E-School, 1-on-1 expert consultations and corporate training — in one modern platform.' +
+          '</p>' +
+        '</div>' +
+        cols.map(function (col) {
+          return '<div><h4>' + esc(col[0]) + '</h4><ul>' +
+            col[1].map(function (item) {
+              var href = item[1];
+              var isAnchor = href.indexOf('#') > 0;
+              if (isAnchor) {
+                return '<li><button data-lp-action="goto" data-lp-href="' + href + '">' + esc(item[0]) + '</button></li>';
+              }
+              return '<li><button data-lp-action="goto" data-lp-href="' + href + '">' + esc(item[0]) + '</button></li>';
+            }).join('') +
+          '</ul></div>';
+        }).join('') +
+        '<div class="lp-copy">© ' + new Date().getFullYear() +
+          ' ExpertHub. E-School, Consultation and Corporate Training Platform.</div>' +
+      '</footer>';
+  }
+
+  function sectionHead(title, sub, actionLabel, actionHref) {
+    return '' +
+      '<div class="lp-section-head">' +
+        '<div>' +
+          '<h2 class="section-title" style="margin:0 0 6px">' + esc(title) + '</h2>' +
+          (sub ? '<p class="section-sub" style="margin:0">' + esc(sub) + '</p>' : '') +
+        '</div>' +
+        (actionLabel
+          ? '<button class="lp-link" data-lp-action="goto" data-lp-href="' + actionHref + '">' +
+              esc(actionLabel) + ' <i class="fas fa-arrow-right"></i></button>'
+          : '') +
+      '</div>';
+  }
+
+  /* ==========================================================
+     5. CARD RENDERERS
+     ========================================================== */
+  function stars(rating) {
+    var r = Math.round(num(rating, 0));
+    var out = '';
+    for (var i = 1; i <= 5; i++) {
+      out += '<i class="' + (i <= r ? 'fas' : 'far') + ' fa-star"></i>';
+    }
+    return out;
+  }
+
+  function courseCard(c) {
+    var img = c.thumbnail
+      ? '<img src="' + esc(c.thumbnail) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+      : '<img src="' + esc(avatarUrl(c.title, '4f46e5')) + '" alt="" loading="lazy">';
+
+    return '' +
+      '<article class="lp-card" data-lp-action="goto" data-lp-href="' + courseUrl(c.id) + '" style="cursor:pointer">' +
+        '<div class="lp-card-media">' + img +
+          '<span class="lp-card-tag">' + esc(c.category) + '</span>' +
+          '<span class="lp-card-price">' + esc(fmtMoney(c.price, c.currency)) + '</span>' +
+        '</div>' +
+        '<div class="lp-card-body">' +
+          '<h3 class="lp-card-title">' + esc(c.title) + '</h3>' +
+          '<p class="lp-card-text">' + esc(c.summary) + '</p>' +
+          '<div class="lp-card-meta">' +
+            '<span class="lp-author">' +
+              '<img src="' + esc(safeImage(c.expert.avatar, c.expert.name)) + '" alt="">' +
+              esc(c.expert.name) +
+              (c.expert.verified ? ' <i class="fas fa-circle-check lp-verified"></i>' : '') +
+            '</span>' +
+          '</div>' +
+          '<div class="lp-card-meta" style="padding-top:0">' +
+            (c.rating ? '<span><i class="fas fa-star" style="color:#f59e0b"></i> ' + c.rating.toFixed(1) + '</span>' : '') +
+            (c.lessons ? '<span><i class="fas fa-book-open"></i> ' + c.lessons + ' lessons</span>' : '') +
+            (c.durationWeeks ? '<span><i class="fas fa-clock"></i> ' + c.durationWeeks + ' weeks</span>' : '') +
+            '<span><i class="fas fa-signal"></i> ' + esc(c.level) + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</article>';
+  }
+
+  function expertCard(e) {
+    return '' +
+      '<article class="lp-card lp-expert" data-lp-action="goto" data-lp-href="' + expertUrl(e.id) + '" style="cursor:pointer">' +
+        '<img class="lp-expert-avatar" src="' + esc(safeImage(e.avatar, e.name)) + '" alt="" loading="lazy">' +
+        '<h3>' + esc(e.name) +
+          (e.verified ? ' <i class="fas fa-circle-check lp-verified" title="Verified by ExpertHub"></i>' : '') +
+        '</h3>' +
+        '<p class="lp-expert-role">' + esc(e.headline || 'ExpertHub consultant') + '</p>' +
+        (e.specializations.length
+          ? '<div class="lp-tags">' + e.specializations.slice(0, 3).map(function (s) {
+              return '<span class="lp-tag">' + esc(s) + '</span>';
+            }).join('') + '</div>'
+          : '') +
+        '<div class="lp-stars">' + stars(e.rating) +
+          ' <span style="color:inherit;opacity:.55;margin-left:4px">' +
+          (e.rating ? e.rating.toFixed(1) : 'New') +
+          (e.reviews ? ' · ' + e.reviews + ' reviews' : '') + '</span>' +
+        '</div>' +
+        '<div class="lp-card-meta" style="justify-content:center;padding-top:0">' +
+          (e.rate ? '<span><b>' + esc(fmtMoney(e.rate, e.currency)) + '</b> / session</span>' : '<span>Contact for rate</span>') +
+          (e.experienceYears ? '<span>· ' + e.experienceYears + ' yrs exp</span>' : '') +
+        '</div>' +
+      '</article>';
+  }
+
+  function eventRow(ev) {
+    var d = ev.startsAt ? new Date(ev.startsAt) : null;
+    var day = d && !isNaN(d) ? d.getDate() : '—';
+    var mon = d && !isNaN(d) ? d.toLocaleDateString(undefined, { month: 'short' }) : '';
+
+    return '' +
+      '<article class="lp-row-card" data-lp-action="goto" data-lp-href="' + eventUrl(ev.id) + '" style="cursor:pointer">' +
+        '<div class="lp-date-chip"><b>' + esc(day) + '</b><span>' + esc(mon) + '</span></div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<h3 class="lp-card-title" style="margin-bottom:4px">' + esc(ev.title) + '</h3>' +
+          '<p class="lp-card-text" style="margin-bottom:6px">' + esc(ev.summary) + '</p>' +
+          '<div class="lp-card-meta" style="padding-top:0">' +
+            '<span><i class="fas fa-' + (ev.mode === 'physical' ? 'location-dot' : 'video') + '"></i> ' +
+              esc(ev.mode === 'physical' ? (ev.location || 'In person') : 'Online') + '</span>' +
+            '<span><i class="fas fa-clock"></i> ' + esc(fmtDateTime(ev.startsAt)) + '</span>' +
+            '<span><i class="fas fa-tag"></i> ' + esc(fmtMoney(ev.price, ev.currency)) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<i class="fas fa-chevron-right" style="opacity:.35"></i>' +
+      '</article>';
+  }
+
+  function resourceCard(r) {
+    return '' +
+      '<article class="lp-card" data-lp-action="resource-open" data-lp-url="' + esc(r.url || '') + '" style="cursor:pointer">' +
+        '<div class="lp-card-media" style="aspect-ratio:16/10">' +
+          (r.cover
+            ? '<img src="' + esc(r.cover) + '" alt="" loading="lazy">'
+            : '<img src="' + esc(avatarUrl(r.title, '0ea5e9')) + '" alt="" loading="lazy">') +
+          '<span class="lp-card-tag">' + esc(r.type) + '</span>' +
+        '</div>' +
+        '<div class="lp-card-body">' +
+          '<h3 class="lp-card-title">' + esc(r.title) + '</h3>' +
+          '<p class="lp-card-text">' + esc(r.summary) + '</p>' +
+          '<div class="lp-card-meta">' +
+            '<span>' + esc(r.author) + '</span>' +
+            (r.readMinutes ? '<span>· ' + r.readMinutes + ' min read</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</article>';
+  }
+
+  function skeletons(n, minH) {
+    var out = '';
+    for (var i = 0; i < n; i++) {
+      out += '<div class="lp-skel" style="min-height:' + (minH || 220) + 'px"></div>';
+    }
+    return out;
+  }
+
+  function emptyState(message, actionLabel, actionAttrs) {
+    return '' +
+      '<div class="lp-empty">' +
+        '<i class="fas fa-inbox"></i>' +
+        '<p style="margin:0 0 12px">' + esc(message) + '</p>' +
+        (actionLabel ? '<button class="btn btn-secondary" ' + (actionAttrs || '') + '>' + esc(actionLabel) + '</button>' : '') +
+      '</div>';
+  }
+
+  /* ==========================================================
+     6. LANDING PAGE
+     ========================================================== */
+  var runToken = 0;          /* guards against stale async writes */
+  var searchAbort = null;
+
+  function landingShell() {
+    return '' +
+      '<div class="landing">' +
+        publicNav('home') +
+
+        /* ---------------- HERO ---------------- */
+        '<header class="lp-hero">' +
+          '<div>' +
+            '<span class="lp-badge"><span class="live-indicator"></span> ' +
+              'Trusted by learners, experts and institutions</span>' +
+            '<h1 class="lp-hero-title">Learn, consult and grow with ' +
+              '<span class="lp-accent">real experts</span></h1>' +
+            '<p class="lp-hero-sub">ExpertHub combines an E-School, bootcamps, short courses, ' +
+              'tuition, exam prep, 1-on-1 consultations and full corporate training in one modern platform.</p>' +
+
+            '<form class="lp-search" id="lpSearchForm" role="search" autocomplete="off">' +
+              '<i class="fas fa-magnifying-glass"></i>' +
+              '<input id="lpSearchInput" type="search" placeholder="Search courses, experts, events and resources…" ' +
+                'aria-label="Search ExpertHub" aria-expanded="false" aria-controls="lpSearchResults">' +
+              '<button class="btn btn-primary" type="submit">Search</button>' +
+              '<div class="lp-search-results" id="lpSearchResults" hidden></div>' +
+            '</form>' +
+
+            '<div class="lp-chips">' +
+              ['Web development', 'Data science', 'IELTS', 'Business', 'Design'].map(function (t) {
+                return '<button type="button" class="lp-chip" data-lp-action="chip" ' +
+                       'data-lp-query="' + esc(t) + '">' + esc(t) + '</button>';
+              }).join('') +
+            '</div>' +
+
+            '<div class="lp-hero-cta" style="margin-top:26px">' +
+              '<button class="btn btn-primary" data-lp-action="goto" data-lp-href="' + ROUTES.register + '">' +
+                '<i class="fas fa-rocket"></i> Get started free</button>' +
+              '<button class="btn btn-secondary" data-lp-action="goto" data-lp-href="' + ROUTES.login + '">' +
+                '<i class="fas fa-right-to-bracket"></i> I already have an account</button>' +
+            '</div>' +
+
+            '<div class="hero-stats" style="margin-top:34px">' +
+              '<div><div class="hero-stat-value">2k+</div><div class="hero-stat-label">Active learners</div></div>' +
+              '<div><div class="hero-stat-value">150+</div><div class="hero-stat-label">Verified experts</div></div>' +
+              '<div><div class="hero-stat-value">4.9 / 5</div><div class="hero-stat-label">Average rating</div></div>' +
+            '</div>' +
+          '</div>' +
+
+          '<div class="hero-visual">' +
+            '<div class="hero-card">' +
+              '<div class="hero-card-row">' +
+                '<div class="hero-card-icon"><i class="fas fa-school"></i></div>' +
+                '<div><div class="hero-card-title">E-School hub</div>' +
+                '<div class="hero-card-desc">Bootcamps, courses, tuition and exams</div></div>' +
+              '</div>' +
+              '<div class="hero-card-row">' +
+                '<div class="hero-card-icon green"><i class="fas fa-comments"></i></div>' +
+                '<div><div class="hero-card-title">1-on-1 consultations</div>' +
+                '<div class="hero-card-desc">Chat, audio and video calls</div></div>' +
+              '</div>' +
+              '<div class="hero-card-row">' +
+                '<div class="hero-card-icon yellow"><i class="fas fa-user-tie"></i></div>' +
+                '<div><div class="hero-card-title">Verified experts</div>' +
+                '<div class="hero-card-desc">Approved by our admin team</div></div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="hero-card">' +
+              '<div class="hero-card-row">' +
+                '<div class="hero-card-icon"><i class="fas fa-building-columns"></i></div>' +
+                '<div><div class="hero-card-title">Corporate training</div>' +
+                '<div class="hero-card-desc">Programmes, cohorts, assessments and compliance</div></div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</header>' +
+
+        /* ---------------- FEATURED COURSES ---------------- */
+        '<section class="section alt" id="lp-courses-section">' +
+          '<div style="max-width:1200px;margin:0 auto">' +
+            sectionHead('Featured courses', 'Hand-picked programmes from our verified experts.',
+                        'Browse all courses', ROUTES.courses) +
+            '<div class="lp-grid lp-grid-3" id="lpCourses">' + skeletons(3, 280) + '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- EXPERTS ---------------- */
+        '<section class="section" id="lp-experts-section">' +
+          '<div style="max-width:1200px;margin:0 auto">' +
+            sectionHead('Meet the experts', 'Verified professionals ready to help you one-on-one.',
+                        'See all experts', ROUTES.experts) +
+            '<div class="lp-grid lp-grid-4" id="lpExperts">' + skeletons(4, 250) + '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- EVENTS ---------------- */
+        '<section class="section alt" id="lp-events-section">' +
+          '<div style="max-width:1000px;margin:0 auto">' +
+            sectionHead('Upcoming events', 'Workshops, webinars and open days you can join.',
+                        'All events', ROUTES.events) +
+            '<div class="lp-grid" id="lpEvents" style="gap:14px">' + skeletons(3, 90) + '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- RESOURCES ---------------- */
+        '<section class="section" id="lp-resources-section">' +
+          '<div style="max-width:1200px;margin:0 auto">' +
+            sectionHead('Free resources', 'Guides, templates and articles to get you moving.',
+                        'All resources', ROUTES.resources) +
+            '<div class="lp-grid lp-grid-4" id="lpResources">' + skeletons(4, 240) + '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- FEATURES ---------------- */
+        '<section class="section alt">' +
+          '<div style="max-width:1200px;margin:0 auto">' +
+            '<h2 class="section-title">Everything you need to learn, earn and train</h2>' +
+            '<p class="section-sub">A complete platform for learners, experts, institutions and administrators.</p>' +
+            '<div class="features-grid">' +
+              feature('fa-graduation-cap', '', 'Learn anything', 'Bootcamps, short courses, tuition and exam prep curated by experts.') +
+              feature('fa-user-tie', 'linear-gradient(135deg,#10b981,#059669)', 'Teach and earn', 'Experts get verified, manage consultations and withdraw earnings.') +
+              feature('fa-comments', 'linear-gradient(135deg,#f59e0b,#d97706)', 'Real-time chat', 'Live messaging, attachments, typing indicator and video calls.') +
+              feature('fa-building-columns', 'linear-gradient(135deg,#8b5cf6,#6d28d9)', 'Corporate training', 'Programmes, cohorts, assessments, certifications and compliance.') +
+              feature('fa-shield-halved', 'linear-gradient(135deg,#ef4444,#b91c1c)', 'Admin controlled', 'Approvals, moderation, payouts and full audit logging built in.') +
+              feature('fa-chart-line', 'linear-gradient(135deg,#0ea5e9,#0369a1)', 'Deep analytics', 'Track progress, scores and completion across all cohorts.') +
+            '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- PRICING ---------------- */
+        '<section class="section" id="pricing">' +
+          '<div style="max-width:1200px;margin:0 auto">' +
+            '<h2 class="section-title">Simple, transparent pricing</h2>' +
+            '<p class="section-sub">Choose the plan that fits your journey.</p>' +
+            '<div class="pricing-grid">' +
+              pricingCard('Learner', 'Free', '$0<span>/mo</span>', [
+                'Browse all courses', '1 free consultation per month',
+                'Community access', 'Progress tracking'
+              ], 'Get started', 'btn-secondary', ROUTES.register, false) +
+              pricingCard('Expert', 'Pro', '20%<span> commission</span>', [
+                'Create unlimited courses', 'Accept consultations',
+                'Instant payouts (7-day hold)', 'Priority support'
+              ], 'Become an expert', 'btn-primary', ROUTES.register, true) +
+              pricingCard('Enterprise', 'Institution', 'Let\'s talk', [
+                'Team accounts and ops manager', 'Programmes, cohorts and trainees',
+                'Assessments and capstone projects', 'Custom branding and SSO'
+              ], 'Register institution', 'btn-secondary', ROUTES.register, false) +
+            '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- TESTIMONIALS ---------------- */
+        '<section class="section alt">' +
+          '<div style="max-width:1200px;margin:0 auto">' +
+            '<h2 class="section-title">Loved by learners, experts and institutions</h2>' +
+            '<p class="section-sub">Real stories from our community.</p>' +
+            '<div class="testimonials-grid" id="lpTestimonials">' + skeletons(3, 170) + '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- FAQ ---------------- */
+        '<section class="section">' +
+          '<div style="max-width:820px;margin:0 auto">' +
+            '<h2 class="section-title">Frequently asked questions</h2>' +
+            '<p class="section-sub">Everything you need to know.</p>' +
+            '<div class="faq-list">' +
+              [
+                ['How does registration work?', 'Learners are approved instantly. Experts and institutions require admin approval.'],
+                ['What is the platform commission?', 'We charge a flat 20% commission on all course sales and consultations.'],
+                ['How long do payouts take?', 'Withdrawals have a 7-day holding period, then process within 3 to 5 business days.'],
+                ['Can I switch from learner to expert?', 'Yes. Apply to become an expert from your dashboard. Our team reviews each application.'],
+                ['Do you support corporate training?', 'Yes. Institutions get programmes, cohorts, assessments, projects, certifications and compliance tracking.'],
+                ['How do I contact support?', 'Use the contact page or email support@experthub.example. We reply within one business day.']
+              ].map(function (qa) {
+                return '<div class="faq-item">' +
+                  '<div class="faq-q" data-lp-action="faq">' + esc(qa[0]) +
+                    '<i class="fas fa-chevron-down"></i></div>' +
+                  '<div class="faq-a">' + esc(qa[1]) + '</div>' +
+                '</div>';
+              }).join('') +
+            '</div>' +
+          '</div>' +
+        '</section>' +
+
+        /* ---------------- CTA ---------------- */
+        '<section class="section alt">' +
+          '<div class="lp-cta">' +
+            '<h2>Ready to start?</h2>' +
+            '<p>Join thousands of learners, experts and institutions already growing on ExpertHub.</p>' +
+            '<button class="btn btn-primary" data-lp-action="goto" data-lp-href="' + ROUTES.register + '">' +
+              '<i class="fas fa-rocket"></i> Create your free account</button>' +
+          '</div>' +
+        '</section>' +
+
+        publicFooter() +
+      '</div>';
+  }
+
+  function feature(icon, bg, title, text) {
+    return '<div class="feature-card">' +
+      '<div class="feature-icon"' + (bg ? ' style="background:' + bg + '"' : '') + '>' +
+        '<i class="fas ' + icon + '"></i></div>' +
+      '<h3>' + esc(title) + '</h3><p>' + esc(text) + '</p></div>';
+  }
+
+  function pricingCard(badge, name, price, features, cta, ctaClass, href, featured) {
+    return '<div class="pricing-card' + (featured ? ' featured' : '') + '">' +
+      '<span class="pricing-badge">' + esc(badge) + '</span>' +
+      '<h3 style="margin:0">' + esc(name) + '</h3>' +
+      '<div class="pricing-price">' + price + '</div>' +
+      '<ul class="pricing-features">' +
+        features.map(function (f) {
+          return '<li><i class="fas fa-check"></i> ' + esc(f) + '</li>';
+        }).join('') +
+      '</ul>' +
+      '<button class="btn ' + ctaClass + ' btn-block" data-lp-action="goto" data-lp-href="' + href + '">' +
+        esc(cta) + '</button>' +
+    '</div>';
+  }
+
+  /* ---------- landing render + hydration ---------- */
+  function renderLanding() {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = landingShell();
+
+    /* Bind the sections that need DOM hooks. */
+    var form = $('#lpSearchForm');
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var q = ($('#lpSearchInput') || {}).value || '';
+        if (q.trim().length >= 2) go(ROUTES.courses + '?q=' + encodeURIComponent(q.trim()));
+      });
+    }
+
+    var input = $('#lpSearchInput');
+    if (input) {
+      input.addEventListener('input', debounce(function () { runSearch(input.value); }, 260));
+      input.addEventListener('focus', function () {
+        if (input.value.trim().length >= 2) runSearch(input.value);
+      });
+    }
+
+    hydrateLanding();
+  }
+
+  function hydrateLanding() {
+    var token = ++runToken;
+    loadCourses(token);
+    loadExperts(token);
+    loadEvents(token);
+    loadResources(token);
+    loadTestimonials(token);
+  }
+
+  async function loadCourses(token) {
+    var el = document.getElementById('lpCourses');
+    if (!el) return;
+    try {
+      var list = await CourseService.featured(6);
+      if (token !== runToken || !document.body.contains(el)) return;
+      el.innerHTML = list.length
+        ? list.slice(0, 6).map(courseCard).join('')
+        : emptyState('No courses published yet. Check back soon.',
+                     'Browse courses', 'data-lp-action="goto" data-lp-href="' + ROUTES.courses + '"');
+    } catch (err) {
+      if (token !== runToken) return;
+      el.innerHTML = emptyState('We could not load courses right now.',
+                                'Retry', 'data-lp-action="retry" data-lp-section="courses"');
+    }
+  }
+
+  async function loadExperts(token) {
+    var el = document.getElementById('lpExperts');
+    if (!el) return;
+    try {
+      var list = await ExpertService.list({ limit: 8, verified: true });
+      if (token !== runToken || !document.body.contains(el)) return;
+      el.innerHTML = list.length
+        ? list.slice(0, 8).map(expertCard).join('')
+        : emptyState('No experts listed yet.',
+                     'Browse experts', 'data-lp-action="goto" data-lp-href="' + ROUTES.experts + '"');
+    } catch (err) {
+      if (token !== runToken) return;
+      el.innerHTML = emptyState('We could not load experts right now.',
+                                'Retry', 'data-lp-action="retry" data-lp-section="experts"');
+    }
+  }
+
+  async function loadEvents(token) {
+    var el = document.getElementById('lpEvents');
+    if (!el) return;
+    try {
+      var list = await EventService.list({ upcoming: true, limit: 4 });
+      if (token !== runToken || !document.body.contains(el)) return;
+      el.innerHTML = list.length
+        ? list.slice(0, 4).map(eventRow).join('')
+        : emptyState('No upcoming events scheduled.',
+                     'See all events', 'data-lp-action="goto" data-lp-href="' + ROUTES.events + '"');
+    } catch (err) {
+      if (token !== runToken) return;
+      el.innerHTML = emptyState('We could not load events right now.',
+                                'Retry', 'data-lp-action="retry" data-lp-section="events"');
+    }
+  }
+
+  async function loadResources(token) {
+    var el = document.getElementById('lpResources');
+    if (!el) return;
+    try {
+      var list = await ResourceService.list({ limit: 4 });
+      if (token !== runToken || !document.body.contains(el)) return;
+      el.innerHTML = list.length
+        ? list.slice(0, 4).map(resourceCard).join('')
+        : emptyState('No public resources yet.',
+                     'See resources', 'data-lp-action="goto" data-lp-href="' + ROUTES.resources + '"');
+    } catch (err) {
+      if (token !== runToken) return;
+      el.innerHTML = emptyState('We could not load resources right now.',
+                                'Retry', 'data-lp-action="retry" data-lp-section="resources"');
+    }
+  }
+
+  async function loadTestimonials(token) {
+    var el = document.getElementById('lpTestimonials');
+    if (!el) return;
+    try {
+      var list = await TestimonialService.list();
+      if (token !== runToken || !document.body.contains(el)) return;
+      if (!list.length) { el.innerHTML = ''; return; }
+      el.innerHTML = list.slice(0, 6).map(function (t) {
+        return '<div class="testimonial">' +
+          '<div class="lp-stars" style="margin-bottom:8px">' + stars(t.rating) + '</div>' +
+          '<p class="testimonial-text">"' + esc(t.quote) + '"</p>' +
+          '<div class="testimonial-author">' +
+            '<img class="testimonial-avatar" src="' + esc(safeImage(t.avatar, t.name)) + '" alt="">' +
+            '<div><div class="testimonial-name">' + esc(t.name) + '</div>' +
+            '<div class="testimonial-role">' + esc(t.role) + '</div></div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } catch (err) {
+      if (token === runToken) el.innerHTML = '';
+    }
+  }
+
+  /* ---------- unified search UI ---------- */
+  function runSearch(query) {
+    var box = document.getElementById('lpSearchResults');
+    var input = document.getElementById('lpSearchInput');
+    if (!box) return;
+
+    var q = String(query || '').trim();
+    if (q.length < 2) {
+      box.hidden = true;
+      box.innerHTML = '';
+      if (input) input.setAttribute('aria-expanded', 'false');
       return;
     }
 
-    const btn = form.querySelector('button[type="submit"]');
-    btn.disabled = true;
-    msg.textContent = 'Subscribing…';
-    msg.className = 'newsletter-msg';
+    box.hidden = false;
+    box.innerHTML = '<div class="lp-sr-empty"><i class="fas fa-circle-notch fa-spin"></i> Searching…</div>';
+    if (input) input.setAttribute('aria-expanded', 'true');
 
-    trackLanding('newsletter_subscribe', { email_domain: email.split('@')[1] });
+    if (searchAbort) { try { searchAbort.abort(); } catch (_) {} }
+    searchAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
 
-    const res = await publicFetch('/newsletter/subscribe', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-      headers: { 'Content-Type': 'application/json' }
+    SearchService.search(q, { limit: 4 }).then(function (res) {
+      if (String((document.getElementById('lpSearchInput') || {}).value || '').trim() !== q) return;
+      box.innerHTML = renderSearchResults(res);
+    }).catch(function () {
+      box.innerHTML = '<div class="lp-sr-empty">Search is unavailable right now.</div>';
     });
-
-    if (res.ok) {
-      msg.textContent = 'Thanks! Please check your inbox to confirm.';
-      msg.className = 'newsletter-msg success';
-      form.reset();
-    } else {
-      msg.textContent = 'Something went wrong. Please try again later.';
-      msg.className = 'newsletter-msg error';
-    }
-    btn.disabled = false;
-  });
-}
-
-/* ============================================================
-   ASYNC DATA LOADERS
-   ============================================================ */
-async function loadLandingStats() {
-  const grid = document.getElementById('statsGrid');
-  if (!grid) return;
-
-  const FALLBACK = {
-    activeLearners: 2000, verifiedExperts: 150,
-    publishedCourses: 320, completedConsultations: 5400,
-    institutions: 45, countriesReached: 12,
-    certificatesIssued: 1800, averageRating: 4.9
-  };
-
-  const res = await publicFetch('/public/statistics', { timeout: 5000 });
-  const s = (res.ok && res.data) ? Object.assign({}, FALLBACK, res.data) : FALLBACK;
-
-  const cards = [
-    [Number(s.activeLearners)         || 0, '+',     'Active learners',         'fa-user-graduate'],
-    [Number(s.verifiedExperts)        || 0, '+',     'Verified experts',        'fa-user-tie'],
-    [Number(s.publishedCourses)       || 0, '+',     'Published courses',       'fa-book-open'],
-    [Number(s.completedConsultations) || 0, '+',     'Consultations completed', 'fa-comments'],
-    [Number(s.institutions)           || 0, '+',     'Institutions onboard',    'fa-building-columns'],
-    [Number(s.countriesReached)       || 0, '',      'Countries reached',       'fa-globe'],
-    [Number(s.certificatesIssued)     || 0, '+',     'Certificates issued',     'fa-certificate'],
-    [Number(s.averageRating)          || 4.9, ' / 5', 'Average rating',         'fa-star']
-  ];
-
-  grid.innerHTML = cards.map(([val, suffix, label, icon]) => `
-    <div class="stat-card">
-      <i class="fas ${icon} stat-icon" aria-hidden="true"></i>
-      <div class="stat-value" data-target="${val}" data-suffix="${suffix}">0${suffix}</div>
-      <div class="stat-label">${label}</div>
-    </div>`).join('');
-
-  const runCounters = () => {
-    grid.querySelectorAll('.stat-value').forEach(el => {
-      const target = parseFloat(el.dataset.target);
-      const suffix = el.dataset.suffix || '';
-      const decimals = Number.isInteger(target) ? 0 : 1;
-      countUp(el, target, { suffix, decimals, duration: 1400 });
-    });
-  };
-
-  if (!('IntersectionObserver' in window) || prefersReducedMotion()) {
-    grid.querySelectorAll('.stat-value').forEach(el => {
-      const target = parseFloat(el.dataset.target);
-      const suffix = el.dataset.suffix || '';
-      const decimals = Number.isInteger(target) ? 0 : 1;
-      el.textContent = target.toFixed(decimals) + suffix;
-    });
-  } else {
-    const io = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      runCounters();
-      io.disconnect();
-    }, { threshold: 0.25 });
-    io.observe(grid);
-  }
-}
-
-async function loadPopularCourses() {
-  const grid = document.getElementById('coursesGrid');
-  if (!grid) return;
-
-  const FALLBACK = [
-    { id:'c1', title:'Full-Stack Web Development Bootcamp', expert:'Amina W.',     category:'Web Development', rating:4.9, learners:1240, duration:'12 weeks', level:'Beginner',     price:299, discount:20, image:'' },
-    { id:'c2', title:'Data Science with Python',            expert:'Dr. Sarah K.', category:'Data Science',    rating:4.8, learners:890,  duration:'8 weeks',  level:'Intermediate', price:249, discount:0,  image:'' },
-    { id:'c3', title:'Digital Marketing Masterclass',       expert:'Brian O.',     category:'Marketing',       rating:4.7, learners:2100, duration:'6 weeks',  level:'Beginner',     price:149, discount:15, image:'' },
-    { id:'c4', title:'KCSE Mathematics Exam Prep',          expert:'Mr. Mwangi',   category:'Exam Prep',       rating:4.9, learners:3200, duration:'10 weeks', level:'High School',  price:79,  discount:0,  image:'' }
-  ];
-
-  const res = await publicFetch('/public/courses/popular?limit=8');
-  const items = (res.ok && Array.isArray(res.data) && res.data.length) ? res.data : FALLBACK;
-
-  grid.innerHTML = items.map(c => {
-    const finalPrice = c.discount ? Math.round(c.price * (1 - c.discount / 100)) : c.price;
-    return `
-      <article class="course-card">
-        <div class="course-cover">
-          ${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" />`
-                    : `<div class="course-cover-fallback"><i class="fas fa-book-open"></i></div>`}
-          ${c.discount ? `<span class="course-discount">-${c.discount}%</span>` : ''}
-        </div>
-        <div class="course-body">
-          <span class="course-category">${esc(c.category)}</span>
-          <h3 class="course-title">${esc(c.title)}</h3>
-          <div class="course-expert">by ${esc(c.expert)}</div>
-          <div class="course-meta">
-            <span><i class="fas fa-star"></i> ${esc(String(c.rating))}</span>
-            <span><i class="fas fa-users"></i> ${fmtNum(c.learners)}</span>
-            <span><i class="fas fa-clock"></i> ${esc(c.duration)}</span>
-            <span class="course-level">${esc(c.level)}</span>
-          </div>
-          <div class="course-footer">
-            <div class="course-price">
-              ${c.discount ? `<span class="price-old">${fmtMoney(c.price)}</span>` : ''}
-              <span class="price-now">${fmtMoney(finalPrice)}</span>
-            </div>
-            <div class="course-actions">
-              <button class="btn btn-ghost btn-sm" data-nav="/courses/${esc(c.id)}">View</button>
-              <button class="btn btn-primary btn-sm" data-enroll="${esc(c.id)}">Enroll</button>
-            </div>
-          </div>
-        </div>
-      </article>`;
-  }).join('');
-
-  grid.addEventListener('click', (e) => {
-    const enroll = e.target.closest('[data-enroll]');
-    if (enroll) {
-      const id = enroll.getAttribute('data-enroll');
-      trackLanding('course_enroll_click', { id });
-      location.hash = '#/courses/' + encodeURIComponent(id) + '/enroll';
-    }
-  });
-}
-
-async function loadFeaturedExperts() {
-  const grid = document.getElementById('expertsGrid');
-  if (!grid) return;
-
-  const FALLBACK = [
-    { id:'e1', name:'Dr. Sarah K.', expertise:'Data Science & AI',          rating:4.9, consultations:320, price:60, available:true,  verified:true, avatar:'' },
-    { id:'e2', name:'Amina W.',     expertise:'Full-Stack Web Development', rating:4.8, consultations:245, price:45, available:true,  verified:true, avatar:'' },
-    { id:'e3', name:'Brian O.',     expertise:'Digital Marketing',          rating:4.7, consultations:180, price:35, available:false, verified:true, avatar:'' },
-    { id:'e4', name:'Mr. Mwangi',   expertise:'KCSE Mathematics',           rating:4.9, consultations:410, price:25, available:true,  verified:true, avatar:'' }
-  ];
-
-  const res = await publicFetch('/public/experts/featured?limit=8');
-  const items = (res.ok && Array.isArray(res.data) && res.data.length) ? res.data : FALLBACK;
-
-  grid.innerHTML = items.map(x => {
-    const avatar = x.avatar
-      ? `<img src="${esc(x.avatar)}" alt="${esc(x.name)}" loading="lazy" />`
-      : `<span class="expert-initials">${esc(initials(x.name))}</span>`;
-    return `
-      <article class="expert-card">
-        <div class="expert-avatar">
-          ${avatar}
-          ${x.verified ? `<span class="verified-badge" title="Verified"><i class="fas fa-circle-check"></i></span>` : ''}
-        </div>
-        <h3 class="expert-name">${esc(x.name)}</h3>
-        <div class="expert-expertise">${esc(x.expertise)}</div>
-        <div class="expert-meta">
-          <span><i class="fas fa-star"></i> ${esc(String(x.rating))}</span>
-          <span><i class="fas fa-comments"></i> ${fmtNum(x.consultations)}</span>
-        </div>
-        <div class="expert-status ${x.available ? 'online' : 'offline'}">
-          <span class="dot"></span> ${x.available ? 'Available now' : 'Away'}
-        </div>
-        <div class="expert-price">${fmtMoney(x.price)}<span>/ session</span></div>
-        <div class="expert-actions">
-          <button class="btn btn-ghost btn-sm" data-nav="/experts/${esc(x.id)}">View profile</button>
-          <button class="btn btn-primary btn-sm" data-book="${esc(x.id)}">Book</button>
-        </div>
-      </article>`;
-  }).join('');
-
-  grid.addEventListener('click', (e) => {
-    const book = e.target.closest('[data-book]');
-    if (book) {
-      const id = book.getAttribute('data-book');
-      trackLanding('expert_book_click', { id });
-      location.hash = '#/consultations/book/' + encodeURIComponent(id);
-    }
-  });
-}
-
-async function loadTestimonials() {
-  const track = document.getElementById('testimonialTrack');
-  if (!track) return;
-
-  const PREVIEW = [
-    { quote:'ExpertHub will let me switch careers with a structured bootcamp.',              name:'Learner preview',     role:'Future learner',     avatar:'', verified:false },
-    { quote:'As an expert, I look forward to a platform that handles payments automatically.', name:'Expert preview',      role:'Future expert',      avatar:'', verified:false },
-    { quote:'We plan to run cohorts and track trainee progress through ExpertHub.',          name:'Institution preview', role:'Future institution', avatar:'', verified:false }
-  ];
-
-  const res = await publicFetch('/public/testimonials?limit=6');
-  const items = (res.ok && Array.isArray(res.data) && res.data.length) ? res.data : PREVIEW;
-
-  track.innerHTML = items.map(t => {
-    const avatar = t.avatar
-      ? `<img src="${esc(t.avatar)}" alt="${esc(t.name)}" loading="lazy" />`
-      : `<span class="testimonial-initials">${esc(initials(t.name))}</span>`;
-    return `
-      <figure class="testimonial slide">
-        <blockquote class="testimonial-text">“${esc(t.quote)}”</blockquote>
-        <figcaption class="testimonial-author">
-          <span class="testimonial-avatar">${avatar}</span>
-          <span>
-            <span class="testimonial-name">
-              ${esc(t.name)}
-              ${t.verified ? `<i class="fas fa-circle-check verified-inline" title="Verified"></i>` : ''}
-            </span>
-            <span class="testimonial-role">${esc(t.role)}</span>
-          </span>
-        </figcaption>
-      </figure>`;
-  }).join('');
-
-  /* Rebuild dot indicators to match actual count */
-  const dotsWrap = document.querySelector('.testimonial-dots');
-  if (dotsWrap) {
-    dotsWrap.innerHTML = items.map((_, i) => `
-      <button class="dot" data-testimonial-dot="${i}" role="tab"
-              aria-selected="${i === 0 ? 'true' : 'false'}"
-              aria-label="Slide ${i + 1}"></button>`).join('');
   }
 
-  initTestimonialCarousel();
-}
+  function renderSearchResults(res) {
+    if (!res.total) {
+      return '<div class="lp-sr-empty"><i class="fas fa-magnifying-glass"></i><br>' +
+             'No results for "' + esc(res.query) + '"</div>';
+    }
 
-async function loadPaymentMethods() {
-  const row = document.getElementById('paymentRow');
-  if (!row) return;
+    var html = '';
 
-  const res = await publicFetch('/public/payment-methods', { timeout: 5000 });
-  const methods = (res.ok && Array.isArray(res.data)) ? res.data : [];
+    function group(label, items, mapper) {
+      if (!items.length) return '';
+      return '<div class="lp-sr-group">' + esc(label) + '</div>' +
+             items.map(mapper).join('');
+    }
 
-  if (!methods.length) {
-    row.innerHTML = `<span class="payment-note">Payment methods are being configured. Please check back soon.</span>`;
-    return;
+    html += group('Courses', res.courses, function (c) {
+      return '<button type="button" class="lp-sr-item" data-lp-action="goto" data-lp-href="' + courseUrl(c.id) + '">' +
+        '<img src="' + esc(safeImage(c.thumbnail, c.title)) + '" alt="">' +
+        '<span><b>' + esc(c.title) + '</b><span>' + esc(c.category) + ' · ' +
+        esc(fmtMoney(c.price, c.currency)) + '</span></span></button>';
+    });
+
+    html += group('Experts', res.experts, function (e) {
+      return '<button type="button" class="lp-sr-item" data-lp-action="goto" data-lp-href="' + expertUrl(e.id) + '">' +
+        '<img src="' + esc(safeImage(e.avatar, e.name)) + '" alt="">' +
+        '<span><b>' + esc(e.name) + '</b><span>' + esc(e.headline || 'Expert') + '</span></span></button>';
+    });
+
+    html += group('Events', res.events, function (ev) {
+      return '<button type="button" class="lp-sr-item" data-lp-action="goto" data-lp-href="' + eventUrl(ev.id) + '">' +
+        '<img src="' + esc(safeImage(ev.cover, ev.title)) + '" alt="">' +
+        '<span><b>' + esc(ev.title) + '</b><span>' + esc(fmtDate(ev.startsAt)) + '</span></span></button>';
+    });
+
+    html += group('Resources', res.resources, function (r) {
+      return '<button type="button" class="lp-sr-item" data-lp-action="resource-open" data-lp-url="' + esc(r.url || '') + '">' +
+        '<img src="' + esc(safeImage(r.cover, r.title)) + '" alt="">' +
+        '<span><b>' + esc(r.title) + '</b><span>' + esc(r.type) + '</span></span></button>';
+    });
+
+    html += '<div class="lp-sr-group" style="text-align:center;padding:10px">' +
+      '<button type="button" class="lp-link" data-lp-action="search-all" data-lp-query="' + esc(res.query) + '">' +
+      'See all results for "' + esc(res.query) + '" <i class="fas fa-arrow-right"></i></button></div>';
+
+    return html;
   }
 
-  const iconMap = {
-    mpesa:  ['M-Pesa',  'fa-mobile-screen'],
-    card:   ['Card',    'fa-credit-card'],
-    paypal: ['PayPal',  'fa-paypal'],
-    stripe: ['Stripe',  'fa-stripe-s']
-  };
+  function closeSearch() {
+    var box = document.getElementById('lpSearchResults');
+    var input = document.getElementById('lpSearchInput');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+    if (input) input.setAttribute('aria-expanded', 'false');
+  }
 
-  row.innerHTML = methods.map(m => {
-    const key = String(m).toLowerCase();
-    const [label, icon] = iconMap[key] || [m, 'fa-money-bill'];
-    return `<span class="payment-pill"><i class="fas ${icon}"></i> ${esc(label)}</span>`;
-  }).join('');
-}
+  /* ==========================================================
+     7. DISCOVERY PAGES
+     ========================================================== */
+  function discoveryFilters(idPrefix, filters) {
+    return '<div class="lp-chips" style="margin-bottom:22px">' +
+      filters.map(function (f, i) {
+        return '<button class="lp-chip' + (i === 0 ? ' is-active' : '') + '" ' +
+          'data-lp-action="filter" data-lp-target="' + idPrefix + '" ' +
+          'data-lp-filter="' + esc(f.value) + '">' + esc(f.label) + '</button>';
+      }).join('') + '</div>';
+  }
 
-async function loadSpotlight() {
-  const root = document.getElementById('spotlight');
-  if (!root) return;
+  function renderPublicCourses() {
+    setPhase('landing');
+    ensureStyles();
 
-  const FALLBACK = {
-    title: 'Full-Stack Web Development Bootcamp',
-    tagline: 'From zero to job-ready in 12 weeks. Live cohorts, mentorship and a portfolio capstone.',
-    expert: 'Amina W.',
-    rating: 4.9,
-    seatsLeft: 12,
-    nextCohort: 'Starts in 2 weeks',
-    price: 299,
-    discount: 20,
-    cta: { label: 'Reserve a seat', href: '/courses/c1' }
-  };
+    var root = document.getElementById('app-root');
+    if (!root) return;
 
-  const res = await publicFetch('/public/spotlight');
-  const s = (res.ok && res.data) ? Object.assign({}, FALLBACK, res.data) : FALLBACK;
+    var params = new URLSearchParams((location.hash.split('?')[1] || ''));
+    var q = params.get('q') || '';
 
-  const finalPrice = s.discount ? Math.round(s.price * (1 - s.discount / 100)) : s.price;
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('courses') +
+        '<div class="lp-page">' +
+          '<h1 class="section-title" style="margin-bottom:6px">Browse courses</h1>' +
+          '<p class="section-sub">Bootcamps, short courses, tuition and exam prep from verified experts.</p>' +
 
-  root.innerHTML = `
-    <div class="spotlight-card">
-      <div class="spotlight-copy">
-        <span class="spotlight-badge"><i class="fas fa-bolt" aria-hidden="true"></i> Featured bootcamp</span>
-        <h2 class="spotlight-title">${esc(s.title)}</h2>
-        <p class="spotlight-tag">${esc(s.tagline)}</p>
-        <div class="spotlight-meta">
-          <span><i class="fas fa-user-tie" aria-hidden="true"></i> ${esc(s.expert)}</span>
-          <span><i class="fas fa-star" aria-hidden="true"></i> ${esc(String(s.rating))}</span>
-          <span><i class="fas fa-calendar" aria-hidden="true"></i> ${esc(s.nextCohort)}</span>
-          <span class="spotlight-seats"><i class="fas fa-chair" aria-hidden="true"></i> ${esc(String(s.seatsLeft))} seats left</span>
-        </div>
-        <div class="spotlight-price">
-          ${s.discount ? `<span class="price-old">${fmtMoney(s.price)}</span>` : ''}
-          <span class="price-now">${fmtMoney(finalPrice)}</span>
-          ${s.discount ? `<span class="spotlight-save">Save ${s.discount}%</span>` : ''}
-        </div>
-        <div class="spotlight-actions">
-          <button class="btn btn-primary" data-nav="${esc(s.cta.href)}">
-            <i class="fas fa-ticket" aria-hidden="true"></i> ${esc(s.cta.label)}
-          </button>
-          <button class="btn btn-outline" data-nav="/courses">
-            Browse all bootcamps
-          </button>
-        </div>
-      </div>
-      <div class="spotlight-visual" aria-hidden="true">
-        <div class="spotlight-blob b1"></div>
-        <div class="spotlight-blob b2"></div>
-        <div class="spotlight-blob b3"></div>
-        <i class="fas fa-laptop-code spotlight-icon"></i>
-      </div>
-    </div>`;
-}
+          '<form class="lp-search" id="lpCourseSearch" style="margin:22px 0" autocomplete="off">' +
+            '<i class="fas fa-magnifying-glass"></i>' +
+            '<input type="search" id="lpCourseQuery" placeholder="Search courses…" value="' + esc(q) + '">' +
+            '<button class="btn btn-primary" type="submit">Search</button>' +
+          '</form>' +
 
-async function loadEvents() {
-  const grid = document.getElementById('eventsGrid');
-  if (!grid) return;
+          '<div class="lp-chips" id="lpCourseFilters" style="margin-bottom:24px">' +
+            ['all|All', 'Web Development|Web', 'Data Science|Data', 'Business|Business', 'Exam Prep|Exam prep', 'Design|Design']
+              .map(function (f, i) {
+                var parts = f.split('|');
+                return '<button class="lp-chip' + (i === 0 ? ' is-active' : '') + '" ' +
+                  'data-lp-action="course-filter" data-lp-filter="' + esc(parts[0]) + '">' +
+                  esc(parts[1]) + '</button>';
+              }).join('') +
+          '</div>' +
 
-  const FALLBACK = [
-    { id:'ev1', title:'Intro to Data Science',        type:'Webinar',      date:'2026-10-14', time:'18:00 EAT', host:'Dr. Sarah K.',   free:true  },
-    { id:'ev2', title:'Career Switch to Tech',        type:'Workshop',     date:'2026-10-18', time:'10:00 EAT', host:'Amina W.',       free:true  },
-    { id:'ev3', title:'Corporate Training Showcase',  type:'Info session', date:'2026-10-22', time:'15:00 EAT', host:'ExpertHub Team', free:true  },
-    { id:'ev4', title:'KCSE Maths Revision Marathon', type:'Live class',   date:'2026-10-25', time:'09:00 EAT', host:'Mr. Mwangi',     free:false }
-  ];
+          '<div class="lp-grid lp-grid-3" id="lpCourseList">' + skeletons(6, 280) + '</div>' +
+        '</div>' +
+        publicFooter() +
+      '</div>';
 
-  const res = await publicFetch('/public/events/upcoming?limit=4');
-  const items = (res.ok && Array.isArray(res.data) && res.data.length) ? res.data : FALLBACK;
+    var form = $('#lpCourseSearch');
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        loadPublicCourses({ q: ($('#lpCourseQuery') || {}).value || '', category: currentCourseCategory });
+      });
+    }
 
-  grid.innerHTML = items.map(e => {
-    const d = new Date(e.date);
-    const valid = !isNaN(d);
-    const day   = valid ? String(d.getDate()).padStart(2, '0') : '—';
-    const month = valid ? d.toLocaleString('en-US', { month: 'short' }) : '—';
-    return `
-      <article class="event-card">
-        <div class="event-date" aria-hidden="true">
-          <span class="event-day">${esc(day)}</span>
-          <span class="event-month">${esc(month)}</span>
-        </div>
-        <div class="event-body">
-          <span class="event-type">${esc(e.type)}</span>
-          <h3 class="event-title">${esc(e.title)}</h3>
-          <div class="event-meta">
-            <span><i class="fas fa-clock" aria-hidden="true"></i> ${esc(e.time)}</span>
-            <span><i class="fas fa-user-tie" aria-hidden="true"></i> ${esc(e.host)}</span>
-            <span class="event-price">${e.free ? 'Free' : 'Paid'}</span>
-          </div>
-          <div class="event-actions">
-            <button class="btn btn-primary btn-sm" data-nav="/events/${esc(e.id)}">
-              <i class="fas fa-calendar-plus" aria-hidden="true"></i> Register
-            </button>
-          </div>
-        </div>
-      </article>`;
-  }).join('');
-}
+    var token = ++runToken;
+    window.__lpCourseToken = token;
+    loadPublicCourses({ q: q, category: 'all' });
+  }
 
-async function loadResources() {
-  const grid = document.getElementById('resourcesGrid');
-  if (!grid) return;
+  var currentCourseCategory = 'all';
 
-  const FALLBACK = [
-    { id:'b1', title:'How to choose the right bootcamp',      category:'Guides',   readTime:6, excerpt:'A practical checklist to compare bootcamps before you commit.' },
-    { id:'b2', title:'Landing your first tech role in Kenya', category:'Careers',  readTime:8, excerpt:'What hiring managers look for — and how to stand out.' },
-    { id:'b3', title:'Corporate training that actually sticks', category:'Business', readTime:7, excerpt:'Design cohorts that drive measurable skill transfer.' }
-  ];
+  async function loadPublicCourses(opts) {
+    var el = document.getElementById('lpCourseList');
+    if (!el) return;
+    el.innerHTML = skeletons(6, 280);
 
-  const res = await publicFetch('/public/resources/latest?limit=3');
-  const items = (res.ok && Array.isArray(res.data) && res.data.length) ? res.data : FALLBACK;
+    currentCourseCategory = opts.category || 'all';
 
-  grid.innerHTML = items.map(b => `
-    <article class="resource-card">
-      <div class="resource-cover" aria-hidden="true">
-        <i class="fas fa-newspaper"></i>
-      </div>
-      <div class="resource-body">
-        <span class="resource-category">${esc(b.category)}</span>
-        <h3 class="resource-title">${esc(b.title)}</h3>
-        <p class="resource-excerpt">${esc(b.excerpt)}</p>
-        <div class="resource-footer">
-          <span class="resource-read"><i class="fas fa-clock" aria-hidden="true"></i> ${esc(String(b.readTime))} min read</span>
-          <button class="btn btn-ghost btn-sm" data-nav="/resources/${esc(b.id)}">
-            Read <i class="fas fa-arrow-right" aria-hidden="true"></i>
-          </button>
-        </div>
-      </div>
-    </article>`).join('');
-}
+    try {
+      var list = await CourseService.list({
+        q: opts.q || undefined,
+        category: currentCourseCategory === 'all' ? undefined : currentCourseCategory,
+        limit: 24
+      });
+      if (!document.body.contains(el)) return;
+      el.innerHTML = list.length
+        ? list.map(courseCard).join('')
+        : emptyState('No courses match your filters.', 'Clear filters',
+                     'data-lp-action="course-filter" data-lp-filter="all"');
+    } catch (err) {
+      if (!document.body.contains(el)) return;
+      el.innerHTML = emptyState('We could not load courses right now.', 'Retry',
+                                'data-lp-action="retry" data-lp-section="course-list"');
+    }
+  }
 
-/* ============================================================
-   SEO + JSON-LD
-   ============================================================ */
-function injectLandingSEO() {
-  const origin = location.origin;
+  function renderPublicExperts() {
+    setPhase('landing');
+    ensureStyles();
 
-  function setMeta(attr, name, content) {
-    let el = document.head.querySelector(`meta[${attr}="${name}"]`);
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('experts') +
+        '<div class="lp-page">' +
+          '<h1 class="section-title" style="margin-bottom:6px">Find an expert</h1>' +
+          '<p class="section-sub">Verified professionals for 1-on-1 consultations, coaching and mentoring.</p>' +
+          '<div class="lp-search" style="margin:22px 0;max-width:520px">' +
+            '<i class="fas fa-magnifying-glass"></i>' +
+            '<input type="search" id="lpExpertQuery" placeholder="Search by name, skill or field…">' +
+          '</div>' +
+          '<div class="lp-grid lp-grid-4" id="lpExpertList">' + skeletons(8, 250) + '</div>' +
+        '</div>' +
+        publicFooter() +
+      '</div>';
+
+    var input = $('#lpExpertQuery');
+    if (input) {
+      input.addEventListener('input', debounce(function () {
+        loadPublicExperts(input.value);
+      }, 280));
+    }
+
+    loadPublicExperts('');
+  }
+
+  async function loadPublicExperts(q) {
+    var el = document.getElementById('lpExpertList');
+    if (!el) return;
+    el.innerHTML = skeletons(8, 250);
+    try {
+      var list = await ExpertService.list({ q: q || undefined, limit: 24 });
+      if (!document.body.contains(el)) return;
+      el.innerHTML = list.length
+        ? list.map(expertCard).join('')
+        : emptyState('No experts match your search.');
+    } catch (err) {
+      if (!document.body.contains(el)) return;
+      el.innerHTML = emptyState('We could not load experts right now.', 'Retry',
+                                'data-lp-action="retry" data-lp-section="expert-list"');
+    }
+  }
+
+  function renderPublicEvents() {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('events') +
+        '<div class="lp-page" style="max-width:900px">' +
+          '<h1 class="section-title" style="margin-bottom:6px">Events &amp; workshops</h1>' +
+          '<p class="section-sub">Webinars, live workshops, open days and training sessions.</p>' +
+          '<div class="lp-grid" id="lpEventList" style="gap:14px;margin-top:24px">' + skeletons(4, 90) + '</div>' +
+        '</div>' +
+        publicFooter() +
+      '</div>';
+
+    (async function () {
+      var el = document.getElementById('lpEventList');
+      try {
+        var list = await EventService.list({ limit: 24 });
+        if (!document.body.contains(el)) return;
+        el.innerHTML = list.length
+          ? list.map(eventRow).join('')
+          : emptyState('No events scheduled yet. Check back soon.');
+      } catch (err) {
+        if (!document.body.contains(el)) return;
+        el.innerHTML = emptyState('We could not load events right now.', 'Retry',
+                                  'data-lp-action="retry" data-lp-section="event-list"');
+      }
+    })();
+  }
+
+  function renderPublicResources() {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('resources') +
+        '<div class="lp-page">' +
+          '<h1 class="section-title" style="margin-bottom:6px">Resources</h1>' +
+          '<p class="section-sub">Free articles, guides, templates and learning materials.</p>' +
+          '<div class="lp-grid lp-grid-4" id="lpResourceList" style="margin-top:24px">' + skeletons(8, 240) + '</div>' +
+        '</div>' +
+        publicFooter() +
+      '</div>';
+
+    (async function () {
+      var el = document.getElementById('lpResourceList');
+      try {
+        var list = await ResourceService.list({ limit: 32 });
+        if (!document.body.contains(el)) return;
+        el.innerHTML = list.length
+          ? list.map(resourceCard).join('')
+          : emptyState('No resources published yet.');
+      } catch (err) {
+        if (!document.body.contains(el)) return;
+        el.innerHTML = emptyState('We could not load resources right now.', 'Retry',
+                                  'data-lp-action="retry" data-lp-section="resource-list"');
+      }
+    })();
+  }
+
+  /* ==========================================================
+     8. DETAIL PAGES
+     ========================================================== */
+  function renderCourseDetail(id) {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('courses') +
+        '<div class="lp-page" id="lpCourseDetail">' + skeletons(1, 420) + '</div>' +
+        publicFooter() +
+      '</div>';
+
+    (async function () {
+      var host = document.getElementById('lpCourseDetail');
+      var course = await CourseService.get(id);
+      if (!document.body.contains(host)) return;
+
+      if (!course) {
+        host.innerHTML = emptyState('That course could not be found.',
+                                    'Back to courses', 'data-lp-action="goto" data-lp-href="' + ROUTES.courses + '"');
+        return;
+      }
+
+      var enrolledHref = isAuthed() ? '#/courses' : ROUTES.register;
+
+      host.innerHTML = '' +
+        '<button class="lp-link" data-lp-action="goto" data-lp-href="' + ROUTES.courses + '" style="margin-bottom:20px">' +
+          '<i class="fas fa-arrow-left"></i> All courses</button>' +
+
+        '<div class="lp-detail-hero">' +
+          '<div>' +
+            '<span class="lp-tag" style="display:inline-block;margin-bottom:12px">' + esc(course.category) + '</span>' +
+            '<h1 class="section-title" style="margin:0 0 12px">' + esc(course.title) + '</h1>' +
+            '<p style="font-size:1.02rem;line-height:1.7;opacity:.72;margin:0 0 18px">' + esc(course.summary) + '</p>' +
+            '<div class="lp-card-meta" style="padding:0;font-size:.85rem;gap:16px">' +
+              (course.rating ? '<span><i class="fas fa-star" style="color:#f59e0b"></i> ' +
+                course.rating.toFixed(1) + ' (' + course.ratingCount + ')</span>' : '') +
+              (course.lessons ? '<span><i class="fas fa-book-open"></i> ' + course.lessons + ' lessons</span>' : '') +
+              (course.durationWeeks ? '<span><i class="fas fa-clock"></i> ' + course.durationWeeks + ' weeks</span>' : '') +
+              '<span><i class="fas fa-signal"></i> ' + esc(course.level) + '</span>' +
+              (course.learners ? '<span><i class="fas fa-users"></i> ' + course.learners + ' learners</span>' : '') +
+            '</div>' +
+          '</div>' +
+
+          '<aside class="lp-side">' +
+            '<div class="lp-detail-cover" style="aspect-ratio:16/10">' +
+              '<img src="' + esc(safeImage(course.thumbnail, course.title)) + '" alt="">' +
+            '</div>' +
+            '<div class="lp-side-price">' + esc(fmtMoney(course.price, course.currency)) + '</div>' +
+            '<button class="btn btn-primary btn-block" data-lp-action="goto" data-lp-href="' + enrolledHref + '">' +
+              '<i class="fas fa-graduation-cap"></i> ' +
+              (isAuthed() ? 'Enrol now' : 'Create account to enrol') + '</button>' +
+            '<button class="btn btn-secondary btn-block" data-lp-action="goto" data-lp-href="' + ROUTES.contact + '">' +
+              '<i class="fas fa-circle-question"></i> Ask a question</button>' +
+            (course.expert.id
+              ? '<hr style="border:0;border-top:1px solid rgba(15,23,42,.1);margin:6px 0">' +
+                '<div class="lp-author" data-lp-action="goto" data-lp-href="' + expertUrl(course.expert.id) + '" style="cursor:pointer">' +
+                  '<img src="' + esc(safeImage(course.expert.avatar, course.expert.name)) + '" alt="" style="width:40px;height:40px">' +
+                  '<div><b style="font-size:.9rem">' + esc(course.expert.name) + '</b>' +
+                  '<div style="font-size:.76rem;opacity:.6">Course instructor</div></div>' +
+                '</div>'
+              : '') +
+          '</aside>' +
+        '</div>' +
+
+        '<section style="margin-top:40px">' +
+          '<h2 class="section-title" style="font-size:1.3rem;margin-bottom:16px">What you will learn</h2>' +
+          '<ul class="lp-list">' +
+            ['Master the core concepts through guided, project-based lessons.',
+             'Work through real assignments with feedback from your instructor.',
+             'Join live sessions and get your questions answered directly.',
+             'Finish with a portfolio-ready capstone project.',
+             'Earn a verifiable ExpertHub certificate on completion.'
+            ].map(function (t) {
+              return '<li><i class="fas fa-circle-check"></i><span>' + esc(t) + '</span></li>';
+            }).join('') +
+          '</ul>' +
+        '</section>' +
+        '<section style="margin-top:40px">' +
+          '<h2 class="section-title" style="font-size:1.3rem;margin-bottom:16px">About this course</h2>' +
+          '<p style="line-height:1.75;opacity:.75">' + esc(course.summary) +
+            ' This programme is delivered through the ExpertHub E-School and includes ' +
+            (course.lessons ? course.lessons + ' lessons' : 'structured lessons') +
+            (course.durationWeeks ? ' spread across ' + course.durationWeeks + ' weeks' : '') +
+            '. Enrolled learners get lifetime access to materials, cohort discussions and direct messaging with the instructor.</p>' +
+        '</section>';
+    })();
+  }
+
+  function renderExpertDetail(id) {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('experts') +
+        '<div class="lp-page" id="lpExpertDetail">' + skeletons(1, 360) + '</div>' +
+        publicFooter() +
+      '</div>';
+
+    (async function () {
+      var host = document.getElementById('lpExpertDetail');
+      var expert = await ExpertService.get(id);
+      if (!document.body.contains(host)) return;
+
+      if (!expert) {
+        host.innerHTML = emptyState('That expert could not be found.',
+                                    'Back to experts', 'data-lp-action="goto" data-lp-href="' + ROUTES.experts + '"');
+        return;
+      }
+
+      host.innerHTML = '' +
+        '<button class="lp-link" data-lp-action="goto" data-lp-href="' + ROUTES.experts + '" style="margin-bottom:20px">' +
+          '<i class="fas fa-arrow-left"></i> All experts</button>' +
+
+        '<div class="lp-detail-hero">' +
+          '<div>' +
+            '<div class="lp-author" style="margin-bottom:16px">' +
+              '<img src="' + esc(safeImage(expert.avatar, expert.name)) + '" alt="" ' +
+                'style="width:86px;height:86px;border-radius:50%;object-fit:cover">' +
+              '<div>' +
+                '<h1 class="section-title" style="margin:0 0 4px;font-size:1.7rem">' + esc(expert.name) +
+                  (expert.verified ? ' <i class="fas fa-circle-check lp-verified"></i>' : '') + '</h1>' +
+                '<p style="margin:0;opacity:.68">' + esc(expert.headline || 'ExpertHub consultant') + '</p>' +
+              '</div>' +
+            '</div>' +
+
+            '<div class="lp-stars" style="font-size:.95rem;margin-bottom:14px">' + stars(expert.rating) +
+              ' <span style="color:inherit;opacity:.6;margin-left:6px">' +
+              (expert.rating ? expert.rating.toFixed(1) : 'New') +
+              (expert.reviews ? ' · ' + expert.reviews + ' reviews' : '') +
+              (expert.sessions ? ' · ' + expert.sessions + ' sessions' : '') + '</span>' +
+            '</div>' +
+
+            (expert.specializations.length
+              ? '<div class="lp-tags" style="justify-content:flex-start;margin-bottom:20px">' +
+                expert.specializations.map(function (s) {
+                  return '<span class="lp-tag">' + esc(s) + '</span>';
+                }).join('') + '</div>'
+              : '') +
+
+            '<p style="line-height:1.75;opacity:.76">' + esc(expert.headline) + '</p>' +
+          '</div>' +
+
+          '<aside class="lp-side">' +
+            '<div class="lp-side-price">' +
+              (expert.rate ? esc(fmtMoney(expert.rate, expert.currency)) : 'Contact') +
+              (expert.rate ? '<span style="font-size:.82rem;font-weight:500;opacity:.6"> / session</span>' : '') +
+            '</div>' +
+            (expert.experienceYears
+              ? '<div style="font-size:.86rem;opacity:.7"><i class="fas fa-briefcase"></i> ' +
+                expert.experienceYears + ' years of experience</div>'
+              : '') +
+            '<button class="btn btn-primary btn-block" data-lp-action="goto" data-lp-href="' +
+              (isAuthed() ? '#/messages' : ROUTES.register) + '">' +
+              '<i class="fas fa-comments"></i> ' + (isAuthed() ? 'Book a consultation' : 'Sign up to book') + '</button>' +
+            '<button class="btn btn-secondary btn-block" data-lp-action="goto" data-lp-href="' + ROUTES.contact + '">' +
+              '<i class="fas fa-envelope"></i> Send a message</button>' +
+          '</aside>' +
+        '</div>';
+    })();
+  }
+
+  function renderEventDetail(id) {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('events') +
+        '<div class="lp-page" id="lpEventDetail" style="max-width:900px">' + skeletons(1, 360) + '</div>' +
+        publicFooter() +
+      '</div>';
+
+    (async function () {
+      var host = document.getElementById('lpEventDetail');
+      var ev = await EventService.get(id);
+      if (!document.body.contains(host)) return;
+
+      if (!ev) {
+        host.innerHTML = emptyState('That event could not be found.',
+                                    'Back to events', 'data-lp-action="goto" data-lp-href="' + ROUTES.events + '"');
+        return;
+      }
+
+      host.innerHTML = '' +
+        '<button class="lp-link" data-lp-action="goto" data-lp-href="' + ROUTES.events + '" style="margin-bottom:20px">' +
+          '<i class="fas fa-arrow-left"></i> All events</button>' +
+
+        '<span class="lp-tag" style="display:inline-block;margin-bottom:12px">' +
+          esc(ev.mode === 'physical' ? 'In person' : 'Online') + '</span>' +
+        '<h1 class="section-title" style="margin:0 0 14px">' + esc(ev.title) + '</h1>' +
+
+        '<div class="lp-detail-cover" style="margin-bottom:24px">' +
+          '<img src="' + esc(safeImage(ev.cover, ev.title)) + '" alt="">' +
+        '</div>' +
+
+        '<div class="lp-grid lp-grid-3" style="margin-bottom:28px">' +
+          '<div class="lp-row-card"><i class="fas fa-calendar-day" style="font-size:1.3rem;opacity:.5"></i>' +
+            '<div><b style="display:block;font-size:.78rem;opacity:.55;text-transform:uppercase">Starts</b>' +
+            esc(fmtDateTime(ev.startsAt)) + '</div></div>' +
+          '<div class="lp-row-card"><i class="fas fa-' + (ev.mode === 'physical' ? 'location-dot' : 'video') +
+            '" style="font-size:1.3rem;opacity:.5"></i>' +
+            '<div><b style="display:block;font-size:.78rem;opacity:.55;text-transform:uppercase">Where</b>' +
+            esc(ev.mode === 'physical' ? (ev.location || 'Venue TBA') : 'Online') + '</div></div>' +
+          '<div class="lp-row-card"><i class="fas fa-tag" style="font-size:1.3rem;opacity:.5"></i>' +
+            '<div><b style="display:block;font-size:.78rem;opacity:.55;text-transform:uppercase">Price</b>' +
+            esc(fmtMoney(ev.price, ev.currency)) + '</div></div>' +
+        '</div>' +
+
+        '<p style="line-height:1.8;opacity:.76">' + esc(ev.summary) + '</p>' +
+
+        '<div style="margin-top:28px;display:flex;gap:12px;flex-wrap:wrap">' +
+          '<button class="btn btn-primary" data-lp-action="goto" data-lp-href="' +
+            (isAuthed() ? '#/events' : ROUTES.register) + '">' +
+            '<i class="fas fa-ticket"></i> ' + (isAuthed() ? 'Reserve a seat' : 'Sign up to register') + '</button>' +
+          '<button class="btn btn-secondary" data-lp-action="goto" data-lp-href="' + ROUTES.contact + '">' +
+            '<i class="fas fa-circle-question"></i> Ask about this event</button>' +
+        '</div>';
+    })();
+  }
+
+  /* ==========================================================
+     9. INFO PAGES
+     ========================================================== */
+  function renderAbout() {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('about') +
+        '<div class="lp-page" style="max-width:860px">' +
+          '<span class="lp-badge">About ExpertHub</span>' +
+          '<h1 class="section-title" style="margin:0 0 16px">One platform for learning, consulting and training</h1>' +
+          '<p style="font-size:1.05rem;line-height:1.8;opacity:.78">' +
+            'ExpertHub exists to close the gap between people who want to learn and the experts who can teach them. ' +
+            'We bring an E-School, 1-on-1 consultations and corporate training into a single, accountable platform — ' +
+            'so learners get real outcomes, experts get paid fairly, and institutions get measurable results.' +
+          '</p>' +
+
+          '<div class="features-grid" style="margin-top:36px">' +
+            feature('fa-bullseye', '', 'Our mission', 'Make high-quality, human-guided education accessible and affordable.') +
+            feature('fa-eye', 'linear-gradient(135deg,#10b981,#059669)', 'Our vision', 'A world where expertise can be found, booked and trusted in minutes.') +
+            feature('fa-handshake', 'linear-gradient(135deg,#8b5cf6,#6d28d9)', 'Our promise', 'Verified experts, transparent pricing and protected payments.') +
+          '</div>' +
+
+          '<h2 class="section-title" style="font-size:1.3rem;margin:44px 0 14px">What we do</h2>' +
+          '<ul class="lp-list">' +
+            ['E-School — bootcamps, short courses, tuition and exam preparation.',
+             'Consultations — chat, audio and video sessions with verified experts.',
+             'Corporate training — programmes, cohorts, assessments and compliance tracking.',
+             'Certification — verifiable certificates issued on completion.'
+            ].map(function (t) { return '<li><i class="fas fa-circle-check"></i><span>' + esc(t) + '</span></li>'; }).join('') +
+          '</ul>' +
+
+          '<div class="lp-cta" style="margin-top:44px">' +
+            '<h2>Join ExpertHub today</h2>' +
+            '<p>Whether you want to learn, teach or train a whole organisation, it starts here.</p>' +
+            '<button class="btn btn-primary" data-lp-action="goto" data-lp-href="' + ROUTES.register + '">' +
+              '<i class="fas fa-rocket"></i> Create your account</button>' +
+          '</div>' +
+        '</div>' +
+        publicFooter() +
+      '</div>';
+  }
+
+  function renderContact() {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('contact') +
+        '<div class="lp-page" style="max-width:760px">' +
+          '<h1 class="section-title" style="margin-bottom:6px">Contact us</h1>' +
+          '<p class="section-sub">Questions about courses, consultations or corporate training? We reply within one business day.</p>' +
+
+          '<form class="lp-form" id="lpContactForm" style="margin-top:28px" novalidate>' +
+            '<div class="lp-field">' +
+              '<label for="lpContactName">Your name</label>' +
+              '<input id="lpContactName" name="name" type="text" required placeholder="Jane Doe">' +
+            '</div>' +
+            '<div class="lp-field">' +
+              '<label for="lpContactEmail">Email address</label>' +
+              '<input id="lpContactEmail" name="email" type="email" required placeholder="jane@example.com">' +
+            '</div>' +
+            '<div class="lp-field">' +
+              '<label for="lpContactTopic">Topic</label>' +
+              '<select id="lpContactTopic" name="topic">' +
+                '<option>General enquiry</option>' +
+                '<option>Course support</option>' +
+                '<option>Become an expert</option>' +
+                '<option>Corporate training</option>' +
+                '<option>Billing &amp; payments</option>' +
+                '<option>Report a problem</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="lp-field">' +
+              '<label for="lpContactMessage">Message</label>' +
+              '<textarea id="lpContactMessage" name="message" rows="6" required ' +
+                'placeholder="Tell us how we can help…"></textarea>' +
+            '</div>' +
+            '<div id="lpContactStatus" style="font-size:.88rem"></div>' +
+            '<button class="btn btn-primary" type="submit" style="justify-self:start">' +
+              '<i class="fas fa-paper-plane"></i> Send message</button>' +
+          '</form>' +
+
+          '<div style="margin-top:36px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">' +
+            contactTile('fa-envelope', 'Email', 'support@experthub.example') +
+            contactTile('fa-comments', 'Live chat', 'Available in-app once signed in') +
+            contactTile('fa-building-columns', 'Corporate', 'training@experthub.example') +
+          '</div>' +
+        '</div>' +
+        publicFooter() +
+      '</div>';
+
+    var form = $('#lpContactForm');
+    if (form) {
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var status = $('#lpContactStatus');
+        var payload = {
+          name: ($('#lpContactName') || {}).value || '',
+          email: ($('#lpContactEmail') || {}).value || '',
+          topic: ($('#lpContactTopic') || {}).value || '',
+          message: ($('#lpContactMessage') || {}).value || '',
+          source: 'public-landing'
+        };
+
+        if (!payload.name.trim() || !payload.email.trim() || !payload.message.trim()) {
+          status.innerHTML = '<span style="color:#ef4444">Please fill in your name, email and message.</span>';
+          return;
+        }
+
+        status.innerHTML = '<span style="opacity:.65"><i class="fas fa-circle-notch fa-spin"></i> Sending…</span>';
+
+        try {
+          await landingRequest('/contact', { method: 'POST', body: payload });
+          status.innerHTML = '<span style="color:#10b981"><i class="fas fa-circle-check"></i> ' +
+            'Thanks! We have received your message and will reply shortly.</span>';
+          form.reset();
+        } catch (err) {
+          /* Never dead-end the visitor: fall back to their mail client. */
+          status.innerHTML = '<span style="color:#f59e0b"><i class="fas fa-triangle-exclamation"></i> ' +
+            'We could not send that automatically. ' +
+            '<a href="mailto:support@experthub.example?subject=' +
+            encodeURIComponent(payload.topic) + '&body=' + encodeURIComponent(payload.message) +
+            '">Open your email client instead</a>.</span>';
+        }
+      });
+    }
+  }
+
+  function contactTile(icon, label, value) {
+    return '<div class="lp-row-card">' +
+      '<i class="fas ' + icon + '" style="font-size:1.2rem;opacity:.5"></i>' +
+      '<div><b style="display:block;font-size:.76rem;opacity:.55;text-transform:uppercase;letter-spacing:.05em">' +
+        esc(label) + '</b>' + esc(value) + '</div>' +
+    '</div>';
+  }
+
+  function renderInstitutions() {
+    setPhase('landing');
+    ensureStyles();
+
+    var root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = '' +
+      '<div class="landing">' + publicNav('institutions') +
+        '<div class="lp-page" style="max-width:1000px">' +
+          '<span class="lp-badge">For institutions</span>' +
+          '<h1 class="section-title" style="margin:0 0 16px">Corporate training that actually reports back</h1>' +
+          '<p style="font-size:1.05rem;line-height:1.8;opacity:.78;max-width:70ch">' +
+            'Run cohorts, assign trainers, assess trainees and prove compliance — all from one dashboard. ' +
+            'ExpertHub gives L&amp;D teams the operational control of an LMS with the flexibility of a marketplace.' +
+          '</p>' +
+
+          '<div class="features-grid" style="margin-top:36px">' +
+            feature('fa-users-rectangle', '', 'Programmes & cohorts', 'Build multi-week programmes and group trainees into cohorts.') +
+            feature('fa-clipboard-check', 'linear-gradient(135deg,#10b981,#059669)', 'Assessments', 'Quizzes, assignments and capstone projects with automatic scoring.') +
+            feature('fa-certificate', 'linear-gradient(135deg,#f59e0b,#d97706)', 'Certifications', 'Issue verifiable certificates your HR system can validate.') +
+            feature('fa-chart-pie', 'linear-gradient(135deg,#8b5cf6,#6d28d9)', 'Analytics', 'Completion, scores and engagement across every cohort.') +
+            feature('fa-shield-halved', 'linear-gradient(135deg,#ef4444,#b91c1c)', 'Compliance', 'Audit logs, attendance records and exportable reports.') +
+            feature('fa-plug', 'linear-gradient(135deg,#0ea5e9,#0369a1)', 'Integrations', 'SSO, custom branding and API access on enterprise plans.') +
+          '</div>' +
+
+          '<h2 class="section-title" style="font-size:1.3rem;margin:48px 0 16px">How onboarding works</h2>' +
+          '<ul class="lp-list">' +
+            ['Register your institution and tell us about your training needs.',
+             'Our team reviews and approves your account, usually within one business day.',
+             'An operations manager is assigned to help you structure your first programme.',
+             'Enrol trainees, assign trainers and start tracking progress immediately.'
+            ].map(function (t, i) {
+              return '<li><span class="lp-tag" style="flex:none">' + (i + 1) + '</span><span>' + esc(t) + '</span></li>';
+            }).join('') +
+          '</ul>' +
+
+          '<div class="lp-cta" style="margin-top:44px">' +
+            '<h2>Talk to our training team</h2>' +
+            '<p>Tell us about your organisation and we will design a programme around your goals.</p>' +
+            '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">' +
+              '<button class="btn btn-primary" data-lp-action="goto" data-lp-href="' + ROUTES.register + '">' +
+                '<i class="fas fa-building-columns"></i> Register institution</button>' +
+              '<button class="btn btn-secondary" data-lp-action="goto" data-lp-href="' + ROUTES.contact + '">' +
+                '<i class="fas fa-comments"></i> Book a demo</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        publicFooter() +
+      '</div>';
+  }
+
+  /* ==========================================================
+     10. GLOBAL EVENT DELEGATION
+     ----------------------------------------------------------
+     One listener on `document` survives every re-render, so we
+     never leak handlers when sections are replaced.
+     ========================================================== */
+  document.addEventListener('click', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('[data-lp-action]') : null;
     if (!el) {
-      el = document.createElement('meta');
-      el.setAttribute(attr, name);
-      document.head.appendChild(el);
+      /* Close the search dropdown when clicking outside it. */
+      if (!(e.target && e.target.closest && e.target.closest('.lp-search'))) closeSearch();
+      return;
     }
-    el.setAttribute('content', content);
+
+    var action = el.getAttribute('data-lp-action');
+
+    switch (action) {
+      case 'goto':
+        e.preventDefault();
+        go(el.getAttribute('data-lp-href'));
+        break;
+
+      case 'faq':
+        e.preventDefault();
+        if (el.parentElement) el.parentElement.classList.toggle('open');
+        break;
+
+      case 'chip': {
+        e.preventDefault();
+        var q = el.getAttribute('data-lp-query') || '';
+        var input = document.getElementById('lpSearchInput');
+        if (input) {
+          input.value = q;
+          input.focus();
+          runSearch(q);
+        } else {
+          go(ROUTES.courses + '?q=' + encodeURIComponent(q));
+        }
+        break;
+      }
+
+      case 'search-all': {
+        e.preventDefault();
+        var query = el.getAttribute('data-lp-query') || '';
+        closeSearch();
+        go(ROUTES.courses + '?q=' + encodeURIComponent(query));
+        break;
+      }
+
+      case 'course-filter': {
+        e.preventDefault();
+        var cat = el.getAttribute('data-lp-filter') || 'all';
+        var siblings = el.parentElement ? el.parentElement.querySelectorAll('.lp-chip') : [];
+        Array.prototype.forEach.call(siblings, function (s) { s.classList.remove('is-active'); });
+        el.classList.add('is-active');
+        var qInput = document.getElementById('lpCourseQuery');
+        loadPublicCourses({ q: qInput ? qInput.value : '', category: cat });
+        break;
+      }
+
+      case 'resource-open': {
+        var url = el.getAttribute('data-lp-url');
+        if (url && url !== '#') {
+          window.open(url, '_blank', 'noopener');
+        } else {
+          /* No destination yet — send them to the resources index. */
+          go(ROUTES.resources);
+        }
+        break;
+      }
+
+      case 'retry': {
+        e.preventDefault();
+        var section = el.getAttribute('data-lp-section');
+        retrySection(section);
+        break;
+      }
+
+      default:
+        break;
+    }
+  }, false);
+
+  /* Close the dropdown on Escape. */
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeSearch();
+  });
+
+  function retrySection(section) {
+    switch (section) {
+      case 'courses':       invalidateCache('courses'); hydrateSection('lpCourses', loadCourses); break;
+      case 'experts':       invalidateCache('experts'); hydrateSection('lpExperts', loadExperts); break;
+      case 'events':        invalidateCache('events');  hydrateSection('lpEvents', loadEvents); break;
+      case 'resources':     invalidateCache('resources'); hydrateSection('lpResources', loadResources); break;
+      case 'course-list':   invalidateCache('courses'); loadPublicCourses({ q: '', category: currentCourseCategory }); break;
+      case 'expert-list':   invalidateCache('experts'); loadPublicExperts(''); break;
+      default:
+        invalidateCache();
+        hydrateLanding();
+        break;
+    }
   }
 
-  function setJSONLD(id, data) {
-    let el = document.getElementById(id);
-    if (!el) {
-      el = document.createElement('script');
-      el.type = 'application/ld+json';
-      el.id = id;
-      document.head.appendChild(el);
-    }
-    el.textContent = JSON.stringify(data);
+  function hydrateSection(elId, loader) {
+    var el = document.getElementById(elId);
+    if (!el) return;
+    el.innerHTML = skeletons(3, 240);
+    loader(++runToken);
   }
 
-  setMeta('name', 'description',
-    'ExpertHub combines an E-School, bootcamps, short courses, tuition, exam prep, 1-on-1 consultations and corporate training in one platform.');
-  setMeta('property', 'og:title',       'ExpertHub — Learn, Consult and Grow with Real Experts');
-  setMeta('property', 'og:description', 'Learn. Connect. Get Expert Help. Build Your Future.');
-  setMeta('property', 'og:type',        'website');
-  setMeta('property', 'og:url',         origin + '/');
-  setMeta('property', 'og:image',       origin + '/assets/og-landing.png');
-  setMeta('property', 'og:site_name',   'ExpertHub');
-  setMeta('name', 'twitter:card',       'summary_large_image');
-  setMeta('name', 'twitter:title',      'ExpertHub — Learn, Consult and Grow with Real Experts');
-  setMeta('name', 'twitter:image',      origin + '/assets/og-landing.png');
+  /* ==========================================================
+     11. ROUTER INTEGRATION
+     ========================================================== */
+  /**
+   * Resolve a hash / path into a public page handler.
+   * Returns { fn, id } or null when the route is not ours.
+   */
+  function resolvePublicPage(path) {
+    var raw = String(path || '').replace(/^#/, '');
+    raw = raw.split('?')[0];
+    var segments = raw.split('/').filter(Boolean);
+    var key = segments[0] || 'home';
+    var id = segments[1] ? decodeURIComponent(segments[1]) : null;
 
-  setJSONLD('ld-org', {
-    '@context':'https://schema.org', '@type':'Organization',
-    name:'ExpertHub', url: origin, logo: origin + '/assets/logo.png',
-    sameAs: ['https://facebook.com/','https://linkedin.com/','https://instagram.com/','https://x.com/','https://youtube.com/']
-  });
-
-  setJSONLD('ld-edu', {
-    '@context':'https://schema.org', '@type':'EducationalOrganization',
-    name:'ExpertHub', url: origin,
-    description:'E-School, consultation and corporate training platform.'
-  });
-
-  setJSONLD('ld-website', {
-    '@context':'https://schema.org', '@type':'WebSite',
-    name:'ExpertHub', url: origin,
-    potentialAction: {
-      '@type':'SearchAction',
-      target: origin + '/courses?q={search_term_string}',
-      'query-input':'required name=search_term_string'
+    switch (key) {
+      case 'home':          return { fn: renderLanding,        id: null };
+      case '':              return { fn: renderLanding,        id: null };
+      case 'courses':       return id ? { fn: renderCourseDetail, id: id } : { fn: renderPublicCourses,   id: null };
+      case 'experts':       return id ? { fn: renderExpertDetail, id: id } : { fn: renderPublicExperts,   id: null };
+      case 'events':        return id ? { fn: renderEventDetail,  id: id } : { fn: renderPublicEvents,    id: null };
+      case 'resources':     return { fn: renderPublicResources, id: null };
+      case 'about':         return { fn: renderAbout,           id: null };
+      case 'contact':       return { fn: renderContact,         id: null };
+      case 'institutions':  return { fn: renderInstitutions,    id: null };
+      default:              return null;
     }
+  }
+
+  /**
+   * Router hook. Returns `true` when this module handled the route.
+   *
+   *   const handled = window.Landing.handleRoute(location.hash);
+   *   if (handled) return;
+   */
+  function handleRoute(path) {
+    var resolved = resolvePublicPage(path);
+    if (!resolved) return false;
+    runToken++;                       /* cancel in-flight section loads */
+    resolved.fn(resolved.id);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    return true;
+  }
+
+  /* Named page map — handy if your router prefers a lookup table. */
+  var PAGES = {
+    '/':            renderLanding,
+    '':             renderLanding,
+    '/courses':     renderPublicCourses,
+    '/experts':     renderPublicExperts,
+    '/events':      renderPublicEvents,
+    '/resources':   renderPublicResources,
+    '/about':       renderAbout,
+    '/contact':     renderContact,
+    '/institutions': renderInstitutions
+  };
+
+  /* ==========================================================
+     12. SAFETY-NET ROUTER
+     ----------------------------------------------------------
+     If 15-router.js has not yet been taught about the new public
+     routes, this catches them: after a hash change we wait a beat
+     and only act if the router left #app-root empty.
+     Remove once the router is wired up — or set
+     window.Landing.autoRoute = false to disable.
+     ========================================================== */
+  var autoRoute = true;
+
+  window.addEventListener('hashchange', function () {
+    if (!autoRoute) return;
+    var hash = location.hash;
+    if (!resolvePublicPage(hash)) return;
+
+    setTimeout(function () {
+      var root = document.getElementById('app-root');
+      if (!root) return;
+      if (root.innerHTML.trim() === '') handleRoute(hash);
+    }, 60);
   });
 
-  setJSONLD('ld-faq', {
-    '@context':'https://schema.org', '@type':'FAQPage',
-    mainEntity: [
-      ['How does registration work?',          'Learners are approved instantly. Experts and institutions require admin approval.'],
-      ['What is the platform commission?',     'We charge a flat 20% commission on all course sales and consultations.'],
-      ['How long do payouts take?',            'Withdrawals have a 7-day holding period, then process within 3 to 5 business days.'],
-      ['Can I switch from learner to expert?', 'Yes. Apply to become an expert from your dashboard. Our team reviews each application.'],
-      ['Do you support corporate training?',   'Yes. Institutions get programmes, cohorts, assessments, projects, certifications and compliance tracking.']
-    ].map(([q, a]) => ({ '@type':'Question', name:q, acceptedAnswer:{ '@type':'Answer', text:a } }))
-  });
+  /* ==========================================================
+     13. PUBLIC API
+     ========================================================== */
+  window.renderLanding        = renderLanding;
+  window.renderPublicCourses  = renderPublicCourses;
+  window.renderPublicExperts  = renderPublicExperts;
+  window.renderPublicEvents   = renderPublicEvents;
+  window.renderPublicResources = renderPublicResources;
+  window.renderCourseDetail   = renderCourseDetail;
+  window.renderExpertDetail   = renderExpertDetail;
+  window.renderEventDetail    = renderEventDetail;
+  window.renderAbout          = renderAbout;
+  window.renderContact        = renderContact;
+  window.renderInstitutions   = renderInstitutions;
 
-  setJSONLD('ld-course', {
-    '@context': 'https://schema.org',
-    '@type':    'Course',
-    name:       'Full-Stack Web Development Bootcamp',
-    description:'From zero to job-ready in 12 weeks with live cohorts, mentorship and a portfolio capstone.',
-    provider:   { '@type': 'Organization', name: 'ExpertHub', sameAs: origin },
-    educationalLevel: 'Beginner',
-    inLanguage: 'en',
-    offers: {
-      '@type': 'Offer',
-      category: 'Paid',
-      priceCurrency: 'USD',
-      price: '299',
-      availability: 'https://schema.org/InStock',
-      url: origin + '/courses/c1'
+  window.Landing = {
+    routes: ROUTES,
+    pages: PAGES,
+    resolve: resolvePublicPage,
+    handleRoute: handleRoute,
+    go: go,
+    invalidate: invalidateCache,
+    services: {
+      courses: CourseService,
+      experts: ExpertService,
+      events: EventService,
+      resources: ResourceService,
+      testimonials: TestimonialService,
+      search: SearchService
     },
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: '4.9',
-      reviewCount: '1240'
-    }
-  });
-
-  setJSONLD('ld-breadcrumb', {
-    '@context': 'https://schema.org',
-    '@type':    'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Home',     item: origin + '/' },
-      { '@type': 'ListItem', position: 2, name: 'Courses',  item: origin + '/courses' },
-      { '@type': 'ListItem', position: 3, name: 'Experts',  item: origin + '/experts' }
-    ]
-  });
-}
-
-/* ============================================================
-   EXPORT
-   ============================================================ */
-window.renderLanding = renderLanding;
+    get autoRoute() { return autoRoute; },
+    set autoRoute(v) { autoRoute = !!v; }
+  };
+})();
