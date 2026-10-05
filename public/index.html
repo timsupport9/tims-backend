@@ -32,9 +32,7 @@
   <script src="/socket.io/socket.io.js"></script>
 
   <!-- App styles -->
-<!-- ExpertHub 2.0 — modular stylesheet (order matters) -->
-<link rel="stylesheet" href="styles.css" />
-
+  <link rel="stylesheet" href="styles.css" />
 
   <!-- Avoid flash of unstyled theme: apply saved dark mode before paint -->
   <script>
@@ -55,17 +53,35 @@
 
   <!--
     ============================================================
-    App modules — 15-file split of the original app.js.
-    Load order matters ONLY for the first and last file:
-      01-state.js   must load FIRST   (defines CONFIG, S, tokens, etc.)
-      15-router.js  must load LAST    (runs init() and route() on parse)
-    Files 02–14 can technically be in any order because every function
+    App modules.
+
+    Load order matters for:
+      js/01-state.js       — must load FIRST  (defines CONFIG, S, tokens…)
+      js/public/**         — must load before 15-router.js runs
+      js/15-router.js      — must load LAST   (runs init() + route())
+
+    Files 02–14 are technically order-independent because every function
     is hoisted globally across classic <script> tags.
 
     DO NOT add type="module" to any of these — it would give each file
     its own scope and break the shared globals the app relies on.
     DO NOT add `defer` or `async` — 15-router.js must run after all
     render functions are defined.
+
+    ============================================================
+    PUBLIC FRONT DOOR — replaces the old js/07-landing.js
+    ------------------------------------------------------------
+    Everything under js/public/ exposes itself on window.PublicUI.
+    15-router.js calls PublicUI.pages.*.render() for public routes
+    (#/courses, #/experts, #/events, #/resources, #/about, #/contact,
+    #/institutions) and PublicUI.landing.render() for the landing
+    page at #/.
+
+    Inside this block, load order matters:
+      components/format.js        — must be FIRST (defines PublicUI.format)
+      landing/features.js         — before pages/about.js + institutions.js
+      landing/discover.js         — before landing/index.js
+                                    (defines normalisers + demo data)
     ============================================================
   -->
   <script src="js/01-state.js"></script>
@@ -74,7 +90,41 @@
   <script src="js/04-api.js"></script>
   <script src="js/05-auth.js"></script>
   <script src="js/06-data.js"></script>
-  <script src="js/07-landing.js"></script>
+
+  <!-- ============ js/public/ — public front door ============ -->
+  <script src="js/public/components/format.js"></script>
+  <script src="js/public/components/styles.js"></script>
+  <script src="js/public/components/bind.js"></script>
+  <script src="js/public/components/public-navbar.js"></script>
+  <script src="js/public/components/public-footer.js"></script>
+  <script src="js/public/components/hero.js"></script>
+  <script src="js/public/components/public-search.js"></script>
+  <script src="js/public/components/course-card.js"></script>
+  <script src="js/public/components/expert-card.js"></script>
+  <script src="js/public/components/event-card.js"></script>
+  <script src="js/public/components/resource-card.js"></script>
+  <script src="js/public/components/category-card.js"></script>
+  <script src="js/public/components/public-cta.js"></script>
+
+  <script src="js/public/landing/features.js"></script>
+  <script src="js/public/landing/pricing.js"></script>
+  <script src="js/public/landing/testimonials.js"></script>
+  <script src="js/public/landing/faq.js"></script>
+  <script src="js/public/landing/discover.js"></script>
+  <script src="js/public/landing/index.js"></script>
+
+  <script src="js/public/pages/courses.js"></script>
+  <script src="js/public/pages/experts.js"></script>
+  <script src="js/public/pages/events.js"></script>
+  <script src="js/public/pages/resources.js"></script>
+  <script src="js/public/pages/course-detail.js"></script>
+  <script src="js/public/pages/expert-detail.js"></script>
+  <script src="js/public/pages/event-detail.js"></script>
+  <script src="js/public/pages/about.js"></script>
+  <script src="js/public/pages/contact.js"></script>
+  <script src="js/public/pages/institutions.js"></script>
+  <!-- ========== end js/public/ ========== -->
+
   <script src="js/08-shell.js"></script>
   <script src="js/09-admin.js"></script>
   <script src="js/10-expert.js"></script>
