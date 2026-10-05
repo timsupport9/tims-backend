@@ -1,8 +1,8 @@
 /* ============================================================
    ExpertHub — js/public/components/styles.js
-   Injects extra CSS for public components (search dropdown,
-   cards, skeletons, detail pages). Existing classes from
-   styles.css are reused — this only fills the gaps.
+   Injects extra CSS for public components (navbar, search dropdown,
+   cards, skeletons, detail pages). Reuses classes from styles.css
+   where possible — this only fills the gaps.
    ============================================================ */
 (function () {
   'use strict';
@@ -12,7 +12,60 @@
   P.ensureStyles = function () {
     if (document.getElementById(ID)) return;
     var css = [
-      /* search */
+      /* ======================================================
+         PUBLIC NAVBAR
+         3-column grid: brand (auto) · links (auto) · actions (auto)
+         justify-content: space-between — so brand hugs the left,
+         links sit next to it (or centered on wide screens), and
+         actions pin to the right. Mobile collapses links into a
+         slide-down drawer toggled by the hamburger.
+         ====================================================== */
+      '.pub-nav{position:sticky;top:0;z-index:50;width:100%;background:rgba(255,255,255,.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid rgba(15,23,42,.08)}',
+      '.dark .pub-nav{background:rgba(17,24,39,.9);border-bottom-color:rgba(255,255,255,.08)}',
+      '.pub-nav-inner{max-width:1280px;margin:0 auto;padding:12px 24px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:24px}',
+
+      /* brand */
+      '.pub-nav-brand{display:flex;align-items:center;gap:10px;background:none;border:0;padding:0;cursor:pointer;font:inherit;color:inherit;text-decoration:none;white-space:nowrap}',
+      '.pub-nav-brand-mark{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#6366f1,#4f46e5);display:flex;align-items:center;justify-content:center;color:#fff;flex:none;box-shadow:0 6px 16px -6px rgba(99,102,241,.55)}',
+      '.pub-nav-brand-mark i{font-size:.95rem}',
+      '.pub-nav-brand-name{font-size:1.05rem;font-weight:800;letter-spacing:-.02em}',
+
+      /* links (centre column) */
+      '.pub-nav-links{display:flex;align-items:center;gap:2px;justify-content:center}',
+      '.pub-nav-link{background:none;border:0;padding:8px 14px;border-radius:10px;font:inherit;font-size:.88rem;font-weight:600;color:inherit;opacity:.72;cursor:pointer;white-space:nowrap;transition:opacity .15s,background .15s,color .15s}',
+      '.pub-nav-link:hover{opacity:1;background:rgba(99,102,241,.09);color:#4f46e5}',
+      '.pub-nav-link.is-active{opacity:1;color:#4f46e5;background:rgba(99,102,241,.11)}',
+
+      /* actions (right column) */
+      '.pub-nav-actions{display:flex;align-items:center;gap:8px}',
+      '.pub-nav-actions .btn{white-space:nowrap}',
+
+      /* hamburger — hidden on desktop */
+      '.pub-nav-toggle{display:none;width:40px;height:40px;border-radius:11px;border:1px solid rgba(15,23,42,.12);background:transparent;color:inherit;cursor:pointer;align-items:center;justify-content:center;font-size:1rem}',
+      '.dark .pub-nav-toggle{border-color:rgba(255,255,255,.14)}',
+      '.pub-nav-toggle:hover{background:rgba(99,102,241,.08);color:#4f46e5}',
+
+      /* mobile drawer */
+      '.pub-nav-drawer{display:none;border-top:1px solid rgba(15,23,42,.08);background:inherit}',
+      '.dark .pub-nav-drawer{border-top-color:rgba(255,255,255,.08)}',
+      '.pub-nav-drawer[data-open="true"]{display:block}',
+      '.pub-nav-drawer-inner{max-width:1280px;margin:0 auto;padding:12px 24px 20px;display:flex;flex-direction:column;gap:4px}',
+      '.pub-nav-drawer .pub-nav-link{text-align:left;padding:12px 14px;font-size:.95rem}',
+      '.pub-nav-drawer-actions{display:flex;flex-direction:column;gap:8px;margin-top:12px;padding-top:14px;border-top:1px solid rgba(15,23,42,.08)}',
+      '.dark .pub-nav-drawer-actions{border-top-color:rgba(255,255,255,.08)}',
+      '.pub-nav-drawer-actions .btn{width:100%;justify-content:center}',
+
+      /* responsive breakpoints */
+      '@media(max-width:1024px){.pub-nav-inner{grid-template-columns:auto 1fr auto;gap:16px}}',
+      '@media(max-width:900px){',
+        '.pub-nav-links,.pub-nav-actions{display:none}',
+        '.pub-nav-toggle{display:inline-flex}',
+        '.pub-nav-inner{padding:10px 16px}',
+      '}',
+
+      /* ======================================================
+         UNIFIED SEARCH
+         ====================================================== */
       '.pub-search{position:relative;display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid rgba(15,23,42,.1);border-radius:16px;padding:8px 8px 8px 18px;max-width:620px;box-shadow:0 12px 32px -18px rgba(15,23,42,.35);transition:.2s}',
       '.dark .pub-search{background:#111827;border-color:rgba(255,255,255,.12)}',
       '.pub-search:focus-within{border-color:#6366f1;box-shadow:0 0 0 4px rgba(99,102,241,.14)}',
@@ -32,7 +85,9 @@
       '.pub-chip:hover{opacity:1;border-color:#6366f1;color:#6366f1}',
       '.pub-chip.is-active{opacity:1;border-color:#6366f1;color:#6366f1;background:rgba(99,102,241,.08)}',
 
-      /* grids + cards */
+      /* ======================================================
+         GRIDS & CARDS
+         ====================================================== */
       '.pub-grid{display:grid;gap:20px}',
       '.pub-grid-3{grid-template-columns:repeat(auto-fill,minmax(290px,1fr))}',
       '.pub-grid-4{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}',
