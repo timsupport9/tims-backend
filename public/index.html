@@ -51,87 +51,350 @@
   <div id="toast-container"></div>
   <div id="modal-root"></div>
 
-  <!--
-    ============================================================
-    App modules.
+  <!-- ============================================================
+     MODELS LAYER — js/models/
+     ------------------------------------------------------------
+     The model layer provides the canonical frontend representation
+     of ExpertHub business objects.
 
-    Load order matters for:
-      js/01-state.js       — must load FIRST  (defines CONFIG, S, tokens…)
-      js/public/**         — must load before 15-router.js runs
-      js/15-router.js      — must load LAST   (runs init() + route())
+     API / Backend
+          
+     Normalization
+          
+     js/models/
+          
+     State / Store
+          
+     Dashboards / Features / Actions / Modals / Public Pages
 
-    Files 02–14 are technically order-independent because every function
-    is hoisted globally across classic <script> tags.
+     IMPORTANT:
+     - Models normalize API data.
+     - Models provide predictable object shapes.
+     - Models should NOT directly manipulate the DOM.
+     - Models should NOT open modals.
+     - Models should NOT contain dashboard rendering logic.
+     - Models should NOT contain authentication UI.
+     - API communication belongs in js/api/ / 04-api.js.
+     - Modal behaviour belongs in js/modals/.
+     ============================================================ -->
 
-    DO NOT add type="module" to any of these — it would give each file
-    its own scope and break the shared globals the app relies on.
-    DO NOT add `defer` or `async` — 15-router.js must run after all
-    render functions are defined.
+<script src="js/01-state.js"></script>
+<script src="js/02-utils.js"></script>
 
-    ============================================================
-    PUBLIC FRONT DOOR — replaces the old js/07-landing.js
-    ------------------------------------------------------------
-    Everything under js/public/ exposes itself on window.PublicUI.
-    15-router.js calls PublicUI.pages.*.render() for public routes
-    (#/courses, #/experts, #/events, #/resources, #/about, #/contact,
-    #/institutions) and PublicUI.landing.render() for the landing
-    page at #/.
+<!-- ============================================================
+     MODEL REGISTRY
+     ------------------------------------------------------------
+     index.js creates window.Models and the model registry.
 
-    Inside this block, load order matters:
-      components/format.js        — must be FIRST (defines PublicUI.format)
-      landing/features.js         — before pages/about.js + institutions.js
-      landing/discover.js         — before landing/index.js
-                                    (defines normalisers + demo data)
-    ============================================================
-  -->
-  <script src="js/01-state.js"></script>
-  <script src="js/02-utils.js"></script>
-  <script src="js/03-ui.js"></script>
-  <script src="js/04-api.js"></script>
-  <script src="js/05-auth.js"></script>
-  <script src="js/06-data.js"></script>
+     It MUST load before individual model files.
+     ============================================================ -->
+<script src="js/models/index.js"></script>
 
-  <!-- ============ js/public/ — public front door ============ -->
-  <script src="js/public/components/format.js"></script>
-  <script src="js/public/components/styles.js"></script>
-  <script src="js/public/components/bind.js"></script>
-  <script src="js/public/components/public-navbar.js"></script>
-  <script src="js/public/components/public-footer.js"></script>
-  <script src="js/public/components/hero.js"></script>
-  <script src="js/public/components/public-search.js"></script>
-  <script src="js/public/components/course-card.js"></script>
-  <script src="js/public/components/expert-card.js"></script>
-  <script src="js/public/components/event-card.js"></script>
-  <script src="js/public/components/resource-card.js"></script>
-  <script src="js/public/components/category-card.js"></script>
-  <script src="js/public/components/public-cta.js"></script>
 
-  <script src="js/public/landing/features.js"></script>
-  <script src="js/public/landing/pricing.js"></script>
-  <script src="js/public/landing/testimonials.js"></script>
-  <script src="js/public/landing/faq.js"></script>
-  <script src="js/public/landing/discover.js"></script>
-  <script src="js/public/landing/index.js"></script>
+<!-- ============================================================
+     IDENTITY & ACCESS
+     ============================================================ -->
 
-  <script src="js/public/pages/courses.js"></script>
-  <script src="js/public/pages/experts.js"></script>
-  <script src="js/public/pages/events.js"></script>
-  <script src="js/public/pages/resources.js"></script>
-  <script src="js/public/pages/course-detail.js"></script>
-  <script src="js/public/pages/expert-detail.js"></script>
-  <script src="js/public/pages/event-detail.js"></script>
-  <script src="js/public/pages/about.js"></script>
-  <script src="js/public/pages/contact.js"></script>
-  <script src="js/public/pages/institutions.js"></script>
-  <!-- ========== end js/public/ ========== -->
+<script src="js/models/user.js"></script>
+<script src="js/models/expert.js"></script>
+<script src="js/models/institution.js"></script>
+<script src="js/models/team-member.js"></script>
+<script src="js/models/permission.js"></script>
+<script src="js/models/role.js"></script>
 
-  <script src="js/08-shell.js"></script>
-  <script src="js/09-admin.js"></script>
-  <script src="js/10-expert.js"></script>
-  <script src="js/11-user.js"></script>
-  <script src="js/12-institution.js"></script>
-  <script src="js/13-modals.js"></script>
-  <script src="js/14-actions.js"></script>
-  <script src="js/15-router.js"></script>
-</body>
-</html>
+
+<!-- ============================================================
+     LEARNING CATALOGUE
+     ============================================================ -->
+
+<script src="js/models/category.js"></script>
+<script src="js/models/course.js"></script>
+<script src="js/models/module.js"></script>
+<script src="js/models/lesson.js"></script>
+<script src="js/models/resource.js"></script>
+<script src="js/models/quiz.js"></script>
+<script src="js/models/question.js"></script>
+<script src="js/models/assignment.js"></script>
+
+
+<!-- ============================================================
+     LEARNING PARTICIPATION
+     ============================================================ -->
+
+<script src="js/models/enrollment.js"></script>
+<script src="js/models/progress.js"></script>
+<script src="js/models/bookmark.js"></script>
+<script src="js/models/learning-path.js"></script>
+<script src="js/models/study-plan.js"></script>
+
+
+<!-- ============================================================
+     EXPERT MARKETPLACE
+     ============================================================ -->
+
+<script src="js/models/expert-profile.js"></script>
+<script src="js/models/portfolio.js"></script>
+<script src="js/models/pricing-tier.js"></script>
+<script src="js/models/expert-availability.js"></script>
+<script src="js/models/consultation-package.js"></script>
+
+
+<!-- ============================================================
+     CONSULTATIONS & SCHEDULING
+     ============================================================ -->
+
+<script src="js/models/consultation.js"></script>
+<script src="js/models/appointment.js"></script>
+<script src="js/models/slot.js"></script>
+<script src="js/models/session.js"></script>
+<script src="js/models/session-note.js"></script>
+<script src="js/models/attendance.js"></script>
+<script src="js/models/reschedule.js"></script>
+<script src="js/models/dispute.js"></script>
+
+
+<!-- ============================================================
+     EVENTS
+     ============================================================ -->
+
+<script src="js/models/event.js"></script>
+<script src="js/models/registration.js"></script>
+<script src="js/models/event-attendance.js"></script>
+
+
+<!-- ============================================================
+     PAYMENTS & FINANCIAL SYSTEM
+     ============================================================ -->
+
+<script src="js/models/payment.js"></script>
+<script src="js/models/payment-method.js"></script>
+<script src="js/models/wallet.js"></script>
+<script src="js/models/transaction.js"></script>
+<script src="js/models/invoice.js"></script>
+<script src="js/models/refund.js"></script>
+<script src="js/models/coupon.js"></script>
+<script src="js/models/commission.js"></script>
+<script src="js/models/withdrawal.js"></script>
+
+
+<!-- ============================================================
+     COMMUNICATION
+     ============================================================ -->
+
+<script src="js/models/message.js"></script>
+<script src="js/models/conversation.js"></script>
+<script src="js/models/notification.js"></script>
+<script src="js/models/notification-preference.js"></script>
+
+
+<!-- ============================================================
+     CERTIFICATES & REVIEWS
+     ============================================================ -->
+
+<script src="js/models/certificate.js"></script>
+<script src="js/models/certificate-verification.js"></script>
+<script src="js/models/review.js"></script>
+<script src="js/models/rating.js"></script>
+
+
+<!-- ============================================================
+     SUPPORT
+     ============================================================ -->
+
+<script src="js/models/support-ticket.js"></script>
+<script src="js/models/ticket-message.js"></script>
+<script src="js/models/support-category.js"></script>
+<script src="js/models/support-attachment.js"></script>
+
+
+<!-- ============================================================
+     INSTITUTION MANAGEMENT
+     ============================================================ -->
+
+<script src="js/models/campus.js"></script>
+<script src="js/models/programme.js"></script>
+<script src="js/models/curriculum.js"></script>
+<script src="js/models/learning-cohort.js"></script>
+<script src="js/models/trainee.js"></script>
+<script src="js/models/trainee-skill.js"></script>
+<script src="js/models/learning-path-assignment.js"></script>
+
+
+<!-- ============================================================
+     INSTITUTION OPERATIONS
+     ============================================================ -->
+
+<script src="js/models/instructor.js"></script>
+<script src="js/models/instructor-request.js"></script>
+<script src="js/models/succession-plan.js"></script>
+<script src="js/models/org-unit.js"></script>
+
+
+<!-- ============================================================
+     INSTITUTION FINANCE
+     ============================================================ -->
+
+<script src="js/models/budget.js"></script>
+<script src="js/models/budget-transaction.js"></script>
+
+
+<!-- ============================================================
+     REPORTING & ADMINISTRATION
+     ============================================================ -->
+
+<script src="js/models/report.js"></script>
+<script src="js/models/report-definition.js"></script>
+<script src="js/models/report-filter.js"></script>
+<script src="js/models/announcement.js"></script>
+<script src="js/models/audit-log.js"></script>
+
+
+<!-- ============================================================
+     SECURITY & INTEGRATIONS
+     ============================================================ -->
+
+<script src="js/models/api-key.js"></script>
+<script src="js/models/webhook.js"></script>
+<script src="js/models/sso-config.js"></script>
+<script src="js/models/security-policy.js"></script>
+
+
+<!-- ============================================================
+     ACADEMIC SYSTEM
+     ============================================================ -->
+
+<script src="js/models/academic-task.js"></script>
+<script src="js/models/assessment.js"></script>
+<script src="js/models/submission.js"></script>
+<script src="js/models/grade.js"></script>
+<script src="js/models/rubric.js"></script>
+<script src="js/models/question-bank.js"></script>
+<script src="js/models/material.js"></script>
+<script src="js/models/academic-integrity.js"></script>
+
+
+<!-- ============================================================
+     PROJECT MANAGEMENT
+     ============================================================ -->
+
+<script src="js/models/project.js"></script>
+<script src="js/models/project-task.js"></script>
+<script src="js/models/project-member.js"></script>
+<script src="js/models/milestone.js"></script>
+<script src="js/models/project-file.js"></script>
+<script src="js/models/project-comment.js"></script>
+
+
+<!-- ============================================================
+     GLOBAL MODEL UTILITIES
+     ------------------------------------------------------------
+     Optional shared model infrastructure.
+     ============================================================ -->
+
+<script src="js/models/model-utils.js"></script>
+<script src="js/models/model-normalizers.js"></script>
+<script src="js/models/model-validators.js"></script>
+<script src="js/models/model-serializers.js"></script>
+
+<!-- ================ END MODELS LAYER ========================= -->
+
+
+<!-- ============================================================
+     UI / API / AUTH / DATA
+     ============================================================ -->
+
+<script src="js/03-ui.js"></script>
+<script src="js/04-api.js"></script>
+<script src="js/05-auth.js"></script>
+<script src="js/06-data.js"></script>
+
+
+<!-- ============================================================
+     PUBLIC FRONT DOOR
+     ============================================================ -->
+
+<script src="js/public/components/format.js"></script>
+<script src="js/public/components/styles.js"></script>
+<script src="js/public/components/bind.js"></script>
+<script src="js/public/components/public-navbar.js"></script>
+<script src="js/public/components/public-footer.js"></script>
+<script src="js/public/components/hero.js"></script>
+<script src="js/public/components/public-search.js"></script>
+<script src="js/public/components/course-card.js"></script>
+<script src="js/public/components/expert-card.js"></script>
+<script src="js/public/components/event-card.js"></script>
+<script src="js/public/components/resource-card.js"></script>
+<script src="js/public/components/category-card.js"></script>
+<script src="js/public/components/public-cta.js"></script>
+
+<script src="js/public/landing/features.js"></script>
+<script src="js/public/landing/pricing.js"></script>
+<script src="js/public/landing/testimonials.js"></script>
+<script src="js/public/landing/faq.js"></script>
+<script src="js/public/landing/discover.js"></script>
+<script src="js/public/landing/index.js"></script>
+
+<script src="js/public/pages/courses.js"></script>
+<script src="js/public/pages/experts.js"></script>
+<script src="js/public/pages/events.js"></script>
+<script src="js/public/pages/resources.js"></script>
+<script src="js/public/pages/course-detail.js"></script>
+<script src="js/public/pages/expert-detail.js"></script>
+<script src="js/public/pages/event-detail.js"></script>
+<script src="js/public/pages/about.js"></script>
+<script src="js/public/pages/contact.js"></script>
+<script src="js/public/pages/institutions.js"></script>
+
+
+<!-- ============================================================
+     APPLICATION SHELL / DASHBOARDS / ACTIONS
+     ============================================================ -->
+
+<script src="js/08-shell.js"></script>
+<script src="js/09-admin.js"></script>
+<script src="js/10-expert.js"></script>
+<script src="js/11-user.js"></script>
+<script src="js/12-institution.js"></script>
+
+
+<!-- ============================================================
+     MODAL SYSTEM
+     ------------------------------------------------------------
+     The modal layer should load AFTER:
+       - models
+       - state
+       - utils
+       - UI
+       - API
+       - authentication
+       - data
+
+     This allows shared-modal-helpers.js and domain modal files
+     to safely access Models.*, apiCall(), S, openModal(), etc.
+     ============================================================ -->
+
+<script src="js/modals/index.js"></script>
+<script src="js/modals/shared-modal-helpers.js"></script>
+<script src="js/modals/admin-modals.js"></script>
+<script src="js/modals/learner-modals.js"></script>
+<script src="js/modals/expert-modals.js"></script>
+<script src="js/modals/institution-modals.js"></script>
+<script src="js/modals/course-modals.js"></script>
+<script src="js/modals/consultation-modals.js"></script>
+<script src="js/modals/payment-modals.js"></script>
+<script src="js/modals/wallet-modals.js"></script>
+<script src="js/modals/support-modals.js"></script>
+<script src="js/modals/certificate-modals.js"></script>
+<script src="js/modals/scheduling-modals.js"></script>
+<script src="js/modals/academic-modals.js"></script>
+<script src="js/modals/project-modals.js"></script>
+
+
+<script src="js/14-actions.js"></script>
+
+
+<!-- ============================================================
+     ROUTER — MUST REMAIN LAST
+     ============================================================ -->
+
+<script src="js/15-router.js"></script>
