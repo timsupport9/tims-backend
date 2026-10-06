@@ -1,911 +1,1047 @@
 /* ============================================================
-   ExpertHub 2.0 — 04-api.js
-   Fetch wrapper with auth-header + refresh-token retry + Socket.io init.
+   ExpertHub 2.0 — 04-api.js  (expanded)
+   Fetch wrapper · SWR cache · single-flight auth refresh ·
+   circuit breaker · rate limit · uploads · socket lifecycle ·
+   reconnect/resync · rooms · presence · optimistic chat ·
+   offline outbox · debug inspector · mock/chaos mode.
    ============================================================ */
 
-/* ---------- API ---------- */
-async function apiCall(endpoint, method='GET', body=null, isFormData=false, _retry=false) {
-  const headers = {};
-  if (!isFormData && body !== null) headers['Content-Type'] = 'application/json';
-  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-  const options = { method, headers };
-  if (body !== null) options.body = isFormData ? body : JSON.stringify(body);
+/* ============================================================
+   SECTION 0 — MODULE STATE
+   ============================================================ */
 
-  const res = await fetch(`${CONFIG.API_BASE}${endpoint}`, options);
+const _api = {
+  /* auth */
+  refreshPromise: null,
+  refreshTimer: null,
 
-  if (res.status === 401 && !_retry && refreshToken) {
-    try {
-      const r = await fetch(`${CONFIG.API_BASE}/api/auth/refresh`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ refresh: refreshToken }),
-      });
-      if (r.ok) {
-        const d = await r.json();
-        authToken = d.token;
-        localStorage.setItem('token', authToken);
-        return apiCall(endpoint, method, body, isFormData, true);
-      }
-    } catch (_) {}
-    return logout();
+  /* request plumbing */
+  inflight: new Map(),          // dedupe: key -> promise
+  aborters: new Map(),          // route -> AbortController
+
+  /* cache */
+  cache: new Map(),             // endpoint -> { data, at, promise }
+
+  /* rate limit: key -> { tokens, last } */
+  buckets: new Map(),
+
+  /* circuit breaker: prefix -> { failures, openedAt } */
+  breakers: new Map(),
+
+  /* socket */
+  socketRooms: new Set(),
+  outbox: [],                   // queued emits while offline
+  typingTimers: {},             // consultation_id -> timeout
+  presence: {},                 // user_id -> { status, at }
+  presenceSweeper: null,
+  wasDisconnected: false,
+
+  /* inspector */
+  log: [],                      // ring buffer of request records
+  inspectorEl: null,
+
+  /* metrics */
+  metrics: { count: 0, errors: 0, totalMs: 0 },
+};
+
+const _sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const _uuid = () =>
+  (self.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+
+const _now = () =>
+  (self.performance?.now?.() ?? Date.now());
+
+/* ============================================================
+   SECTION 1 — CONFIG DEFAULTS
+   ============================================================ */
+
+const API_DEFAULTS = {
+  API_BASE: CONFIG?.API_BASE ?? '',
+  API_TIMEOUT: 15000,
+  CACHE_TTL: 30000,
+  DEBUG: false,
+  CHAOS: null,                  // { failRate, slowRate } in dev
+  MOCK: false,                  // serve from MOCK_ROUTES
+  RETRY_GET: 2,
+  RETRY_MUTATION: 0,
+  TOAST_GROUP_MS: 2500,
+  PRESENCE_TTL: 45000,
+  HEARTBEAT_MS: 25000,
+  BREAKER_THRESHOLD: 5,
+  BREAKER_COOLDOWN: 30000,
+  RATE_DEFAULT: { rate: 10, burst: 20 },  // per second / bucket size
+};
+
+const AC = Object.assign({}, API_DEFAULTS, CONFIG?.API ?? {});
+const API_BASE = AC.API_BASE;
+
+/* ============================================================
+   SECTION 2 — ERRORS
+   ============================================================ */
+
+class ApiError extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = opts.status;
+    this.code = opts.code;
+    this.details = opts.details;
+    this.requestId = opts.requestId;
+    this.retryable = !!opts.retryable;
+    this.endpoint = opts.endpoint;
+    this.method = opts.method;
   }
-
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try { const j = await res.json(); msg = j.error || j.message || msg; } catch (_) {}
-    throw new Error(msg);
-  }
-  if (res.status === 204) return null;
-  return res.json();
 }
 
-/* ---------- SOCKET ---------- */
-function initializeSocket() {
-  if (socket) socket.disconnect();
-  if (!authToken || typeof io === 'undefined') return;
-  socket = io({ auth: { token: authToken } });
-  socket.on('connect', () => console.log('[socket] connected'));
-  socket.on('disconnect', () => console.log('[socket] disconnected'));
-  socket.on('notification', n => {
+const ERROR_COPY = {
+  TIMEOUT: 'That took too long — check your connection and try again.',
+  NETWORK: "You're offline. We'll retry when you reconnect.",
+  AUTH_EXPIRED: 'Your session ended. Please sign in again.',
+  RATE_LIMITED: "You're going a bit fast — try again in a moment.",
+  OFFLINE: "You're offline right now.",
+  CIRCUIT_OPEN: 'The service is temporarily unavailable. Retrying shortly.',
+  ACK_TIMEOUT: 'No response from the server. Please try again.',
+  SERVER: 'Something went wrong on our end. Please try again.',
+};
+
+function userMessage(err) {
+  if (!(err instanceof ApiError)) return err?.message || 'Unexpected error';
+  return ERROR_COPY[err.code] || err.message;
+}
+
+async function _parseError(res, endpoint, method) {
+  let payload = null;
+  try { payload = await res.json(); } catch { /* non-JSON body */ }
+  return new ApiError(
+    payload?.error || payload?.message || `HTTP ${res.status}`,
+    {
+      status: res.status,
+      code: payload?.code || (res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'SERVER' : undefined),
+      details: payload?.details,
+      requestId: res.headers.get('x-request-id'),
+      retryable: res.status >= 500 || res.status === 429,
+      endpoint, method,
+    }
+  );
+}
+
+/* ============================================================
+   SECTION 3 — ABORT / TIMEOUT
+   ============================================================ */
+
+function _makeAbort(ms, external) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    try { ctrl.abort(new DOMException('Request timeout', 'TimeoutError')); }
+    catch { ctrl.abort(); }
+  }, ms);
+
+  if (external) {
+    if (external.aborted) ctrl.abort(external.reason);
+    else external.addEventListener('abort', () => ctrl.abort(external.reason), { once: true });
+  }
+  return { signal: ctrl.signal, done: () => clearTimeout(timer) };
+}
+
+/** Register a controller for a logical "route" so navigation can cancel it. */
+function registerRoute(name) {
+  const ctrl = new AbortController();
+  cancelRoute(name);            // replace any prior one
+  _api.aborters.set(name, ctrl);
+  return ctrl.signal;
+}
+
+function cancelRoute(name) {
+  const prev = _api.aborters.get(name);
+  if (prev) { prev.abort(new DOMException('Navigation', 'AbortError')); _api.aborters.delete(name); }
+}
+
+function cancelAllRoutes() {
+  for (const [k] of _api.aborters) cancelRoute(k);
+}
+
+/* ============================================================
+   SECTION 4 — LOGGER / METRICS / INSPECTOR
+   ============================================================ */
+
+function _record(entry) {
+  _api.log.push(entry);
+  if (_api.log.length > 200) _api.log.shift();
+
+  _api.metrics.count++;
+  if (entry.status >= 400 || entry.error) _api.metrics.errors++;
+  _api.metrics.totalMs += entry.ms;
+
+  if (AC.DEBUG) {
+    const lvl = entry.error ? 'error' : entry.status >= 400 ? 'warn' : 'debug';
+    console[lvl](`[api] ${entry.method} ${entry.endpoint} ${entry.status ?? '-'} ${entry.ms.toFixed(0)}ms`);
+  }
+  if (entry.ms > 3000) console.warn(`[api] slow: ${entry.method} ${entry.endpoint} ${entry.ms.toFixed(0)}ms`);
+  if (_api.inspectorEl) _renderInspector();
+}
+
+function toggleNetworkInspector(force) {
+  const on = force ?? !_api.inspectorEl;
+  if (!on) { _api.inspectorEl?.remove(); _api.inspectorEl = null; return; }
+  const el = document.createElement('div');
+  el.id = 'network-inspector';
+  Object.assign(el.style, {
+    position: 'fixed', right: '12px', bottom: '12px', width: '420px',
+    maxHeight: '45vh', overflow: 'auto', zIndex: 99999,
+    background: 'rgba(12,14,18,.94)', color: '#d7dce5', fontSize: '11px',
+    fontFamily: 'ui-monospace,Menlo,monospace', border: '1px solid #2a2f3a',
+    borderRadius: '8px', padding: '8px', backdropFilter: 'blur(6px)',
+  });
+  document.body.appendChild(el);
+  _api.inspectorEl = el;
+  _renderInspector();
+}
+
+function _renderInspector() {
+  if (!_api.inspectorEl) return;
+  const rows = _api.log.slice(-50).reverse().map(e => {
+    const color = e.error ? '#ff6b6b' : e.status >= 400 ? '#ffb454' : '#7ee787';
+    return `<div style="display:flex;gap:6px;padding:2px 0;border-bottom:1px solid #1b1f27">
+      <span style="color:${color};width:38px">${e.status ?? 'ERR'}</span>
+      <span style="width:52px;opacity:.7">${e.method}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(e.endpoint)}</span>
+      <span style="width:56px;text-align:right;opacity:.7">${e.ms.toFixed(0)}ms</span>
+      <span data-replay="${_esc(e.method)} ${_esc(e.endpoint)}"
+            style="cursor:pointer;color:#58a6ff">↻</span>
+    </div>`;
+  }).join('');
+  const m = _api.metrics;
+  _api.inspectorEl.innerHTML =
+    `<div style="display:flex;justify-content:space-between;margin-bottom:6px">
+       <b>network</b>
+       <span style="opacity:.7">${m.count} req · ${m.errors} err · ${(m.totalMs / Math.max(1, m.count)).toFixed(0)}ms avg</span>
+       <span id="net-clear" style="cursor:pointer;color:#58a6ff">clear</span>
+     </div>${rows}`;
+
+  _api.inspectorEl.querySelector('#net-clear').onclick = () => {
+    _api.log = []; _api.metrics = { count: 0, errors: 0, totalMs: 0 }; _renderInspector();
+  };
+  _api.inspectorEl.querySelectorAll('[data-replay]').forEach(n => {
+    n.onclick = () => {
+      const [m2, ...rest] = n.dataset.replay.split(' ');
+      apiCall(rest.join(' '), m2).then(() => showToast('Replayed', 'info')).catch(e => showToast(userMessage(e), 'error'));
+    };
+  });
+}
+
+const _esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ============================================================
+   SECTION 5 — CACHE (STALE-WHILE-REVALIDATE)
+   ============================================================ */
+
+function cacheGet(endpoint, { ttl = AC.CACHE_TTL, force = false, signal } = {}) {
+  const hit = _api.cache.get(endpoint);
+
+  if (!force && hit && !hit.promise && Date.now() - hit.at < ttl) {
+    return Promise.resolve(hit.data);
+  }
+  if (hit?.promise) return hit.promise;
+
+  const promise = apiCall(endpoint, 'GET', null, false, { signal })
+    .then(data => {
+      _api.cache.set(endpoint, { data, at: Date.now(), promise: null });
+      return data;
+    })
+    .catch(err => {
+      if (hit?.data) { _api.cache.set(endpoint, { data: hit.data, at: hit.at, promise: null }); return hit.data; }
+      _api.cache.delete(endpoint);
+      throw err;
+    });
+
+  _api.cache.set(endpoint, { ...(hit || {}), promise, data: hit?.data });
+  return promise;
+}
+
+function invalidateCache(prefix = '') {
+  for (const k of [..._api.cache.keys()]) if (k.startsWith(prefix)) _api.cache.delete(k);
+}
+
+function clearCache() { _api.cache.clear(); }
+
+function prefetch(endpoint) {
+  if (_api.cache.has(endpoint)) return;
+  cacheGet(endpoint).catch(() => {});
+}
+
+/* ============================================================
+   SECTION 6 — RATE LIMIT + CIRCUIT BREAKER
+   ============================================================ */
+
+function _bucketKey(method, endpoint) {
+  return `${method}:${endpoint.split('?')[0].split('/').slice(0, 4).join('/')}`;
+}
+
+function _allow(key, { rate = AC.RATE_DEFAULT.rate, burst = AC.RATE_DEFAULT.burst } = {}) {
+  const now = Date.now();
+  const b = _api.buckets.get(key) || { tokens: burst, last: now };
+  const elapsed = (now - b.last) / 1000;
+  b.tokens = Math.min(burst, b.tokens + elapsed * rate);
+  b.last = now;
+  if (b.tokens < 1) { _api.buckets.set(key, b); return false; }
+  b.tokens -= 1;
+  _api.buckets.set(key, b);
+  return true;
+}
+
+function _breakerKey(endpoint) {
+  return endpoint.split('?')[0].split('/').slice(0, 4).join('/');
+}
+
+function _breakerOpen(endpoint) {
+  const b = _api.breakers.get(_breakerKey(endpoint));
+  if (!b) return false;
+  if (b.failures < AC.BREAKER_THRESHOLD) return false;
+  if (Date.now() - b.openedAt > AC.BREAKER_COOLDOWN) {  // half-open
+    b.failures = AC.BREAKER_THRESHOLD - 1;
+    return false;
+  }
+  return true;
+}
+
+function _breakerRecord(endpoint, ok) {
+  const key = _breakerKey(endpoint);
+  const b = _api.breakers.get(key) || { failures: 0, openedAt: 0 };
+  if (ok) b.failures = 0;
+  else { b.failures++; if (b.failures === AC.BREAKER_THRESHOLD) b.openedAt = Date.now(); }
+  _api.breakers.set(key, b);
+}
+
+/* ============================================================
+   SECTION 7 — AUTH
+   ============================================================ */
+
+let authToken = localStorage.getItem('token') || null;
+let refreshToken = localStorage.getItem('refresh') || null;
+let currentUser = null;
+let capabilities = new Set();
+
+function jwtExp(token) {
+  try {
+    const p = token.split('.')[1];
+    return JSON.parse(atob(p.replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000;
+  } catch { return 0; }
+}
+
+function setToken(token, refresh) {
+  authToken = token || null;
+  if (authToken) localStorage.setItem('token', authToken);
+  else localStorage.removeItem('token');
+
+  if (refresh !== undefined) {
+    refreshToken = refresh;
+    if (refresh) localStorage.setItem('refresh', refresh);
+    else localStorage.removeItem('refresh');
+  }
+
+  scheduleRefresh();
+
+  /* keep live socket credentials fresh */
+  if (socket) {
+    socket.auth = { token: authToken };
+    if (!socket.connected && authToken) socket.connect();
+  }
+}
+
+/** Single-flight refresh — concurrent 401s share one network call. */
+function refreshAuth() {
+  if (!refreshToken) return Promise.resolve(false);
+  if (_api.refreshPromise) return _api.refreshPromise;
+
+  _api.refreshPromise = (async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ refresh: refreshToken }),
+      });
+      if (!r.ok) return false;
+      const d = await r.json();
+      setToken(d.token, d.refresh);
+      return true;
+    } catch { return false; }
+    finally { _api.refreshPromise = null; }
+  })();
+
+  return _api.refreshPromise;
+}
+
+/** Refresh ~60s before the access token expires. */
+function scheduleRefresh() {
+  clearTimeout(_api.refreshTimer);
+  const exp = jwtExp(authToken);
+  if (!exp || !refreshToken) return;
+  const delay = Math.max(5000, exp - Date.now() - 60000);
+  _api.refreshTimer = setTimeout(() => { refreshAuth(); }, delay);
+}
+
+/* Cross-tab sync */
+window.addEventListener('storage', e => {
+  if (e.key === 'token' && e.newValue !== authToken) {
+    authToken = e.newValue;
+    if (e.newValue) { scheduleRefresh(); initializeSocket(); }
+    else performLogoutCleanup();
+  }
+  if (e.key === 'refresh') refreshToken = e.newValue;
+});
+
+/* Capabilities */
+async function loadCapabilities() {
+  try {
+    const d = await apiCall('/api/me/permissions');
+    capabilities = new Set(d.permissions || []);
+  } catch { capabilities = new Set(); }
+  return capabilities;
+}
+const can = cap => capabilities.has('*') || capabilities.has(cap);
+
+/* ============================================================
+   SECTION 8 — UPLOADS (chunked, resumable, progress, cancel)
+   ============================================================ */
+
+/**
+ * Upload a file in chunks so a dropped connection resumes from the
+ * last confirmed offset instead of starting over.
+ */
+async function uploadFile(file, {
+  endpoint = '/api/uploads',
+  chunkSize = 2 * 1024 * 1024,
+  onProgress = () => {},
+  signal,
+  concurrency = 1,
+} = {}) {
+  const session = await apiCall(`${endpoint}/init`, 'POST', {
+    filename: file.name, size: file.size, mime: file.type,
+  }, false, { signal });
+
+  const { upload_id, chunk_size = chunkSize, uploaded = [] } = session;
+  const size = chunk_size;
+  const total = Math.ceil(file.size / size);
+  const done = new Set(uploaded);
+  let sent = done.size * size;
+
+  onProgress({ loaded: sent, total: file.size, pct: sent / file.size });
+
+  const queue = [];
+  for (let i = 0; i < total; i++) if (!done.has(i)) queue.push(i);
+
+  const worker = async () => {
+    while (queue.length) {
+      if (signal?.aborted) throw new DOMException('Upload cancelled', 'AbortError');
+      const i = queue.shift();
+      const blob = file.slice(i * size, Math.min(file.size, (i + 1) * size));
+      await apiCall(`${endpoint}/${upload_id}/chunk?index=${i}`, 'PUT', blob, true, { signal });
+      sent += blob.size;
+      onProgress({ loaded: sent, total: file.size, pct: sent / file.size });
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  return apiCall(`${endpoint}/${upload_id}/complete`, 'POST', null, false, { signal });
+}
+
+/* ============================================================
+   SECTION 9 — apiCall CORE
+   ============================================================ */
+
+async function apiCall(endpoint, method = 'GET', body = null, isFormData = false, opts = {}) {
+  const {
+    _retry = false,
+    timeout = AC.API_TIMEOUT,
+    signal: callerSignal,
+    dedupe = false,
+    idempotencyKey,
+    retries,
+    rateKey,
+    skipCache = false,
+    validate,
+    meta,
+  } = opts;
+
+  /* ---- mock mode ---- */
+  if (AC.MOCK) return _mockCall(endpoint, method, body);
+
+  /* ---- chaos (dev only) ---- */
+  if (AC.CHAOS) await _applyChaos();
+
+  /* ---- rate limit (protects against double-click, not abuse) ---- */
+  if (!_allow(rateKey || _bucketKey(method, endpoint))) {
+    throw new ApiError('Rate limited locally', { code: 'RATE_LIMITED', endpoint, method });
+  }
+
+  /* ---- circuit breaker (reads only — never block a write) ---- */
+  if (method === 'GET' && _breakerOpen(endpoint)) {
+    const cached = _api.cache.get(endpoint)?.data;
+    if (cached !== undefined) return cached;
+    throw new ApiError('Circuit open', { code: 'CIRCUIT_OPEN', endpoint, method });
+  }
+
+  const key = `${method}:${endpoint}`;
+  if (dedupe && _api.inflight.has(key)) return _api.inflight.get(key);
+
+  const run = async () => {
+    const started = _now();
+    const headers = {};
+    if (!isFormData && body !== null) headers['Content-Type'] = 'application/json';
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+    if (AC.ACTIVE_INSTITUTION) headers['X-Institution-Id'] = AC.ACTIVE_INSTITUTION;
+    const csrf = _readCookie('csrf');
+    if (csrf && method !== 'GET') headers['X-CSRF-Token'] = csrf;
+    headers['X-Request-Id'] = _uuid();
+
+    const { signal, done } = _makeAbort(timeout, callerSignal);
+
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${endpoint}`, {
+        method, headers, signal,
+        body: body === null ? undefined : (isFormData ? body : JSON.stringify(body)),
+      });
+    } catch (err) {
+      done();
+      const ms = _now() - started;
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        _breakerRecord(endpoint, false);
+        _record({ method, endpoint, ms, error: true, status: null, meta });
+        if (callerSignal?.aborted) {
+          throw new ApiError('Aborted', { code: 'ABORTED', endpoint, method });
+        }
+        throw new ApiError('Request timed out', { code: 'TIMEOUT', retryable: true, endpoint, method });
+      }
+      _breakerRecord(endpoint, false);
+      _record({ method, endpoint, ms, error: true, status: null, meta });
+      throw new ApiError(err.message || 'Network error', { code: 'NETWORK', retryable: true, endpoint, method });
+    }
+    done();
+
+    const ms = _now() - started;
+
+    /* ---- 401 → single-flight refresh → retry once ---- */
+    if (res.status === 401 && !_retry && refreshToken) {
+      const ok = await refreshAuth();
+      if (!ok) {
+        _record({ method, endpoint, ms, status: 401, meta });
+        performLogoutCleanup();
+        throw new ApiError('Session expired', { status: 401, code: 'AUTH_EXPIRED', endpoint, method });
+      }
+      return apiCall(endpoint, method, body, isFormData, { ...opts, _retry: true });
+    }
+
+    /* ---- error path ---- */
+    if (!res.ok) {
+      const err = await _parseError(res, endpoint, method);
+      _breakerRecord(endpoint, false);
+      _record({ method, endpoint, ms, status: res.status, error: true, meta });
+
+      const maxRetries = retries ?? (method === 'GET' ? AC.RETRY_GET : AC.RETRY_MUTATION);
+      if (err.retryable && maxRetries > 0) {
+        const retryAfter = Number(res.headers.get('retry-after')) * 1000;
+        const backoff = retryAfter || (2 ** (AC.RETRY_GET - maxRetries) * 300 + Math.random() * 200);
+        await _sleep(backoff);
+        return apiCall(endpoint, method, body, isFormData, { ...opts, retries: maxRetries - 1, _retry });
+      }
+      throw err;
+    }
+
+    /* ---- success ---- */
+    _breakerRecord(endpoint, true);
+    _record({ method, endpoint, ms, status: res.status, meta });
+
+    if (res.status === 204) return null;
+
+    const text = await res.text();
+    if (!text) return null;
+
+    let data;
+    try { data = JSON.parse(text); }
+    catch { throw new ApiError('Malformed JSON response', { status: res.status, endpoint, method }); }
+
+    if (validate) {
+      const parsed = validate(data);
+      if (parsed && typeof parsed.then === 'function') return parsed; // async validator
+      return parsed === undefined ? data : parsed;
+    }
+    return data;
+  };
+
+  const p = run().finally(() => _api.inflight.delete(key));
+  if (dedupe) _api.inflight.set(key, p);
+  return p;
+}
+
+function _readCookie(name) {
+  return document.cookie.split('; ').reduce((acc, c) => {
+    const [k, v] = c.split('=');
+    return k === name ? decodeURIComponent(v) : acc;
+  }, null);
+}
+
+/* ============================================================
+   SECTION 10 — HIGH-LEVEL HELPERS
+   ============================================================ */
+
+/** Optimistic mutation with rollback + cache invalidation. */
+async function mutate({ endpoint, method = 'POST', body, optimistic, invalidate, signal, idempotencyKey }) {
+  const rollback = optimistic ? optimistic() : null;
+  try {
+    const result = await apiCall(endpoint, method, body, false, {
+      signal,
+      idempotencyKey: idempotencyKey ?? (method === 'POST' ? _uuid() : undefined),
+    });
+    if (invalidate) invalidateCache(invalidate);
+    return result;
+  } catch (err) {
+    try { rollback?.(); } catch (_) {}
+    throw err;
+  }
+}
+
+/** Async iterator over a cursor-paginated endpoint. */
+async function* paginate(endpoint, { limit = 50, signal, params = {} } = {}) {
+  let cursor = null;
+  do {
+    const qs = new URLSearchParams({ ...params, limit, ...(cursor ? { cursor } : {}) });
+    const page = await apiCall(`${endpoint}?${qs}`, 'GET', null, false, { signal });
+    yield page.items ?? page;
+    cursor = page.next_cursor ?? null;
+  } while (cursor);
+}
+
+/** Load every page into one array (use only for small collections). */
+async function paginateAll(endpoint, opts) {
+  const out = [];
+  for await (const chunk of paginate(endpoint, opts)) out.push(...chunk);
+  return out;
+}
+
+/* ============================================================
+   SECTION 11 — ENDPOINT REGISTRY
+   ============================================================ */
+
+const api = {
+  auth: {
+    login: (email, password) => apiCall('/api/auth/login', 'POST', { email, password }),
+    logout: () => apiCall('/api/auth/logout', 'POST'),
+    me: () => cacheGet('/api/auth/me'),
+    permissions: () => apiCall('/api/me/permissions'),
+  },
+  consultations: {
+    list: (params = {}) => cacheGet(`/api/consultations?${new URLSearchParams(params)}`),
+    get: id => cacheGet(`/api/consultations/${id}`),
+    create: payload => mutate({ endpoint: '/api/consultations', body: payload, invalidate: '/api/consultations' }),
+    messages: (id, since = 0) => apiCall(`/api/consultations/${id}/messages?since=${since}`),
+    send: (id, text) => mutate({
+      endpoint: `/api/consultations/${id}/messages`,
+      body: { body: text },
+      idempotencyKey: _uuid(),
+    }),
+  },
+  notifications: {
+    list: () => cacheGet('/api/notifications'),
+    markRead: id => mutate({ endpoint: `/api/notifications/${id}/read`, method: 'PATCH', invalidate: '/api/notifications' }),
+    markAllRead: () => mutate({ endpoint: '/api/notifications/read-all', method: 'POST', invalidate: '/api/notifications' }),
+  },
+  sync: {
+    since: cursor => apiCall(`/api/sync?since=${cursor}`),
+  },
+  uploads: {
+    file: uploadFile,
+  },
+};
+
+/* ============================================================
+   SECTION 12 — SOCKET LAYER
+   ============================================================ */
+
+let socket = null;
+
+/* ---- 12.1 toast grouping ---------------------------------- */
+
+const _toastGroups = new Map();
+
+function toastOnce(key, message, level = 'info', ttl = 4000) {
+  const g = _toastGroups.get(key);
+  if (g) {
+    g.count++;
+    g.message = message;
+    clearTimeout(g.timer);
+    g.timer = setTimeout(() => _toastGroups.delete(key), AC.TOAST_GROUP_MS);
+    if (g.el) g.el.textContent = `${message} (${g.count})`;
+    return;
+  }
+  const el = showToast(message, level, ttl, true); // returns node if supported
+  const group = { count: 1, message, el, timer: setTimeout(() => _toastGroups.delete(key), AC.TOAST_GROUP_MS) };
+  _toastGroups.set(key, group);
+}
+
+/* ---- 12.2 rooms ------------------------------------------- */
+
+function syncRooms(desired) {
+  if (!socket) return;
+  const next = desired instanceof Set ? desired : new Set(desired);
+  for (const r of _api.socketRooms) if (!next.has(r)) socket.emit('leave', r);
+  for (const r of next) if (!_api.socketRooms.has(r)) socket.emit('join', r);
+  _api.socketRooms = next;
+}
+
+/* ---- 12.3 presence ---------------------------------------- */
+
+function _presenceSet(userId, status) {
+  _api.presence[userId] = { status, at: Date.now() };
+  if (typeof renderPresence === 'function') renderPresence(userId, status);
+}
+
+function _startPresenceSweeper() {
+  clearInterval(_api.presenceSweeper);
+  _api.presenceSweeper = setInterval(() => {
+    const now = Date.now();
+    for (const [uid, p] of Object.entries(_api.presence)) {
+      if (now - p.at > AC.PRESENCE_TTL && p.status !== 'offline') {
+        _presenceSet(uid, 'offline');
+      }
+    }
+  }, AC.PRESENCE_TTL / 2);
+}
+
+/* ---- 12.4 chat helpers ------------------------------------ */
+
+function _messageList(cid) {
+  if (!S.chatMessages[cid]) S.chatMessages[cid] = [];
+  return S.chatMessages[cid];
+}
+
+/** Insert a message by sequence, deduping by id. Safe against replays/out-of-order. */
+function insertMessage(msg) {
+  const list = _messageList(msg.consultation_id);
+  if (list.some(m => m.id === msg.id)) return false;
+  if (msg.seq != null) {
+    const idx = list.findIndex(m => m.seq != null && m.seq > msg.seq);
+    if (idx === -1) list.push(msg); else list.splice(idx, 0, msg);
+  } else {
+    list.push(msg);
+  }
+  return true;
+}
+
+function markUnread(cid) {
+  S.unread = S.unread || {};
+  S.unread[cid] = (S.unread[cid] || 0) + 1;
+  if (typeof updateUnreadBadges === 'function') updateUnreadBadges();
+}
+
+function clearUnread(cid) {
+  if (S.unread?.[cid]) {
+    S.unread[cid] = 0;
+    if (typeof updateUnreadBadges === 'function') updateUnreadBadges();
+    socket?.emit('mark_read', { consultation_id: cid });
+  }
+}
+
+/* ---- 12.5 socket event registry --------------------------- */
+
+const _reload = (() => {
+  let timer = null;
+  return () => new Promise(resolve => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try { await loadAllData(); rerenderRoleContent(); }
+      finally { resolve(); }
+    }, 200);
+  });
+})();
+
+const SOCKET_HANDLERS = {
+  notification: n => {
     S.notifications.unshift(n);
-    showToast(n.title || 'New notification', 'info');
+    toastOnce(`notif:${n.id}`, n.title || 'New notification', 'info');
     updateNotificationBadge();
     if (notificationsPanelOpen) renderNotificationsPanel();
-  });
-  socket.on('broadcast', b => showToast(`${b.title}: ${b.message}`, 'info', 6000));
-  socket.on('new_message', msg => {
+  },
+
+  broadcast: b => {
+    toastOnce(`broadcast:${b.id}`, `${b.title}: ${b.message}`, 'info', 6000);
+  },
+
+  new_message: msg => {
     const cid = msg.consultation_id;
-    if (!S.chatMessages[cid]) S.chatMessages[cid] = [];
-    S.chatMessages[cid].push(msg);
-    if (currentChatId === cid) renderChatMessages(cid);
-  });
-  socket.on('typing', ({ consultation_id, user_id, is_typing }) => {
+    if (!insertMessage(msg)) return;
+    if (currentChatId === cid) {
+      renderChatMessages(cid);
+      clearUnread(cid);
+    } else {
+      markUnread(cid);
+    }
+  },
+
+  message_ack: ({ temp_id, message }) => {
+    const list = S.chatMessages[message.consultation_id] || [];
+    const tmp = list.find(m => m.id === temp_id);
+    if (tmp) Object.assign(tmp, message, { pending: false, failed: false });
+    if (currentChatId === message.consultation_id) renderChatMessages(message.consultation_id);
+  },
+
+  typing: ({ consultation_id, user_id, is_typing }) => {
     if (currentChatId !== consultation_id) return;
     const el = $('#chat-typing');
     if (!el) return;
-    el.textContent = (is_typing && user_id !== currentUser?.id) ? 'typing...' : '';
-  });
-  socket.on('presence', () => {});
-  socket.on('institution:approval', d => {
-    showToast(`New approval request: ${d.title}`, 'info');
-    loadAllData().then(rerenderRoleContent);
-  });
-  socket.on('institution:assessment_due', d => {
-    showToast(`Assessment due: ${d.title}`, 'warning', 6000);
-  });
-  socket.on('institution:certificate_expiring', d => {
-    showToast(`Certificate expiring soon: ${d.serial}`, 'warning', 6000);
-  });
-  socket.on('consultation:reminder', d => {
-    showToast(d.message || 'Session reminder', 'info', 6000);
-  });
-  socket.on('consultation:escrow_released', d => {
-    showToast(`Escrow released: ${fmtCur(d.amount)}`, 'success');
-    loadAllData().then(rerenderRoleContent);
-  });
-  socket.on('enrollment:certificate_issued', d => {
-    showToast(`Certificate ready: ${d.course_title}`, 'success');
-    loadAllData().then(rerenderRoleContent);
-  });
-  socket.on('wellness:alert', d => {
-    showToast(`Wellness alert: ${d.trainee_name}`, 'warning', 6000);
+    if (is_typing && user_id !== currentUser?.id) {
+      el.textContent = 'typing...';
+      clearTimeout(_api.typingTimers[consultation_id]);
+      _api.typingTimers[consultation_id] = setTimeout(() => {
+        const e2 = $('#chat-typing'); if (e2) e2.textContent = '';
+      }, 5000);
+    } else {
+      clearTimeout(_api.typingTimers[consultation_id]);
+      el.textContent = '';
+    }
+  },
+
+  presence: ({ user_id, status }) => _presenceSet(user_id, status),
+
+  'institution:approval': d => {
+    toastOnce(`approval:${d.id}`, `New approval request: ${d.title}`, 'info');
+    invalidateCache('/api/approvals');
+    _reload();
+  },
+
+  'institution:assessment_due': d =>
+    toastOnce(`assess:${d.id}`, `Assessment due: ${d.title}`, 'warning', 6000),
+
+  'institution:certificate_expiring': d =>
+    toastOnce(`cert:${d.serial}`, `Certificate expiring soon: ${d.serial}`, 'warning', 6000),
+
+  'consultation:reminder': d =>
+    toastOnce(`remind:${d.consultation_id}`, d.message || 'Session reminder', 'info', 6000),
+
+  'consultation:escrow_released': d => {
+    toastOnce(`escrow:${d.consultation_id}`, `Escrow released: ${fmtCur(d.amount)}`, 'success');
+    invalidateCache('/api/consultations');
+    _reload();
+  },
+
+  'enrollment:certificate_issued': d => {
+    toastOnce(`enroll:${d.course_id}`, `Certificate ready: ${d.course_title}`, 'success');
+    invalidateCache('/api/enrollments');
+    _reload();
+  },
+
+  'wellness:alert': d =>
+    toastOnce(`wellness:${d.trainee_id}`, `Wellness alert: ${d.trainee_name}`, 'warning', 6000),
+};
+
+/* ---- 12.6 ack-based emit + offline outbox ------------------ */
+
+function emitAck(event, payload, timeout = 8000) {
+  return new Promise((resolve, reject) => {
+    if (!socket?.connected) {
+      if (event !== 'join' && event !== 'leave' && event !== 'mark_read') {
+        _api.outbox.push({ event, payload });
+      }
+      reject(new ApiError('Not connected', { code: 'OFFLINE' }));
+      return;
+    }
+    const t = setTimeout(
+      () => reject(new ApiError(`${event} timed out`, { code: 'ACK_TIMEOUT' })), timeout);
+    socket.emit(event, payload, ack => {
+      clearTimeout(t);
+      if (ack?.error) reject(new ApiError(ack.error, { code: ack.code }));
+      else resolve(ack);
+    });
   });
 }
 
+async function _flushOutbox() {
+  const pending = _api.outbox.splice(0);
+  for (const item of pending) {
+    try { await emitAck(item.event, item.payload); }
+    catch (e) { if (e.code === 'OFFLINE') { _api.outbox.unshift(item); break; } }
+  }
+}
+
+/* ---- 12.7 optimistic chat send ---------------------------- */
+
+async function sendChatMessage(cid, text) {
+  const list = _messageList(cid);
+  const tempId = `tmp-${_uuid()}`;
+  const optimistic = {
+    id: tempId, consultation_id: cid, body: text,
+    sender_id: currentUser?.id, created_at: new Date().toISOString(),
+    pending: true,
+  };
+  list.push(optimistic);
+  if (currentChatId === cid) renderChatMessages(cid);
+
+  try {
+    const saved = await emitAck('send_message', {
+      consultation_id: cid, body: text, temp_id: tempId,
+    });
+    const real = saved?.message ?? saved;
+    if (real) {
+      const i = list.findIndex(m => m.id === tempId);
+      if (i !== -1) list[i] = { ...real, pending: false };
+    }
+  } catch (err) {
+    optimistic.pending = false;
+    optimistic.failed = true;
+    toastOnce(`sendfail:${cid}`, userMessage(err), 'error');
+  } finally {
+    if (currentChatId === cid) renderChatMessages(cid);
+  }
+}
+
+/* ---- 12.8 resync after reconnect -------------------------- */
+
+async function resync() {
+  try {
+    const cursor = S.lastEventId || 0;
+    const { events = [], cursor: next } = await api.sync.since(cursor);
+    for (const e of events) {
+      const fn = SOCKET_HANDLERS[e.type];
+      if (fn) { try { fn(e.payload); } catch (err) { console.warn('[socket] handler', e.type, err); } }
+    }
+    S.lastEventId = next ?? cursor;
+
+    invalidateCache();
+    await loadAllData();
+    rerenderRoleContent();
+    if (currentChatId) await loadChatMessages(currentChatId);
+  } catch (e) {
+    console.warn('[socket] resync failed', e);
+  }
+}
+
+/* ---- 12.9 lifecycle --------------------------------------- */
+
+function initializeSocket() {
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+    socket = null;
+  }
+  _api.socketRooms = new Set();
+  if (!authToken || typeof io === 'undefined') return;
+
+  socket = io(API_BASE || undefined, {
+    auth: { token: authToken },
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 8000,
+    reconnectionAttempts: Infinity,
+  });
+
+  for (const [evt, fn] of Object.entries(SOCKET_HANDLERS)) socket.on(evt, fn);
+
+  socket.on('connect', () => {
+    console.log('[socket] connected');
+    _api.wasDisconnected && resync().catch(() => {});
+    _api.wasDisconnected = false;
+    _flushOutbox();
+    _startPresenceSweeper();
+  });
+
+  socket.on('disconnect', reason => {
+    _api.wasDisconnected = true;
+    _api.socketRooms = new Set();     // server dropped them
+    clearInterval(_api.presenceSweeper);
+    console.log('[socket] disconnected:', reason);
+  });
+
+  socket.on('connect_error', async err => {
+    console.warn('[socket] connect_error:', err.message);
+    if (/unauthor|jwt|token/i.test(err.message)) {
+      if (await refreshAuth()) initializeSocket();
+      else performLogoutCleanup();
+    }
+  });
+
+  /* app-level heartbeat to catch half-open connections */
+  clearInterval(socket._hb);
+  socket._hb = setInterval(() => {
+    if (socket?.connected) socket.emit('ping', { t: Date.now() });
+  }, AC.HEARTBEAT_MS);
+}
+
 /* ============================================================
-   ExpertHub 2.0 — 04 Feature Expansion
-   API Reliability & Observability
-   This extension is intentionally isolated from the original
-   implementation. It adds reusable browser-side capabilities,
-   diagnostics, registries, persistence, validation and telemetry.
+   SECTION 13 — LOGOUT CLEANUP (must be total)
    ============================================================ */
 
-(function () {
-  'use strict';
+function performLogoutCleanup() {
+  clearTimeout(_api.refreshTimer);
+  clearInterval(_api.presenceSweeper);
+  cancelAllRoutes();
 
-  const NS = window.EHFeature04;
-  if (NS) return;
+  authToken = null;
+  refreshToken = null;
+  currentUser = null;
+  capabilities = new Set();
 
-  const namespace = {
-    name: "API Reliability & Observability",
-    version: '2.0.0',
-    createdAt: new Date().toISOString(),
-    features: ["request IDs", "request cache", "cache invalidation", "offline queue", "retry policy", "timeout guard", "rate-limit handling", "error normalization", "response envelope normalization", "pagination helper", "upload progress", "download helper", "ETag support", "health monitor", "latency metrics", "endpoint catalog", "request deduplication", "circuit breaker", "websocket reconnect", "event subscription registry", "API diagnostics"],
-    registry: new Map(),
-    listeners: new Map(),
-    metrics: {
-      calls: 0,
-      successes: 0,
-      failures: 0,
-      startedAt: Date.now(),
-      lastActionAt: null
-    },
-    config: {
-      storagePrefix: 'experthub.feature.04.',
-      maxHistory: 80,
-      debounceMs: 250,
-      staleAfterMs: 5 * 60 * 1000,
-      debug: false
-    }
-  };
+  localStorage.removeItem('token');
+  localStorage.removeItem('refresh');
 
-  function now() { return Date.now(); }
+  clearCache();
+  _api.inflight.clear();
+  _api.outbox.length = 0;
+  _api.presence = {};
+  _api.socketRooms = new Set();
 
-  function key(name) {
-    return namespace.config.storagePrefix + String(name);
+  if (socket) { socket.removeAllListeners(); socket.disconnect(); socket = null; }
+
+  if (typeof logout === 'function') logout();
+}
+
+/* ============================================================
+   SECTION 14 — MOCK + CHAOS
+   ============================================================ */
+
+const MOCK_ROUTES = {
+  'GET /api/auth/me': { id: 'u1', name: 'Test User', role: 'admin' },
+  'GET /api/me/permissions': { permissions: ['*'] },
+  'GET /api/notifications': { items: [], next_cursor: null },
+  'GET /api/consultations': { items: [], next_cursor: null },
+  'GET /api/sync': { events: [], cursor: 0 },
+};
+
+function _mockCall(endpoint, method) {
+  const bare = endpoint.split('?')[0];
+  const hit = MOCK_ROUTES[`${method} ${bare}`] ?? MOCK_ROUTES[`${method} ${endpoint}`];
+  return new Promise((resolve, reject) => setTimeout(() => {
+    if (hit !== undefined) resolve(structuredClone(hit));
+    else reject(new ApiError(`No mock for ${method} ${endpoint}`, { status: 404, code: 'MOCK_MISS' }));
+  }, 120 + Math.random() * 200));
+}
+
+async function _applyChaos() {
+  const { failRate = 0, slowRate = 0 } = AC.CHAOS || {};
+  if (slowRate && Math.random() < slowRate) await _sleep(1500 + Math.random() * 2500);
+  if (failRate && Math.random() < failRate) {
+    throw new ApiError('Chaos failure', { status: 503, code: 'SERVER', retryable: true });
   }
+}
 
-  function safeClone(value) {
-    if (value === undefined) return undefined;
-    try { return JSON.parse(JSON.stringify(value)); }
-    catch (_) { return value; }
-  }
+/* ============================================================
+   SECTION 15 — INIT
+   ============================================================ */
 
-  function safeParse(value, fallback = null) {
-    if (value === null || value === undefined || value === '') return fallback;
-    try { return JSON.parse(value); }
-    catch (_) { return fallback; }
-  }
+(function initApi() {
+  if (AC.DEBUG) window.__api = { _api, apiCall, cacheGet, invalidateCache, toggleNetworkInspector };
+  if (authToken) scheduleRefresh();
 
-  function emit(eventName, payload) {
-    const handlers = namespace.listeners.get(eventName) || [];
-    handlers.slice().forEach(fn => {
-      try { fn(payload); } catch (error) { console.error('[ExpertHub]', eventName, error); }
-    });
-    try {
-      document.dispatchEvent(new CustomEvent('eh:04:' + eventName, { detail: payload }));
-    } catch (_) {}
-  }
-
-  function on(eventName, handler) {
-    if (typeof handler !== 'function') return () => {};
-    if (!namespace.listeners.has(eventName)) namespace.listeners.set(eventName, []);
-    namespace.listeners.get(eventName).push(handler);
-    return () => off(eventName, handler);
-  }
-
-  function off(eventName, handler) {
-    const list = namespace.listeners.get(eventName) || [];
-    namespace.listeners.set(eventName, list.filter(fn => fn !== handler));
-  }
-
-  function save(name, value, ttl = null) {
-    const packet = { value: safeClone(value), savedAt: now(), expiresAt: ttl ? now() + ttl : null };
-    try { localStorage.setItem(key(name), JSON.stringify(packet)); emit('saved', { name, packet }); return true; }
-    catch (error) { console.warn('[ExpertHub] storage save failed', error); return false; }
-  }
-
-  function load(name, fallback = null) {
-    try {
-      const packet = safeParse(localStorage.getItem(key(name)), null);
-      if (!packet) return fallback;
-      if (packet.expiresAt && packet.expiresAt < now()) {
-        localStorage.removeItem(key(name));
-        return fallback;
-      }
-      return packet.value;
-    } catch (_) { return fallback; }
-  }
-
-  function remove(name) {
-    try { localStorage.removeItem(key(name)); emit('removed', { name }); return true; }
-    catch (_) { return false; }
-  }
-
-  function register(name, definition = {}) {
-    if (!name) throw new Error('Feature name is required');
-    const item = {
-      name,
-      enabled: definition.enabled !== false,
-      category: definition.category || 'general',
-      description: definition.description || '',
-      permissions: Array.isArray(definition.permissions) ? definition.permissions : [],
-      handler: typeof definition.handler === 'function' ? definition.handler : null,
-      validate: typeof definition.validate === 'function' ? definition.validate : null,
-      metadata: definition.metadata || {},
-      createdAt: new Date().toISOString()
-    };
-    namespace.registry.set(name, item);
-    emit('registered', item);
-    return item;
-  }
-
-  function unregister(name) {
-    const existed = namespace.registry.delete(name);
-    if (existed) emit('unregistered', { name });
-    return existed;
-  }
-
-  function list(filter = {}) {
-    let rows = Array.from(namespace.registry.values());
-    if (filter.category) rows = rows.filter(x => x.category === filter.category);
-    if (filter.enabled !== undefined) rows = rows.filter(x => x.enabled === filter.enabled);
-    if (filter.query) {
-      const q = String(filter.query).toLowerCase();
-      rows = rows.filter(x => (x.name + ' ' + x.description).toLowerCase().includes(q));
-    }
-    return rows;
-  }
-
-  function hasPermission(item) {
-    if (!item.permissions.length) return true;
-    const role = window.currentUserRole || window.currentUser?.role || '';
-    const permissions = window.currentUser?.permissions || [];
-    return item.permissions.includes(role) || item.permissions.some(p => permissions.includes(p));
-  }
-
-  async function execute(name, payload = {}, context = {}) {
-    const item = namespace.registry.get(name);
-    if (!item) throw new Error('Unknown feature: ' + name);
-    if (!item.enabled) throw new Error('Feature disabled: ' + name);
-    if (!hasPermission(item)) throw new Error('Permission denied: ' + name);
-    if (item.validate) {
-      const result = await item.validate(payload, context);
-      if (result === false) throw new Error('Validation failed: ' + name);
-      if (typeof result === 'string') throw new Error(result);
-    }
-    namespace.metrics.calls++;
-    namespace.metrics.lastActionAt = new Date().toISOString();
-    try {
-      const result = item.handler ? await item.handler(payload, context) : payload;
-      namespace.metrics.successes++;
-      emit('executed', { name, payload, result });
-      return result;
-    } catch (error) {
-      namespace.metrics.failures++;
-      emit('failed', { name, payload, error });
-      throw error;
-    }
-  }
-
-  function memoize(fn, ttl = 30000) {
-    let timestamp = 0;
-    let cached;
-    let cachedArgs = '';
-    return function (...args) {
-      const signature = JSON.stringify(args);
-      if (signature === cachedArgs && now() - timestamp < ttl) return cached;
-      cachedArgs = signature;
-      timestamp = now();
-      cached = fn.apply(this, args);
-      return cached;
-    };
-  }
-
-  function debounce(fn, wait = namespace.config.debounceMs) {
-    let timer = null;
-    return function (...args) {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn.apply(this, args), wait);
-    };
-  }
-
-  function throttle(fn, wait = namespace.config.debounceMs) {
-    let ready = true;
-    let queued = null;
-    return function (...args) {
-      if (!ready) { queued = args; return; }
-      ready = false;
-      fn.apply(this, args);
-      setTimeout(() => {
-        ready = true;
-        if (queued) { const next = queued; queued = null; fn.apply(this, next); }
-      }, wait);
-    };
-  }
-
-  function validateObject(value, rules = {}) {
-    const errors = {};
-    Object.entries(rules).forEach(([field, rule]) => {
-      const v = value?.[field];
-      if (rule.required && (v === undefined || v === null || String(v).trim() === '')) errors[field] = 'Required';
-      if (v !== undefined && v !== null && rule.minLength && String(v).length < rule.minLength) errors[field] = 'Too short';
-      if (v !== undefined && v !== null && rule.maxLength && String(v).length > rule.maxLength) errors[field] = 'Too long';
-      if (v && rule.pattern && !rule.pattern.test(String(v))) errors[field] = 'Invalid format';
-      if (v !== undefined && v !== null && rule.type === 'number' && Number.isNaN(Number(v))) errors[field] = 'Must be a number';
-    });
-    return { valid: Object.keys(errors).length === 0, errors };
-  }
-
-  function metricSnapshot() {
-    return {
-      ...namespace.metrics,
-      uptimeMs: now() - namespace.metrics.startedAt,
-      registeredFeatures: namespace.registry.size,
-      featureCount: namespace.features.length
-    };
-  }
-
-  function exportDiagnostics() {
-    return {
-      namespace: namespace.name,
-      version: namespace.version,
-      features: namespace.features.slice(),
-      registered: list().map(x => ({ name: x.name, category: x.category, enabled: x.enabled })),
-      metrics: metricSnapshot(),
-      url: location.href,
-      online: navigator.onLine,
-      language: navigator.language,
-      timestamp: new Date().toISOString()
-    };
-  }
-
-  function downloadDiagnostics() {
-    const blob = new Blob([JSON.stringify(exportDiagnostics(), null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'experthub-04-diagnostics.json';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 500);
-  }
-
-  namespace.on = on;
-  namespace.off = off;
-  namespace.emit = emit;
-  namespace.save = save;
-  namespace.load = load;
-  namespace.remove = remove;
-  namespace.register = register;
-  namespace.unregister = unregister;
-  namespace.list = list;
-  namespace.execute = execute;
-  namespace.memoize = memoize;
-  namespace.debounce = debounce;
-  namespace.throttle = throttle;
-  namespace.validateObject = validateObject;
-  namespace.metrics = metricSnapshot;
-  namespace.diagnostics = exportDiagnostics;
-  namespace.downloadDiagnostics = downloadDiagnostics;
-
-  window.EHFeature04 = namespace;
-
-  function feature_01(payload = {}, context = {}) {
-    const result = {
-      feature: "request IDs",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:01', result);
-    return result;
-  }
-
-  register("request IDs", {
-    category: "request",
-    description: "Enhanced request IDs capability for api reliability & observability",
-    handler: feature_01
+  window.addEventListener('online', () => {
+    _flushOutbox();
+    if (socket && !socket.connected) socket.connect();
   });
-
-  function feature_02(payload = {}, context = {}) {
-    const result = {
-      feature: "request cache",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:02', result);
-    return result;
-  }
-
-  register("request cache", {
-    category: "request",
-    description: "Enhanced request cache capability for api reliability & observability",
-    handler: feature_02
+  window.addEventListener('offline', () => {
+    if (typeof showToast === 'function') showToast("You're offline", 'warning');
   });
-
-  function feature_03(payload = {}, context = {}) {
-    const result = {
-      feature: "cache invalidation",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:03', result);
-    return result;
-  }
-
-  register("cache invalidation", {
-    category: "cache",
-    description: "Enhanced cache invalidation capability for api reliability & observability",
-    handler: feature_03
-  });
-
-  function feature_04(payload = {}, context = {}) {
-    const result = {
-      feature: "offline queue",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:04', result);
-    return result;
-  }
-
-  register("offline queue", {
-    category: "offline",
-    description: "Enhanced offline queue capability for api reliability & observability",
-    handler: feature_04
-  });
-
-  function feature_05(payload = {}, context = {}) {
-    const result = {
-      feature: "retry policy",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:05', result);
-    return result;
-  }
-
-  register("retry policy", {
-    category: "retry",
-    description: "Enhanced retry policy capability for api reliability & observability",
-    handler: feature_05
-  });
-
-  function feature_06(payload = {}, context = {}) {
-    const result = {
-      feature: "timeout guard",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:06', result);
-    return result;
-  }
-
-  register("timeout guard", {
-    category: "timeout",
-    description: "Enhanced timeout guard capability for api reliability & observability",
-    handler: feature_06
-  });
-
-  function feature_07(payload = {}, context = {}) {
-    const result = {
-      feature: "rate-limit handling",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:07', result);
-    return result;
-  }
-
-  register("rate-limit handling", {
-    category: "rate_limit",
-    description: "Enhanced rate-limit handling capability for api reliability & observability",
-    handler: feature_07
-  });
-
-  function feature_08(payload = {}, context = {}) {
-    const result = {
-      feature: "error normalization",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:08', result);
-    return result;
-  }
-
-  register("error normalization", {
-    category: "error",
-    description: "Enhanced error normalization capability for api reliability & observability",
-    handler: feature_08
-  });
-
-  function feature_09(payload = {}, context = {}) {
-    const result = {
-      feature: "response envelope normalization",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:09', result);
-    return result;
-  }
-
-  register("response envelope normalization", {
-    category: "response",
-    description: "Enhanced response envelope normalization capability for api reliability & observability",
-    handler: feature_09
-  });
-
-  function feature_10(payload = {}, context = {}) {
-    const result = {
-      feature: "pagination helper",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:10', result);
-    return result;
-  }
-
-  register("pagination helper", {
-    category: "pagination",
-    description: "Enhanced pagination helper capability for api reliability & observability",
-    handler: feature_10
-  });
-
-  function feature_11(payload = {}, context = {}) {
-    const result = {
-      feature: "upload progress",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:11', result);
-    return result;
-  }
-
-  register("upload progress", {
-    category: "upload",
-    description: "Enhanced upload progress capability for api reliability & observability",
-    handler: feature_11
-  });
-
-  function feature_12(payload = {}, context = {}) {
-    const result = {
-      feature: "download helper",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:12', result);
-    return result;
-  }
-
-  register("download helper", {
-    category: "download",
-    description: "Enhanced download helper capability for api reliability & observability",
-    handler: feature_12
-  });
-
-  function feature_13(payload = {}, context = {}) {
-    const result = {
-      feature: "ETag support",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:13', result);
-    return result;
-  }
-
-  register("ETag support", {
-    category: "etag",
-    description: "Enhanced ETag support capability for api reliability & observability",
-    handler: feature_13
-  });
-
-  function feature_14(payload = {}, context = {}) {
-    const result = {
-      feature: "health monitor",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:14', result);
-    return result;
-  }
-
-  register("health monitor", {
-    category: "health",
-    description: "Enhanced health monitor capability for api reliability & observability",
-    handler: feature_14
-  });
-
-  function feature_15(payload = {}, context = {}) {
-    const result = {
-      feature: "latency metrics",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:15', result);
-    return result;
-  }
-
-  register("latency metrics", {
-    category: "latency",
-    description: "Enhanced latency metrics capability for api reliability & observability",
-    handler: feature_15
-  });
-
-  function feature_16(payload = {}, context = {}) {
-    const result = {
-      feature: "endpoint catalog",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:16', result);
-    return result;
-  }
-
-  register("endpoint catalog", {
-    category: "endpoint",
-    description: "Enhanced endpoint catalog capability for api reliability & observability",
-    handler: feature_16
-  });
-
-  function feature_17(payload = {}, context = {}) {
-    const result = {
-      feature: "request deduplication",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:17', result);
-    return result;
-  }
-
-  register("request deduplication", {
-    category: "request",
-    description: "Enhanced request deduplication capability for api reliability & observability",
-    handler: feature_17
-  });
-
-  function feature_18(payload = {}, context = {}) {
-    const result = {
-      feature: "circuit breaker",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:18', result);
-    return result;
-  }
-
-  register("circuit breaker", {
-    category: "circuit",
-    description: "Enhanced circuit breaker capability for api reliability & observability",
-    handler: feature_18
-  });
-
-  function feature_19(payload = {}, context = {}) {
-    const result = {
-      feature: "websocket reconnect",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:19', result);
-    return result;
-  }
-
-  register("websocket reconnect", {
-    category: "websocket",
-    description: "Enhanced websocket reconnect capability for api reliability & observability",
-    handler: feature_19
-  });
-
-  function feature_20(payload = {}, context = {}) {
-    const result = {
-      feature: "event subscription registry",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:20', result);
-    return result;
-  }
-
-  register("event subscription registry", {
-    category: "event",
-    description: "Enhanced event subscription registry capability for api reliability & observability",
-    handler: feature_20
-  });
-
-  function feature_21(payload = {}, context = {}) {
-    const result = {
-      feature: "API diagnostics",
-      accepted: true,
-      timestamp: new Date().toISOString(),
-      payload: safeClone(payload),
-      context: safeClone(context),
-      source: "04"
-    };
-    emit('feature:21', result);
-    return result;
-  }
-
-  register("API diagnostics", {
-    category: "api",
-    description: "Enhanced API diagnostics capability for api reliability & observability",
-    handler: feature_21
-  });
-
-  /* ---------- Built-in browser integrations ---------- */
-
-  namespace.search = function (query, source = list()) {
-    const q = String(query || '').trim().toLowerCase();
-    if (!q) return source.slice();
-    return source.filter(item =>
-      JSON.stringify(item).toLowerCase().includes(q)
-    );
-  };
-
-  namespace.groupBy = function (items, selector) {
-    return items.reduce((groups, item) => {
-      const value = typeof selector === 'function' ? selector(item) : item?.[selector];
-      const key = value === undefined || value === null ? 'unknown' : String(value);
-      (groups[key] ||= []).push(item);
-      return groups;
-    }, {});
-  };
-
-  namespace.sum = function (items, selector) {
-    return items.reduce((total, item) => {
-      const value = typeof selector === 'function' ? selector(item) : item?.[selector];
-      return total + (Number(value) || 0);
-    }, 0);
-  };
-
-  namespace.average = function (items, selector) {
-    return items.length ? namespace.sum(items, selector) / items.length : 0;
-  };
-
-  namespace.paginate = function (items, page = 1, pageSize = 20) {
-    const size = Math.max(1, Number(pageSize) || 20);
-    const current = Math.max(1, Number(page) || 1);
-    const total = items.length;
-    const pages = Math.max(1, Math.ceil(total / size));
-    const safePage = Math.min(current, pages);
-    return {
-      items: items.slice((safePage - 1) * size, safePage * size),
-      page: safePage,
-      pageSize: size,
-      total,
-      pages,
-      hasNext: safePage < pages,
-      hasPrevious: safePage > 1
-    };
-  };
-
-  namespace.sortBy = function (items, selector, direction = 'asc') {
-    const list = items.slice();
-    list.sort((a, b) => {
-      const av = typeof selector === 'function' ? selector(a) : a?.[selector];
-      const bv = typeof selector === 'function' ? selector(b) : b?.[selector];
-      const left = av ?? '';
-      const right = bv ?? '';
-      const result = left > right ? 1 : left < right ? -1 : 0;
-      return direction === 'desc' ? -result : result;
-    });
-    return list;
-  };
-
-  namespace.unique = function (items, selector = item => item) {
-    const seen = new Set();
-    return items.filter(item => {
-      const value = typeof selector === 'function' ? selector(item) : item?.[selector];
-      const keyValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
-      if (seen.has(keyValue)) return false;
-      seen.add(keyValue);
-      return true;
-    });
-  };
-
-  namespace.whenIdle = function (callback, timeout = 1000) {
-    if ('requestIdleCallback' in window) return window.requestIdleCallback(callback, { timeout });
-    return setTimeout(callback, Math.min(timeout, 100));
-  };
-
-  namespace.copy = async function (value) {
-    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.appendChild(area);
-    area.select();
-    const ok = document.execCommand('copy');
-    area.remove();
-    return ok;
-  };
-
-  namespace.broadcast = function (name, payload) {
-    try {
-      const channel = new BroadcastChannel('experthub-' + name);
-      channel.postMessage(payload);
-      channel.close();
-      return true;
-    } catch (_) {
-      return false;
-    }
-  };
-
-  namespace.listenBroadcast = function (name, handler) {
-    try {
-      const channel = new BroadcastChannel('experthub-' + name);
-      channel.onmessage = event => handler(event.data);
-      return () => channel.close();
-    } catch (_) {
-      return () => {};
-    }
-  };
-
-  /* ---------- Automatic lifecycle hooks ---------- */
-
-  document.addEventListener('visibilitychange', () => {
-    emit('visibility', { hidden: document.hidden, timestamp: Date.now() });
-  });
-
-  window.addEventListener('online', () => emit('network', { online: true }));
-  window.addEventListener('offline', () => emit('network', { online: false }));
-
-  namespace.healthCheck = function () {
-    return {
-      ok: true,
-      storage: (() => {
-        try {
-          const k = key('health');
-          localStorage.setItem(k, 'ok');
-          localStorage.removeItem(k);
-          return true;
-        } catch (_) { return false; }
-      })(),
-      dom: !!document.body,
-      network: navigator.onLine,
-      registeredFeatures: namespace.registry.size
-    };
-  };
-
-  /* Keep the feature registry discoverable without changing the
-     application's existing global functions. */
-  window.ExpertHubFeatureRegistry = window.ExpertHubFeatureRegistry || {};
-  window.ExpertHubFeatureRegistry["04"] = namespace;
-
 })();
-
-/* ============================================================
-   End 04 feature expansion
-   ============================================================ */
