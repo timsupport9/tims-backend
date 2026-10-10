@@ -1174,20 +1174,3 @@ function fmtClock(totalSeconds) {
   const sec = s % 60;
   return (h ? `${pad(h)}:` : '') + `${pad(m)}:${pad(sec)}`;
 }
-/* Global image fallback — swap broken images with a placeholder */
-document.addEventListener('error', function (e) {
-  var el = e.target;
-  if (!(el instanceof HTMLImageElement)) return;
-  if (el.dataset.fallbackApplied) return;
-  el.dataset.fallbackApplied = '1';
-  el.src = 'https://ui-avatars.com/api/?name=' +
-           encodeURIComponent(el.alt || 'ExpertHub') +
-           '&background=6366f1&color=fff&size=256';
-}, true);
-
-/* Dispatch ready event after first render (hook into your router) */
-window.addEventListener('DOMContentLoaded', function () {
-  setTimeout(function () {
-    window.dispatchEvent(new Event('experthub:ready'));
-  }, 0);
-});
