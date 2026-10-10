@@ -2468,7 +2468,553 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline:2px so
 @media (min-resolution: 2dppx) {
   .hero-card, .panel, .stat-card { border-width:.5px; }
 }
+/* ============================================================
+   25. IMAGERY SYSTEM
+   ------------------------------------------------------------
+   Wrap any <img> in .img-frame for consistent ratio + crop.
+   Requires markup: <div class="img-frame ratio-card"><img ...></div>
+   ============================================================ */
+.img-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--img-radius, var(--radius));
+  background: var(--surface-2);
+  isolation: isolate;
+}
+.img-frame > img,
+.img-frame > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.img-frame.ratio-card   { aspect-ratio: 16 / 10; }
+.img-frame.ratio-thumb  { aspect-ratio: 4 / 3; }
+.img-frame.ratio-banner { aspect-ratio: 21 / 9; }
+.img-frame.ratio-hero   { aspect-ratio: 16 / 9; }
+.img-frame.ratio-avatar { aspect-ratio: 1 / 1; border-radius: 50%; }
+.img-frame.ratio-square { aspect-ratio: 1 / 1; }
 
+.img-frame.caption::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(15, 23, 42, .72));
+  pointer-events: none;
+  z-index: 1;
+}
+.img-frame .img-label {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  right: 14px;
+  color: #fff;
+  font-weight: var(--fw-bold);
+  font-size: .95rem;
+  z-index: 2;
+  line-height: 1.3;
+}
+.img-frame .img-tag {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .92);
+  color: var(--text);
+  font-size: .72rem;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  box-shadow: var(--shadow-sm);
+}
+.img-frame .img-tag.brand  { background: var(--brand); color: #fff; }
+.img-frame .img-tag.success{ background: var(--accent); color: #fff; }
+.img-frame .img-tag.danger { background: var(--danger); color: #fff; }
+
+.img-frame.zoom > img { transition: transform var(--t-slow); }
+.img-frame.zoom:hover > img { transform: scale(1.06); }
+
+/* Media utility layer (short ratios) */
+.ratio-1x1  { aspect-ratio: 1 / 1; }
+.ratio-4x3  { aspect-ratio: 4 / 3; }
+.ratio-16x9 { aspect-ratio: 16 / 9; }
+.ratio-21x9 { aspect-ratio: 21 / 9; }
+.object-cover   { object-fit: cover; }
+.object-contain { object-fit: contain; }
+
+/* ============================================================
+   26. MEDIA GRID & TILES
+   ============================================================ */
+.media-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+.media-tile {
+  position: relative;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+  aspect-ratio: 4 / 3;
+}
+.media-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--t-slow);
+}
+.media-tile:hover img { transform: scale(1.06); }
+.media-tile .media-label {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 24px 12px 10px;
+  color: #fff;
+  font-size: .82rem;
+  font-weight: var(--fw-semibold);
+  background: linear-gradient(180deg, transparent, rgba(15,23,42,.75));
+}
+
+/* ============================================================
+   27. ATMOSPHERE & BACKGROUNDS
+   ============================================================ */
+.bg-dots {
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.bg-grid {
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.bg-grid-faint { position: relative; }
+.bg-grid-faint::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 34px 34px;
+  opacity: .35;
+  pointer-events: none;
+  mask-image: radial-gradient(60% 60% at 50% 40%, #000, transparent);
+}
+
+/* Aurora blobs */
+.bg-aurora { position: relative; overflow: hidden; }
+.bg-aurora::before,
+.bg-aurora::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: .55;
+  pointer-events: none;
+  z-index: 0;
+}
+.bg-aurora::before {
+  width: 520px; height: 520px;
+  top: -180px; left: -120px;
+  background: radial-gradient(circle, #6366f1, transparent 70%);
+}
+.bg-aurora::after {
+  width: 460px; height: 460px;
+  bottom: -160px; right: -140px;
+  background: radial-gradient(circle, #10b981, transparent 70%);
+}
+.bg-aurora > * { position: relative; z-index: 1; }
+.bg-aurora.soft::before,
+.bg-aurora.soft::after { opacity: .28; }
+.bg-aurora.violet::after {
+  background: radial-gradient(circle, #8b5cf6, transparent 70%);
+}
+
+/* Noise overlay */
+.bg-noise { position: relative; }
+.bg-noise::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Section wave divider */
+.section-wave {
+  display: block;
+  width: 100%;
+  height: 60px;
+  color: var(--surface);
+  margin-top: -1px;
+}
+
+/* ============================================================
+   28. BENTO GRID (landing features, dashboards)
+   ============================================================ */
+.bento {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 190px;
+}
+.bento-item {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  padding: 26px;
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  transition: transform var(--t), box-shadow var(--t), border-color var(--t);
+}
+.bento-item:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--brand-200);
+}
+.bento-item.span-2      { grid-column: span 2; }
+.bento-item.span-2-row  { grid-row: span 2; }
+.bento-item.hero-cell {
+  background: var(--grad-brand);
+  color: #fff;
+  border-color: transparent;
+  grid-column: span 2;
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+.bento-item.hero-cell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(500px 300px at 90% 0%, rgba(255,255,255,.22), transparent 70%);
+  pointer-events: none;
+}
+.bento-item.hero-cell h3 { color: #fff; font-size: 1.6rem; }
+.bento-item.hero-cell p  { color: rgba(255,255,255,.85); }
+.bento-item.media-cell   { padding: 0; }
+.bento-item.media-cell .bento-body {
+  padding: 20px;
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 900px) {
+  .bento { grid-template-columns: 1fr 1fr; }
+  .bento-item.hero-cell { grid-column: span 2; grid-row: auto; }
+}
+@media (max-width: 640px) {
+  .bento { grid-template-columns: 1fr; }
+  .bento-item,
+  .bento-item.span-2,
+  .bento-item.span-2-row,
+  .bento-item.hero-cell { grid-column: auto; grid-row: auto; }
+}
+
+/* ============================================================
+   29. STICKY FILTER BAR
+   ============================================================ */
+.filter-bar {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: var(--z-sticky);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+  margin-bottom: 20px;
+}
+.filter-bar-inner {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.filter-bar .chip-filter {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: .85rem;
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: all var(--t);
+}
+.filter-bar .chip-filter:hover { border-color: var(--brand); color: var(--brand); }
+.filter-bar .chip-filter.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+/* ============================================================
+   30. MASONRY (blog / resources)
+   ============================================================ */
+.masonry { columns: 3 280px; column-gap: 18px; }
+.masonry > * { break-inside: avoid; margin-bottom: 18px; }
+@media (max-width: 640px) { .masonry { columns: 1; } }
+
+/* ============================================================
+   31. NEW BUTTON VARIANTS
+   ============================================================ */
+.btn-glass {
+  background: rgba(255, 255, 255, .14);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.btn-glass:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .24);
+  color: #fff;
+  transform: translateY(-1px);
+}
+html.dark .btn-glass {
+  background: rgba(255, 255, 255, .08);
+  border-color: rgba(255, 255, 255, .18);
+}
+
+.btn-gradient {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, .35);
+}
+.btn-gradient:hover:not(:disabled) {
+  box-shadow: 0 12px 32px rgba(99, 102, 241, .45);
+  transform: translateY(-1px);
+  color: #fff;
+}
+
+/* Icon button size parity */
+.btn-icon.btn-sm { padding: 8px; }
+.btn-icon.btn-lg { padding: 14px; }
+.btn-icon.btn-xl { padding: 18px; }
+
+/* ============================================================
+   32. CARD MEDIA VARIANTS
+   ============================================================ */
+/* Course / program cards with a top image */
+.program-card.media,
+.course-card.media {
+  padding: 0;
+  overflow: hidden;
+}
+.program-card.media .program-body,
+.course-card.media .course-body {
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+.program-card.media .img-frame,
+.course-card.media .img-frame { border-radius: 0; }
+.program-card.media .program-desc,
+.course-card.media .course-desc { flex: 1; }
+
+/* Ribbon (bestseller / new) */
+.card-ribbon {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #fff;
+  font-size: .72rem;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  box-shadow: var(--shadow);
+}
+.card-ribbon.new { background: var(--accent); }
+.card-ribbon.brand { background: var(--brand); }
+.card-ribbon.danger { background: var(--danger); }
+
+/* Expert card row variant (list view) */
+.expert-card.row {
+  flex-direction: row;
+  text-align: left;
+  align-items: center;
+  gap: 16px;
+}
+.expert-card.row .expert-avatar {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+.expert-card.row .expert-body { flex: 1; min-width: 0; }
+.expert-card.row .expert-rate { margin-left: auto; text-align: right; }
+
+/* ============================================================
+   33. PAGE-SPECIFIC IMAGERY (with real image URLs)
+   ============================================================ */
+
+/* Landing hero — photo-backed variant */
+.hero.has-photo {
+  position: relative;
+  background:
+    linear-gradient(120deg, rgba(15, 23, 42, .72), rgba(15, 23, 42, .35)),
+    url('https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1800&q=80')
+    center/cover no-repeat;
+  color: #fff;
+  border-radius: var(--radius-xl);
+  margin: 20px 6vw 60px;
+  padding: 70px 6vw;
+  overflow: hidden;
+}
+.hero.has-photo .hero-title,
+.hero.has-photo .hero-subtitle,
+.hero.has-photo .hero-stat-value,
+.hero.has-photo .hero-stat-label,
+.hero.has-photo .hero-trust { color: #fff; }
+.hero.has-photo .hero-subtitle { color: rgba(255, 255, 255, .85); }
+.hero.has-photo .hero-badge {
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .25);
+}
+.hero.has-photo .hero-title-accent {
+  background: linear-gradient(135deg, #c7d2fe, #a7f3d0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Auth aside — photo-backed */
+.auth-aside.with-photo {
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, .9), rgba(139, 92, 246, .88)),
+    url('https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=1400&q=80')
+    center/cover no-repeat;
+}
+
+/* CTA band — photo-backed */
+.cta-band.with-photo {
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, .9), rgba(139, 92, 246, .85)),
+    url('https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1600&q=80')
+    center/cover no-repeat;
+}
+
+/* Testimonial author avatar (auto fallback via pravatar) */
+.testimonial-avatar {
+  background: var(--surface-3);
+  background-image: url('https://i.pravatar.cc/96?u=expert-hub-default');
+  background-size: cover;
+  background-position: center;
+}
+
+/* Landing logo strip — visual upgrade */
+.logo-item img {
+  height: 26px;
+  width: auto;
+  opacity: .55;
+  filter: grayscale(1);
+  transition: opacity var(--t), filter var(--t);
+}
+.logo-item:hover img { opacity: 1; filter: grayscale(0); }
+
+/* ============================================================
+   34. IMAGE PLACEHOLDERS (deterministic demo imagery)
+   ------------------------------------------------------------
+   Use these classes on .img-frame or .avatar when you don't
+   have real assets yet. Each seed produces a stable image.
+   ============================================================ */
+.ph-course    { background-image: url('https://picsum.photos/seed/ehub-course/800/500'); background-size: cover; background-position: center; }
+.ph-expert    { background-image: url('https://picsum.photos/seed/ehub-expert/400/400'); background-size: cover; background-position: center; }
+.ph-event     { background-image: url('https://picsum.photos/seed/ehub-event/1200/500'); background-size: cover; background-position: center; }
+.ph-resource  { background-image: url('https://picsum.photos/seed/ehub-resource/800/600'); background-size: cover; background-position: center; }
+.ph-company   { background-image: url('https://picsum.photos/seed/ehub-company/600/400'); background-size: cover; background-position: center; }
+.ph-hero      { background-image: url('https://picsum.photos/seed/ehub-hero/1600/900'); background-size: cover; background-position: center; }
+
+/* Avatar with initials fallback (ui-avatars) */
+.avatar-fallback {
+  background-color: var(--brand);
+  background-image: url('https://ui-avatars.com/api/?name=Expert+Hub&background=6366f1&color=fff&bold=true&size=128');
+  background-size: cover;
+  background-position: center;
+}
+
+/* ============================================================
+   35. TEAM, TESTIMONIAL & LOGO EXTRAS
+   ============================================================ */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 22px;
+}
+.team-card {
+  text-align: center;
+  padding: 20px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: transform var(--t), box-shadow var(--t);
+}
+.team-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+.team-card .img-frame {
+  width: 110px;
+  height: 110px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  box-shadow: var(--shadow);
+}
+.team-name { font-weight: var(--fw-bold); margin: 0 0 2px; }
+.team-role { color: var(--text-muted); font-size: .85rem; margin: 0 0 10px; }
+.team-social { display: flex; justify-content: center; gap: 8px; }
+.team-social a {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  transition: all var(--t);
+}
+.team-social a:hover { background: var(--brand); color: #fff; transform: translateY(-2px); }
+
+/* Stat band with big numbers on gradient */
+.stat-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 24px;
+  padding: 44px 30px;
+  border-radius: var(--radius-xl);
+  background: var(--grad-brand);
+  color: #fff;
+  margin: 40px 0;
+  position: relative;
+  overflow: hidden;
+}
+.stat-band::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(600px 300px at 90% 0%, rgba(255, 255, 255, .18), transparent 70%);
+  pointer-events: none;
+}
+.stat-band > * { position: relative; z-index: 1; text-align: center; }
+.stat-band-value { font-size: 2.4rem; font-weight: var(--fw-extrabold); letter-spacing: -.02em; }
+.stat-band-label { color: rgba(255, 255, 255, .8); font-size: .9rem; margin-top: 4px; }
+
+/* ============================================================
+   36. DARK MODE IMAGE TWEAKS
+   ============================================================ */
+html.dark .img-frame > img { filter: brightness(.92) contrast(1.02); }
+html.dark .img-frame.caption::after {
+  background: linear-gradient(180deg, transparent 35%, rgba(0, 0, 0, .82));
+}
+html.dark .logo-item img { opacity: .45; }
+html.dark .logo-item:hover img { opacity: 1; }
 /* ============================================================
    END OF STYLESHEET
    ============================================================ */
