@@ -4,37 +4,102 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6366f1" />
-  <meta name="description" content="ExpertHub 2.0 — E-School, 1-on-1 expert consultations, and corporate training in one platform." />
   <meta name="color-scheme" content="light dark" />
+
+  <!-- ============================================================
+       PRIMARY SEO
+       ============================================================ -->
   <title>ExpertHub 2.0 | E-School &amp; Consultation Platform</title>
+  <meta name="description"
+        content="ExpertHub 2.0 — E-School, 1-on-1 expert consultations, and corporate training in one platform. Learn from 850+ verified experts across 42 countries." />
+  <meta name="keywords"
+        content="e-learning, online courses, expert consultation, corporate training, 1-on-1 mentoring, ExpertHub" />
+  <meta name="author" content="ExpertHub" />
+  <link rel="canonical" href="https://experthub.example.com/" />
 
-  <!-- Favicon (inline SVG) -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
-  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+  <!-- ============================================================
+       OPEN GRAPH / TWITTER
+       ============================================================ -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="ExpertHub 2.0" />
+  <meta property="og:title" content="ExpertHub 2.0 — Learn, Consult, and Train in One Place" />
+  <meta property="og:description"
+        content="E-School, 1-on-1 expert consultations, and corporate training — unified in one platform." />
+  <meta property="og:image" content="https://picsum.photos/seed/ehub-og/1200/630" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="ExpertHub 2.0 — Learn, Consult, Train" />
+  <meta property="og:url" content="https://experthub.example.com/" />
+  <meta property="og:locale" content="en_US" />
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@experthub" />
+  <meta name="twitter:title" content="ExpertHub 2.0" />
+  <meta name="twitter:description" content="Learn, consult, and train — all in one place." />
+  <meta name="twitter:image" content="https://picsum.photos/seed/ehub-og/1200/630" />
+  <meta name="twitter:image:alt" content="ExpertHub 2.0 preview" />
 
-  <!-- Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- ============================================================
+       FAVICON (inline SVG — no emoji, renders everywhere)
+       ============================================================ -->
+  <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 40V22h10.5c5 0 8.2 3 8.2 7.7 0 4.7-3.2 7.8-8.2 7.8H23v2.5H18Zm5-8h5c2.3 0 3.7-1.4 3.7-3.5 0-2-1.4-3.4-3.7-3.4h-5V32Z' fill='white'/%3E%3Ccircle cx='43' cy='42' r='4' fill='white'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236366f1'/%3E%3Ctext x='32' y='42' font-family='Arial' font-size='34' font-weight='700' fill='white' text-anchor='middle'%3EE%3C/text%3E%3C/svg%3E" />
+  <link rel="mask-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236366f1'/%3E%3C/svg%3E" color="#6366f1" />
 
-  <!-- Chart.js (used by renderCharts and renderInstitutionCharts) -->
+  <!-- ============================================================
+       PRECONNECTS & DNS PREFETCH
+       ============================================================ -->
+  <link rel="preconnect" href="https://images.unsplash.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
+  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+  <link rel="dns-prefetch" href="https://picsum.photos" />
+  <link rel="dns-prefetch" href="https://i.pravatar.cc" />
+  <link rel="dns-prefetch" href="https://ui-avatars.com" />
+
+  <!-- ============================================================
+       PRELOAD LCP HERO IMAGE
+       ============================================================ -->
+  <link rel="preload" as="image"
+        href="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1800&q=80"
+        fetchpriority="high" />
+
+  <!-- ============================================================
+       FONTS
+       ============================================================ -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet" />
+
+  <!-- ============================================================
+       ICONS
+       ============================================================ -->
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <!-- ============================================================
+       CHART.JS (deferred — used by renderCharts / renderInstitutionCharts)
+       ============================================================ -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 
-  <!--
-    Socket.IO client.
-    MUST load before /js/04-api.js runs initializeSocket().
-    Do NOT add `defer` — server.js serves this synchronously and
-    the split files below depend on `io` being defined globally.
-  -->
+  <!-- ============================================================
+       SOCKET.IO CLIENT
+       ------------------------------------------------------------
+       MUST load before /js/04-api.js runs initializeSocket().
+       Do NOT add `defer` — the split files depend on `io` globally.
+       ============================================================ -->
   <script src="/socket.io/socket.io.js"></script>
 
-  <!-- App styles -->
+  <!-- ============================================================
+       APP STYLES
+       ============================================================ -->
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- Avoid flash of unstyled theme: apply saved dark mode before paint -->
+  <!-- ============================================================
+       THEME — avoid flash of unstyled dark mode before paint
+       ============================================================ -->
   <script>
     (function () {
       try {
@@ -43,66 +108,138 @@
       } catch (_) {}
     })();
   </script>
+
+  <!-- ============================================================
+       STRUCTURED DATA (JSON-LD) — helps rich results
+       ============================================================ -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "EducationalOrganization",
+    "name": "ExpertHub 2.0",
+    "url": "https://experthub.example.com/",
+    "logo": "https://experthub.example.com/assets/logo.svg",
+    "description": "E-School, 1-on-1 expert consultations, and corporate training in one platform.",
+    "sameAs": [
+      "https://twitter.com/experthub",
+      "https://www.linkedin.com/company/experthub"
+    ]
+  }
+  </script>
 </head>
 
 <body>
-  <!-- SPA mount points -->
+  <!-- ============================================================
+       ACCESSIBILITY — skip link + live region
+       ============================================================ -->
+  <a href="#app-root" class="skip-link">Skip to main content</a>
+
+  <div id="sr-announcer"
+       class="sr-only"
+       role="status"
+       aria-live="polite"
+       aria-atomic="true"></div>
+
+  <!-- ============================================================
+       SPA MOUNT POINTS
+       ============================================================ -->
   <div id="app-root"></div>
-  <div id="toast-container"></div>
+  <div id="toast-container" role="region" aria-label="Notifications"></div>
   <div id="modal-root"></div>
 
-<script src="js/01-state.js"></script>
-<script src="js/02-utils.js"></script>
-<script src="js/03-ui.js"></script>
-<script src="js/04-api.js"></script>
-<script src="js/05-auth.js"></script>
-<script src="js/06-data.js"></script>
+  <!-- ============================================================
+       BOOT LOADER — removed on first render (or after 4s safety net)
+       ============================================================ -->
+  <div id="boot-loader" class="loading-overlay" aria-hidden="true">
+    <div class="spinner" role="status" aria-label="Loading ExpertHub"></div>
+  </div>
 
-<!-- ============================================================
-     js/public/ — public front door
-     Replaces the original single js/07-landing.js.
-     Load order inside this block matters:
-       components/format.js   must be first (defines PublicUI.format)
-       landing/features.js    before pages/about.js & pages/institutions.js
-       landing/discover.js    before landing/index.js
-     ============================================================ -->
-<script src="js/public/components/format.js"></script>
-<script src="js/public/components/styles.js"></script>
-<script src="js/public/components/bind.js"></script>
-<script src="js/public/components/public-navbar.js"></script>
-<script src="js/public/components/public-footer.js"></script>
-<script src="js/public/components/hero.js"></script>
-<script src="js/public/components/public-search.js"></script>
-<script src="js/public/components/course-card.js"></script>
-<script src="js/public/components/expert-card.js"></script>
-<script src="js/public/components/event-card.js"></script>
-<script src="js/public/components/resource-card.js"></script>
-<script src="js/public/components/category-card.js"></script>
-<script src="js/public/components/public-cta.js"></script>
+  <script>
+    (function () {
+      function removeLoader() {
+        var el = document.getElementById('boot-loader');
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+      }
+      window.addEventListener('experthub:ready', removeLoader, { once: true });
+      // Safety net: hide after 4s regardless of app boot state.
+      setTimeout(removeLoader, 4000);
+    })();
+  </script>
 
-<script src="js/public/landing/features.js"></script>
-<script src="js/public/landing/pricing.js"></script>
-<script src="js/public/landing/testimonials.js"></script>
-<script src="js/public/landing/faq.js"></script>
-<script src="js/public/landing/discover.js"></script>
-<script src="js/public/landing/index.js"></script>
+  <!-- ============================================================
+       GLOBAL IMAGE FALLBACK — replaces broken images with initials
+       ============================================================ -->
+  <script>
+    document.addEventListener('error', function (e) {
+      var el = e.target;
+      if (!(el instanceof HTMLImageElement)) return;
+      if (el.dataset.fallbackApplied) return;
+      el.dataset.fallbackApplied = '1';
+      el.src = 'https://ui-avatars.com/api/?name=' +
+               encodeURIComponent(el.alt || 'ExpertHub') +
+               '&background=6366f1&color=fff&size=256';
+    }, true);
+  </script>
 
-<script src="js/public/pages/courses.js"></script>
-<script src="js/public/pages/experts.js"></script>
-<script src="js/public/pages/events.js"></script>
-<script src="js/public/pages/resources.js"></script>
-<script src="js/public/pages/course-detail.js"></script>
-<script src="js/public/pages/expert-detail.js"></script>
-<script src="js/public/pages/event-detail.js"></script>
-<script src="js/public/pages/about.js"></script>
-<script src="js/public/pages/contact.js"></script>
-<script src="js/public/pages/institutions.js"></script>
+  <!-- ============================================================
+       CORE APP SCRIPTS (unchanged load order)
+       ============================================================ -->
+  <script src="js/01-state.js"></script>
+  <script src="js/02-utils.js"></script>
+  <script src="js/03-ui.js"></script>
+  <script src="js/04-api.js"></script>
+  <script src="js/05-auth.js"></script>
+  <script src="js/06-data.js"></script>
 
-<script src="js/08-shell.js"></script>
-<script src="js/09-admin.js"></script>
-<script src="js/10-expert.js"></script>
-<script src="js/11-user.js"></script>
-<script src="js/12-institution.js"></script>
-<script src="js/13-modals.js"></script>
-<script src="js/14-actions.js"></script>
-<script src="js/15-router.js"></script>
+  <!-- ============================================================
+       js/public/ — public front door
+       Load order matters:
+         components/format.js   must be first (PublicUI.format)
+         landing/features.js    before pages/about.js & pages/institutions.js
+         landing/discover.js    before landing/index.js
+       ============================================================ -->
+  <script src="js/public/components/format.js"></script>
+  <script src="js/public/components/styles.js"></script>
+  <script src="js/public/components/bind.js"></script>
+  <script src="js/public/components/public-navbar.js"></script>
+  <script src="js/public/components/public-footer.js"></script>
+  <script src="js/public/components/hero.js"></script>
+  <script src="js/public/components/public-search.js"></script>
+  <script src="js/public/components/course-card.js"></script>
+  <script src="js/public/components/expert-card.js"></script>
+  <script src="js/public/components/event-card.js"></script>
+  <script src="js/public/components/resource-card.js"></script>
+  <script src="js/public/components/category-card.js"></script>
+  <script src="js/public/components/public-cta.js"></script>
+
+  <script src="js/public/landing/features.js"></script>
+  <script src="js/public/landing/pricing.js"></script>
+  <script src="js/public/landing/testimonials.js"></script>
+  <script src="js/public/landing/faq.js"></script>
+  <script src="js/public/landing/discover.js"></script>
+  <script src="js/public/landing/index.js"></script>
+
+  <script src="js/public/pages/courses.js"></script>
+  <script src="js/public/pages/experts.js"></script>
+  <script src="js/public/pages/events.js"></script>
+  <script src="js/public/pages/resources.js"></script>
+  <script src="js/public/pages/course-detail.js"></script>
+  <script src="js/public/pages/expert-detail.js"></script>
+  <script src="js/public/pages/event-detail.js"></script>
+  <script src="js/public/pages/about.js"></script>
+  <script src="js/public/pages/contact.js"></script>
+  <script src="js/public/pages/institutions.js"></script>
+
+  <!-- ============================================================
+       PRIVATE APP SHELLS
+       ============================================================ -->
+  <script src="js/08-shell.js"></script>
+  <script src="js/09-admin.js"></script>
+  <script src="js/10-expert.js"></script>
+  <script src="js/11-user.js"></script>
+  <script src="js/12-institution.js"></script>
+  <script src="js/13-modals.js"></script>
+  <script src="js/14-actions.js"></script>
+  <script src="js/15-router.js"></script>
+</body>
+</html>
