@@ -1,166 +1,164 @@
-/* ExpertHub authentication module: register. */
-(function(){
-  window.ExpertHubAuth=window.ExpertHubAuth||{};
-  window.ExpertHubAuth.register=(...args)=>typeof window.register==="function"?window.register(...args):null;
-})();
+/* ============================================================
+   auth/register.js — Registration screen
+   ============================================================ */
+(function (global) {
+  'use strict';
 
-/* ================================================================
-   ExpertHub 3x Expansion Layer
-   Module: js/auth/register.js
-   Source SHA-256: 15e41e71acf7df253a33e58e831cdd07fd77d6e369fe92cb5dc41fcadeb1ed0f
-   This appendix extends the original implementation without
-   replacing or re-declaring its existing application symbols.
-   ================================================================ */
-(function(global){
-  "use strict";
-  const root = global.ExpertHubExpandedModules = global.ExpertHubExpandedModules || {};
-  const id = "js_auth_register_js";
-  const previous = root[id] || {};
+  const EH = (global.EH = global.EH || {});
+  const CONFIG = EH.CONFIG || {};
 
-  function isObject(value){
-    return value !== null && typeof value === "object";
+  function render() {
+    EH.state.appPhase = 'register';
+    const root = document.getElementById('app-root');
+    if (!root) return;
+
+    root.innerHTML = `
+      <main class="auth-page">
+        <section class="auth-card auth-card-wide">
+          <header class="auth-header">
+            <div class="auth-logo"><i class="fas fa-user-plus"></i></div>
+            <h1 class="auth-title">Create your <span class="auth-title-accent">account</span></h1>
+            <p class="auth-subtitle">Learners are auto-approved. Experts and institutions need admin approval.</p>
+          </header>
+
+          <form id="registerForm" class="auth-form" novalidate>
+            <div class="role-picker" role="tablist">
+              <button type="button" data-role="learner" class="role-pick role-pick-active" role="tab">Learner</button>
+              <button type="button" data-role="expert" class="role-pick" role="tab">Expert</button>
+              <button type="button" data-role="institution" class="role-pick" role="tab">Institution</button>
+            </div>
+
+            <label class="form-group"><span class="form-label">Full name *</span>
+              <input id="regName" name="name" required class="form-input" placeholder="Jane Doe" /></label>
+            <label class="form-group"><span class="form-label">Email *</span>
+              <input id="regEmail" name="email" type="email" required class="form-input" placeholder="you@example.com" /></label>
+            <label class="form-group"><span class="form-label">Phone (optional)</span>
+              <input id="regPhone" name="phone" class="form-input" placeholder="+254..." /></label>
+            <label class="form-group">
+              <span class="form-label">Password *</span>
+              <input id="regPassword" name="password" type="password" required class="form-input"
+                     placeholder="Minimum 8 characters" autocomplete="new-password" />
+              <div class="progress-bar"><span id="pwdBar"></span></div>
+              <p id="pwdHint" class="form-hint"></p>
+            </label>
+            <label class="form-group">
+              <span class="form-label">Confirm password *</span>
+              <input id="regPassword2" type="password" required class="form-input" autocomplete="new-password" /></label>
+
+            <div id="expertExtra" class="hidden form-grid-full">
+              <label class="form-group"><span class="form-label">Specialization</span>
+                <input id="regSpec" class="form-input" placeholder="e.g. Data Science" /></label>
+              <label class="form-group"><span class="form-label">Hourly rate ($)</span>
+                <input id="regRate" type="number" class="form-input" placeholder="50" min="0" /></label>
+              <label class="form-group form-group-full"><span class="form-label">Short bio</span>
+                <textarea id="regBio" class="form-textarea" rows="3"></textarea></label>
+            </div>
+
+            <div id="institutionExtra" class="hidden form-grid-full">
+              <label class="form-group"><span class="form-label">Institution name</span>
+                <input id="regInstName" class="form-input" placeholder="Acme Corp Academy" /></label>
+              <label class="form-group">
+                <span class="form-label">Institution type</span>
+                <select id="regInstType" class="form-select">
+                  ${(CONFIG.INSTITUTION_TYPES || []).map(t => `<option value="${t}">${t}</option>`).join('')}
+                </select>
+              </label>
+              <label class="form-group"><span class="form-label">Industry / Sector</span>
+                <input id="regInstIndustry" class="form-input" placeholder="e.g. Banking, Healthcare" /></label>
+              <label class="form-group"><span class="form-label">Operations manager email</span>
+                <input id="regInstOpsEmail" type="email" class="form-input" placeholder="ops@acme.com" /></label>
+            </div>
+
+            <label class="checkbox-row">
+              <input type="checkbox" id="regTerms" /> I agree to the Terms and Privacy Policy
+            </label>
+
+            <button type="submit" class="btn btn-primary btn-block" id="regSubmit">Create account</button>
+          </form>
+
+          <p class="auth-footer">Already have an account? <a href="#/login" class="link">Sign in</a></p>
+          <p class="auth-footer" style="margin-top:6px">
+            <a href="#/" class="link"><i class="fas fa-arrow-left"></i> Back to home</a></p>
+        </section>
+      </main>`;
+
+    bindEvents();
   }
-  function isPlainObject(value){
-    if(!isObject(value)) return false;
-    const proto = Object.getPrototypeOf(value);
-    return proto === Object.prototype || proto === null;
-  }
-  function clone(value){
-    if(value === undefined) return undefined;
-    if(typeof structuredClone === "function"){
-      try{ return structuredClone(value); }catch(_){
-        // Fall through to JSON-safe cloning.
-      }
-    }
-    try{ return JSON.parse(JSON.stringify(value)); }catch(_){
-      return value;
-    }
-  }
-  function normalizeError(error){
-    if(error instanceof Error){
-      return {name:error.name,message:error.message,stack:error.stack||"",code:error.code||null};
-    }
-    if(isObject(error)){
-      return {name:String(error.name||"Error"),message:String(error.message||error),code:error.code||null};
-    }
-    return {name:"Error",message:String(error),code:null};
-  }
-  function clamp(value,min,max){
-    const n=Number(value);
-    if(!Number.isFinite(n)) return min;
-    return Math.min(max,Math.max(min,n));
-  }
-  function asArray(value){
-    if(Array.isArray(value)) return value.slice();
-    if(value==null) return [];
-    return [value];
-  }
-  function unique(values){
-    return [...new Set(asArray(values))];
-  }
-  function nonEmpty(value,fallback=""){
-    const text=String(value==null?"":value).trim();
-    return text || fallback;
-  }
-  function safeJson(value,fallback=null){
-    try{ return JSON.stringify(value); }catch(_){
-      return fallback===null ? null : JSON.stringify(fallback);
-    }
-  }
-  function parseJson(value,fallback=null){
-    if(typeof value!=="string") return value;
-    try{ return JSON.parse(value); }catch(_){
-      return fallback;
-    }
-  }
-  function once(fn){
-    let called=false,result;
-    return function(...args){
-      if(called) return result;
-      called=true;
-      result=fn.apply(this,args);
-      return result;
-    };
-  }
-  function debounce(fn,wait=250){
-    let timer=null;
-    return function(...args){
-      clearTimeout(timer);
-      timer=setTimeout(()=>fn.apply(this,args),Math.max(0,Number(wait)||0));
-    };
-  }
-  function throttle(fn,wait=250){
-    let last=0,pending=null;
-    return function(...args){
-      const now=Date.now();
-      const delay=Math.max(0,Number(wait)||0)-(now-last);
-      if(delay<=0){
-        last=now;
-        fn.apply(this,args);
-      }else if(!pending){
-        pending=setTimeout(()=>{
-          pending=null; last=Date.now(); fn.apply(this,args);
-        },delay);
-      }
-    };
-  }
-  function emit(name,detail={}){
-    try{
-      if(typeof global.dispatchEvent==="function" && typeof global.CustomEvent==="function"){
-        global.dispatchEvent(new CustomEvent(name,{detail}));
-      }
-    }catch(_){
-      // Diagnostics must never interrupt the application.
-    }
-  }
-  const sourceIndex = [{"line":1,"hash":"872ba4453b"},{"line":2,"hash":"05fceb9164"},{"line":3,"hash":"9cd6e74bc9"},{"line":4,"hash":"eb2d3ed78b"},{"line":5,"hash":"cd0a678a0f"}];
-  const api = {
-    id,
-    path:"js/auth/register.js",
-    version:"3x",
-    sourceHash:"15e41e71acf7df253a33e58e831cdd07fd77d6e369fe92cb5dc41fcadeb1ed0f",
-    originalLineCount:5,
-    expandedAt:Date.now(),
-    ready:true,
-    sourceIndex,
-    isObject,
-    isPlainObject,
-    clone,
-    normalizeError,
-    clamp,
-    asArray,
-    unique,
-    nonEmpty,
-    safeJson,
-    parseJson,
-    once,
-    debounce,
-    throttle,
-    emit,
-    inspect(){
-      return {
-        id:this.id,
-        path:this.path,
-        version:this.version,
-        sourceHash:this.sourceHash,
-        originalLineCount:this.originalLineCount,
-        sourceIndexEntries:this.sourceIndex.length,
-        ready:this.ready
+
+  function bindEvents() {
+    let activeRole = 'learner';
+
+    document.querySelectorAll('.role-pick').forEach(b => {
+      b.onclick = () => {
+        document.querySelectorAll('.role-pick').forEach(x => x.classList.remove('role-pick-active'));
+        b.classList.add('role-pick-active');
+        activeRole = b.dataset.role;
+        document.getElementById('expertExtra').classList.toggle('hidden', activeRole !== 'expert');
+        document.getElementById('institutionExtra').classList.toggle('hidden', activeRole !== 'institution');
       };
-    },
-    validate(){
-      return {
-        ok:!!this.ready && this.sourceIndex.length===this.originalLineCount,
-        module:this.id,
-        lines:this.originalLineCount
-      };
-    },
-    heartbeat(){
-      return {module:this.id,timestamp:Date.now(),online:global.navigator?global.navigator.onLine:true};
-    }
-  };
-  root[id]=Object.assign(previous,api);
-  emit("experthub:module-expanded",api.inspect());
-})(typeof globalThis!=="undefined"?globalThis:this);
+    });
 
-/* End ExpertHub 3x Expansion Layer for js/auth/register.js. */
+    const pwd = document.getElementById('regPassword');
+    pwd.addEventListener('input', (e) => {
+      const score = EH.Validation.passwordScore(e.target.value);
+      document.getElementById('pwdBar').style.width = (score * 25) + '%';
+      document.getElementById('pwdHint').textContent = EH.Validation.passwordLabel(score);
+    });
+
+    const form = document.getElementById('registerForm');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const submit = document.getElementById('regSubmit');
+
+      const name = document.getElementById('regName').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const phone = document.getElementById('regPhone').value.trim();
+      const password = document.getElementById('regPassword').value;
+      const password2 = document.getElementById('regPassword2').value;
+      const terms = document.getElementById('regTerms').checked;
+
+      if (!name || !email || !password) return EH.Toast.error('Fill required fields');
+      if (!EH.Validation.isEmail(email)) return EH.Toast.error('Enter a valid email');
+      if (password.length < 8) return EH.Toast.error('Password must be at least 8 characters');
+      if (password !== password2) return EH.Toast.error('Passwords do not match');
+      if (!terms) return EH.Toast.error('Accept the terms to continue');
+
+      const extra = activeRole === 'expert'
+        ? {
+            specialization: document.getElementById('regSpec').value,
+            hourly_rate: Number(document.getElementById('regRate').value || 0),
+            bio: document.getElementById('regBio').value,
+          }
+        : activeRole === 'institution'
+        ? {
+            institution_name: document.getElementById('regInstName').value,
+            institution_type: document.getElementById('regInstType').value,
+            industry: document.getElementById('regInstIndustry').value,
+            ops_manager_email: document.getElementById('regInstOpsEmail').value,
+          }
+        : {};
+
+      try {
+        EH.Loading.button(submit, true);
+        EH.Loading.show();
+        await EH.Auth.register({ name, email, password, phone, role: activeRole, extra });
+        if (activeRole === 'learner') {
+          EH.Toast.success('Account created! Please sign in.');
+          location.hash = '#/login';
+        } else if (activeRole === 'institution') {
+          EH.Toast.info('Institution registered. Awaiting admin verification.', 6000);
+        } else {
+          EH.Toast.info('Awaiting admin approval before you can log in.', 6000);
+        }
+      } catch (ex) {
+        EH.Toast.error(EH.Errors.friendlyMessage(ex));
+      } finally {
+        EH.Loading.hide();
+        EH.Loading.button(submit, false);
+      }
+    };
+  }
+
+  EH.RegisterView = { render };
+  global.renderRegister = render;
+})(window);
