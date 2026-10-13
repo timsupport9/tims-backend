@@ -1,27 +1,40 @@
 /* ============================================================
-   public/components/expert-card.js
+   ExpertHub — js/public/components/expert-card.js
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
+  P.components = P.components || {};
+  var F = P.format, esc = F.esc;
 
-  const EH = (global.EH = global.EH || {});
+  P.components.expertCard = function (e) {
+    if (!e) return '';
+    var specs = Array.isArray(e.specializations) ? e.specializations : [];
 
-  function render(expert) {
-    const avatar = expert.avatar || EH.PublicFormat.avatar(expert.name);
-    return `
-      <article class="expert-card public-expert-card">
-        <img class="expert-avatar" src="${EH.Fmt.esc(avatar)}" alt="" />
-        <h4 class="expert-name">${EH.Fmt.esc(expert.name)}</h4>
-        <p class="expert-expertise">${EH.Fmt.esc(expert.specialization || '—')}</p>
-        <p class="expert-rate">${EH.Fmt.cur(expert.hourly_rate || 0)} / hr</p>
-        <p class="expert-rating">
-          <i class="fas fa-star" style="color:#f59e0b"></i>
-          <span>${EH.PublicFormat.rating(expert.average_rating)}</span>
-        </p>
-        <a href="#/expert/${expert.id}" class="btn btn-secondary btn-block">
-          <i class="fas fa-eye"></i> View Profile</a>
-      </article>`;
-  }
-
-  EH.ExpertCard = { render };
-})(window);
+    return '' +
+      '<article class="pub-card pub-expert" data-goto="#/experts/' +
+        encodeURIComponent(e.id) + '" style="cursor:pointer">' +
+        '<img class="pub-expert-avatar" src="' + esc(F.safeImage(e.avatar, e.name)) + '" alt="" loading="lazy">' +
+        '<h3>' + esc(e.name) +
+          (e.verified ? ' <i class="fas fa-circle-check pub-verified" title="Verified by ExpertHub"></i>' : '') +
+        '</h3>' +
+        '<p class="pub-expert-role">' + esc(e.headline || 'ExpertHub consultant') + '</p>' +
+        (specs.length
+          ? '<div class="pub-tags">' + specs.slice(0, 3).map(function (s) {
+              return '<span class="pub-tag">' + esc(s) + '</span>';
+            }).join('') + '</div>'
+          : '') +
+        '<div class="pub-stars">' + F.stars(e.rating) +
+          ' <span style="color:inherit;opacity:.55;margin-left:4px">' +
+          (e.rating ? Number(e.rating).toFixed(1) : 'New') +
+          (e.reviews ? ' · ' + e.reviews + ' reviews' : '') + '</span>' +
+        '</div>' +
+        '<div class="pub-card-meta" style="justify-content:center;padding-top:0">' +
+          (e.rate
+            ? '<span><b>' + esc(F.money(e.rate, e.currency)) + '</b> / session</span>'
+            : '<span>Contact for rate</span>') +
+          (e.experienceYears ? '<span>· ' + e.experienceYears + ' yrs exp</span>' : '') +
+        '</div>' +
+      '</article>';
+  };
+})();

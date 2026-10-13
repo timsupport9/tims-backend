@@ -1,36 +1,45 @@
 /* ============================================================
-   public/components/course-card.js
+   ExpertHub — js/public/components/course-card.js
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
+  P.components = P.components || {};
+  var F = P.format, esc = F.esc;
 
-  const EH = (global.EH = global.EH || {});
+  P.components.courseCard = function (c) {
+    if (!c) return '';
+    var img = c.thumbnail
+      ? '<img src="' + esc(c.thumbnail) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+      : '<img src="' + esc(F.avatar(c.title, '4f46e5')) + '" alt="" loading="lazy">';
 
-  function render(course) {
-    const price = EH.PublicFormat.price(course.price);
-    const duration = EH.PublicFormat.duration(course);
-    const type = EH.PublicFormat.courseType(course.course_type);
-    return `
-      <article class="program-card public-course-card">
-        <span class="chip chip-blue">${EH.Fmt.esc(type)}</span>
-        <h4 class="program-title">${EH.Fmt.esc(course.title)}</h4>
-        <p class="program-desc">${EH.Fmt.esc(EH.Fmt.truncate(course.description, 130))}</p>
-        ${course.expert_name ? `
-          <p class="program-meta"><i class="fas fa-user-tie"></i> ${EH.Fmt.esc(course.expert_name)}</p>` : ''}
-        <footer class="program-footer">
-          <span class="program-price">${EH.Fmt.esc(price)}</span>
-          <span class="program-meta">
-            ${duration ? EH.Fmt.esc(duration) + ' · ' : ''}${EH.Fmt.esc(course.level || '')}
-          </span>
-        </footer>
-        <div class="panel-actions" style="margin-top:10px">
-          <a href="#/course/${course.id}" class="btn btn-primary btn-sm">
-            <i class="fas fa-eye"></i> View</a>
-          <a href="#/register" class="btn btn-secondary btn-sm">
-            <i class="fas fa-shopping-cart"></i> Enroll</a>
-        </div>
-      </article>`;
-  }
+    var expert = c.expert || {};
 
-  EH.CourseCard = { render };
-})(window);
+    return '' +
+      '<article class="pub-card" data-goto="#/courses/' + encodeURIComponent(c.id) + '" style="cursor:pointer">' +
+        '<div class="pub-card-media">' + img +
+          '<span class="pub-card-tag">' + esc(c.category || 'Course') + '</span>' +
+          '<span class="pub-card-price">' + esc(F.money(c.price, c.currency)) + '</span>' +
+        '</div>' +
+        '<div class="pub-card-body">' +
+          '<h3 class="pub-card-title">' + esc(c.title) + '</h3>' +
+          '<p class="pub-card-text">' + esc(c.summary || '') + '</p>' +
+          (expert.name
+            ? '<div class="pub-card-meta">' +
+                '<span class="pub-author">' +
+                  '<img src="' + esc(F.safeImage(expert.avatar, expert.name)) + '" alt="">' +
+                  esc(expert.name) +
+                  (expert.verified ? ' <i class="fas fa-circle-check pub-verified"></i>' : '') +
+                '</span>' +
+              '</div>'
+            : '') +
+          '<div class="pub-card-meta" style="padding-top:0">' +
+            (c.rating ? '<span><i class="fas fa-star" style="color:#f59e0b"></i> ' + Number(c.rating).toFixed(1) + '</span>' : '') +
+            (c.lessons ? '<span><i class="fas fa-book-open"></i> ' + c.lessons + ' lessons</span>' : '') +
+            (c.durationWeeks ? '<span><i class="fas fa-clock"></i> ' + c.durationWeeks + ' weeks</span>' : '') +
+            (c.level ? '<span><i class="fas fa-signal"></i> ' + esc(c.level) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</article>';
+  };
+})();
