@@ -1,318 +1,108 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#6366f1">
-  <meta name="description" content="ExpertHub connects learners with courses, experts, consultations, events and institutional learning services.">
-  <meta name="color-scheme" content="light">
-  <title>ExpertHub | Learn, Connect and Grow</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='82'%3EðŸŽ“%3C/text%3E%3C/svg%3E">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#6366f1" />
+  <meta name="description" content="ExpertHub 2.0 — E-School, 1-on-1 expert consultations, and corporate training in one platform." />
+  <meta name="color-scheme" content="light dark" />
+  <title>ExpertHub 2.0 | E-School &amp; Consultation Platform</title>
+
+  <!-- Favicon (inline SVG) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
-  <!-- Optional vendor libraries used by charts and realtime features. -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <!-- Chart.js (used by renderCharts and renderInstitutionCharts) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
-  <!-- Socket.IO is loaded before the app's socket client. -->
+
+  <!--
+    Socket.IO client.
+    MUST load before /js/04-api.js runs initializeSocket().
+    Do NOT add `defer` — server.js serves this synchronously and
+    the split files below depend on `io` being defined globally.
+  -->
   <script src="/socket.io/socket.io.js"></script>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Avoid flash of unstyled theme: apply saved dark mode before paint -->
   <script>
     (function () {
       try {
-        if (localStorage.getItem('theme') === 'dark') {
-          document.documentElement.classList.add('dark');
-        }
-      } catch (error) { /* Storage may be disabled; continue normally. */ }
-    }());
+        var t = localStorage.getItem('theme');
+        if (t === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {}
+    })();
   </script>
-  <style>
-    /* Safe startup and failure states; styles.css remains the primary stylesheet. */
-    #app-startup-status { margin: 2rem auto; max-width: 48rem; padding: 1rem 1.25rem; font: 500 1rem/1.6 Inter,system-ui,sans-serif; }
-    #app-startup-status[hidden] { display: none; }
-    .app-noscript { margin: 1rem; padding: 1rem; border: 1px solid #d97706; border-radius: .75rem; }
-  </style>
 </head>
+
 <body>
-  <!--
-    ExpertHub application mount points.
-    Public pages remain accessible before sign-in; protected views are handled by
-    the app router and authentication/role guards.
-  -->
-  <a href="#app-root" class="skip-link">Skip to main content</a>
-  <div id="app-root" role="main" aria-live="polite" aria-busy="true">
-    <div id="app-startup-status">Loading ExpertHubâ€¦</div>
-  </div>
-  <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+  <!-- SPA mount points -->
+  <div id="app-root"></div>
+  <div id="toast-container"></div>
   <div id="modal-root"></div>
-  <noscript><div class="app-noscript">ExpertHub requires JavaScript to run. Please enable JavaScript and reload this page.</div></noscript>
 
-  <!-- Core configuration and application lifecycle -->
-  <script defer src="js/core/constants.js"></script>
-  <script defer src="js/core/config.js"></script>
-  <script defer src="js/core/state.js"></script>
-  <script defer src="js/core/store.js"></script>
-  <script defer src="js/core/event-bus.js"></script>
-  <script defer src="js/core/dependency-registry.js"></script>
-  <script defer src="js/core/lifecycle.js"></script>
-  <script defer src="js/core/bootstrap.js"></script>
+<script src="js/01-state.js"></script>
+<script src="js/02-utils.js"></script>
+<script src="js/03-ui.js"></script>
+<script src="js/04-api.js"></script>
+<script src="js/05-auth.js"></script>
+<script src="js/06-data.js"></script>
 
-  <!-- Shared utilities -->
-  <script defer src="js/utils/logger.js"></script>
-  <script defer src="js/utils/errors.js"></script>
-  <script defer src="js/utils/dom.js"></script>
-  <script defer src="js/utils/formatters.js"></script>
-  <script defer src="js/utils/dates.js"></script>
-  <script defer src="js/utils/validation.js"></script>
-  <script defer src="js/utils/accessibility.js"></script>
-  <script defer src="js/utils/files.js"></script>
-  <script defer src="js/utils/performance.js"></script>
+<!-- ============================================================
+     js/public/ — public front door
+     Replaces the original single js/07-landing.js.
+     Load order inside this block matters:
+       components/format.js   must be first (defines PublicUI.format)
+       landing/features.js    before pages/about.js & pages/institutions.js
+       landing/discover.js    before landing/index.js
+     ============================================================ -->
+<script src="js/public/components/format.js"></script>
+<script src="js/public/components/styles.js"></script>
+<script src="js/public/components/bind.js"></script>
+<script src="js/public/components/public-navbar.js"></script>
+<script src="js/public/components/public-footer.js"></script>
+<script src="js/public/components/hero.js"></script>
+<script src="js/public/components/public-search.js"></script>
+<script src="js/public/components/course-card.js"></script>
+<script src="js/public/components/expert-card.js"></script>
+<script src="js/public/components/event-card.js"></script>
+<script src="js/public/components/resource-card.js"></script>
+<script src="js/public/components/category-card.js"></script>
+<script src="js/public/components/public-cta.js"></script>
 
-  <!-- Reusable interface components -->
-  <script defer src="js/ui/loading.js"></script>
-  <script defer src="js/ui/toast.js"></script>
-  <script defer src="js/ui/error-state.js"></script>
-  <script defer src="js/ui/empty-state.js"></script>
-  <script defer src="js/ui/modal-manager.js"></script>
-  <script defer src="js/ui/dropdown.js"></script>
-  <script defer src="js/ui/accordion.js"></script>
-  <script defer src="js/ui/tabs.js"></script>
-  <script defer src="js/ui/pagination.js"></script>
-  <script defer src="js/ui/tooltip.js"></script>
-  <script defer src="js/ui/theme.js"></script>
+<script src="js/public/landing/features.js"></script>
+<script src="js/public/landing/pricing.js"></script>
+<script src="js/public/landing/testimonials.js"></script>
+<script src="js/public/landing/faq.js"></script>
+<script src="js/public/landing/discover.js"></script>
+<script src="js/public/landing/index.js"></script>
 
-  <!-- API, data, authentication and realtime services -->
-  <script defer src="js/services/api-client.js"></script>
-  <script defer src="js/services/cache-service.js"></script>
-  <script defer src="js/services/data-service.js"></script>
-  <script defer src="js/services/auth-service.js"></script>
-  <script defer src="js/services/notification-service.js"></script>
-  <script defer src="js/services/upload-service.js"></script>
-  <script defer src="js/services/analytics-service.js"></script>
-  <script defer src="js/services/socket-client.js"></script>
+<script src="js/public/pages/courses.js"></script>
+<script src="js/public/pages/experts.js"></script>
+<script src="js/public/pages/events.js"></script>
+<script src="js/public/pages/resources.js"></script>
+<script src="js/public/pages/course-detail.js"></script>
+<script src="js/public/pages/expert-detail.js"></script>
+<script src="js/public/pages/event-detail.js"></script>
+<script src="js/public/pages/about.js"></script>
+<script src="js/public/pages/contact.js"></script>
+<script src="js/public/pages/institutions.js"></script>
 
-  <!-- Authentication and account lifecycle -->
-  <script defer src="js/auth/session.js"></script>
-  <script defer src="js/auth/refresh-token.js"></script>
-  <script defer src="js/auth/login.js"></script>
-  <script defer src="js/auth/register.js"></script>
-  <script defer src="js/auth/email-verification.js"></script>
-  <script defer src="js/auth/forgot-password.js"></script>
-  <script defer src="js/auth/reset-password.js"></script>
-  <script defer src="js/auth/account-approval.js"></script>
-  <script defer src="js/auth/route-guards.js"></script>
-  <script defer src="js/auth/auth-views.js"></script>
-  <script defer src="js/auth/logout.js"></script>
-  <script defer src="js/auth/index.js"></script>
-
-  <!-- Public-site data and fallback content -->
-  <script defer src="js/public/data/categories.js"></script>
-  <script defer src="js/public/data/fallback-content.js"></script>
-  <script defer src="js/public/data/navigation.js"></script>
-  <script defer src="js/public/data/public-config.js"></script>
-
-  <!-- Public API and content services -->
-  <script defer src="js/public/services/courses-service.js"></script>
-  <script defer src="js/public/services/events-service.js"></script>
-  <script defer src="js/public/services/experts-service.js"></script>
-  <script defer src="js/public/services/institutions-service.js"></script>
-  <script defer src="js/public/services/public-api.js"></script>
-  <script defer src="js/public/services/public-cache.js"></script>
-  <script defer src="js/public/services/resources-service.js"></script>
-
-  <!-- Public-site components -->
-  <script defer src="js/public/components/format.js"></script>
-  <script defer src="js/public/components/styles.js"></script>
-  <script defer src="js/public/components/bind.js"></script>
-  <script defer src="js/public/components/hero.js"></script>
-  <script defer src="js/public/components/public-navbar.js"></script>
-  <script defer src="js/public/components/public-search.js"></script>
-  <script defer src="js/public/components/course-card.js"></script>
-  <script defer src="js/public/components/expert-card.js"></script>
-  <script defer src="js/public/components/event-card.js"></script>
-  <script defer src="js/public/components/resource-card.js"></script>
-  <script defer src="js/public/components/category-card.js"></script>
-  <script defer src="js/public/components/public-cta.js"></script>
-  <script defer src="js/public/components/public-footer.js"></script>
-
-  <!-- Public navigation and interaction behavior -->
-  <script defer src="js/public/interactions/accordions.js"></script>
-  <script defer src="js/public/interactions/dropdowns.js"></script>
-  <script defer src="js/public/interactions/mobile-navigation.js"></script>
-  <script defer src="js/public/interactions/scroll-behavior.js"></script>
-  <script defer src="js/public/interactions/tabs.js"></script>
-
-  <!-- Public search experience -->
-  <script defer src="js/public/search/search-controller.js"></script>
-  <script defer src="js/public/search/search-filters.js"></script>
-  <script defer src="js/public/search/search-results.js"></script>
-  <script defer src="js/public/search/search-suggestions.js"></script>
-
-  <!-- Search-engine metadata and structured data -->
-  <script defer src="js/public/seo/canonical-url.js"></script>
-  <script defer src="js/public/seo/metadata.js"></script>
-  <script defer src="js/public/seo/structured-data.js"></script>
-
-  <!-- Public forms -->
-  <script defer src="js/public/forms/contact-form.js"></script>
-  <script defer src="js/public/forms/newsletter-form.js"></script>
-  <script defer src="js/public/forms/public-validation.js"></script>
-
-  <!-- Public landing page sections -->
-  <script defer src="js/public/landing/features.js"></script>
-  <script defer src="js/public/landing/pricing.js"></script>
-  <script defer src="js/public/landing/testimonials.js"></script>
-  <script defer src="js/public/landing/faq.js"></script>
-  <script defer src="js/public/landing/discover.js"></script>
-  <script defer src="js/public/landing/index.js"></script>
-
-  <!-- Public discovery and detail pages -->
-  <script defer src="js/public/pages/about.js"></script>
-  <script defer src="js/public/pages/contact.js"></script>
-  <script defer src="js/public/pages/course-detail.js"></script>
-  <script defer src="js/public/pages/courses.js"></script>
-  <script defer src="js/public/pages/event-detail.js"></script>
-  <script defer src="js/public/pages/events.js"></script>
-  <script defer src="js/public/pages/expert-detail.js"></script>
-  <script defer src="js/public/pages/experts.js"></script>
-  <script defer src="js/public/pages/institutions.js"></script>
-  <script defer src="js/public/pages/resources.js"></script>
-
-  <!-- Public-page routing -->
-  <script defer src="js/public/routing/page-resolver.js"></script>
-  <script defer src="js/public/routing/public-router.js"></script>
-  <script defer src="js/public/routing/public-routes.js"></script>
-
-  <!-- Application actions -->
-  <script defer src="js/actions/action-dispatcher.js"></script>
-  <script defer src="js/actions/consultation-actions.js"></script>
-  <script defer src="js/actions/course-actions.js"></script>
-  <script defer src="js/actions/dashboard-actions.js"></script>
-  <script defer src="js/actions/institution-actions.js"></script>
-  <script defer src="js/actions/navigation-actions.js"></script>
-  <script defer src="js/actions/payment-actions.js"></script>
-
-  <!-- Application routing and access control -->
-  <script defer src="js/router/route-guards.js"></script>
-  <script defer src="js/router/routes.js"></script>
-  <script defer src="js/router/not-found.js"></script>
-  <script defer src="js/router/access-denied.js"></script>
-  <script defer src="js/router/router.js"></script>
-
-  <!-- Shared dashboard shell -->
-  <script defer src="js/dashboards/shared/breadcrumbs.js"></script>
-  <script defer src="js/dashboards/shared/chat.js"></script>
-  <script defer src="js/dashboards/shared/dashboard-layout.js"></script>
-  <script defer src="js/dashboards/shared/notifications.js"></script>
-  <script defer src="js/dashboards/shared/profile-menu.js"></script>
-  <script defer src="js/dashboards/shared/shell.js"></script>
-  <script defer src="js/dashboards/shared/sidebar.js"></script>
-  <script defer src="js/dashboards/shared/topbar.js"></script>
-
-  <!-- Learner dashboard -->
-  <script defer src="js/dashboards/learner/certificates.js"></script>
-  <script defer src="js/dashboards/learner/claims.js"></script>
-  <script defer src="js/dashboards/learner/consultations.js"></script>
-  <script defer src="js/dashboards/learner/e-school.js"></script>
-  <script defer src="js/dashboards/learner/events.js"></script>
-  <script defer src="js/dashboards/learner/experts.js"></script>
-  <script defer src="js/dashboards/learner/index.js"></script>
-  <script defer src="js/dashboards/learner/interactions.js"></script>
-  <script defer src="js/dashboards/learner/my-learning.js"></script>
-  <script defer src="js/dashboards/learner/overview.js"></script>
-  <script defer src="js/dashboards/learner/profile.js"></script>
-  <script defer src="js/dashboards/learner/support.js"></script>
-  <script defer src="js/dashboards/learner/transactions.js"></script>
-  <script defer src="js/dashboards/learner/wallet.js"></script>
-  <script defer src="js/dashboards/learner/wishlist.js"></script>
-
-  <!-- Expert dashboard -->
-  <script defer src="js/dashboards/expert/availability.js"></script>
-  <script defer src="js/dashboards/expert/calendar.js"></script>
-  <script defer src="js/dashboards/expert/consultations.js"></script>
-  <script defer src="js/dashboards/expert/courses.js"></script>
-  <script defer src="js/dashboards/expert/earnings.js"></script>
-  <script defer src="js/dashboards/expert/events.js"></script>
-  <script defer src="js/dashboards/expert/index.js"></script>
-  <script defer src="js/dashboards/expert/overview.js"></script>
-  <script defer src="js/dashboards/expert/portfolio.js"></script>
-  <script defer src="js/dashboards/expert/profile.js"></script>
-  <script defer src="js/dashboards/expert/reviews.js"></script>
-  <script defer src="js/dashboards/expert/withdrawals.js"></script>
-
-  <!-- Institution dashboard -->
-  <script defer src="js/dashboards/institution/assessments.js"></script>
-  <script defer src="js/dashboards/institution/branding.js"></script>
-  <script defer src="js/dashboards/institution/certifications.js"></script>
-  <script defer src="js/dashboards/institution/charts.js"></script>
-  <script defer src="js/dashboards/institution/cohorts.js"></script>
-  <script defer src="js/dashboards/institution/compliance.js"></script>
-  <script defer src="js/dashboards/institution/index.js"></script>
-  <script defer src="js/dashboards/institution/instructors.js"></script>
-  <script defer src="js/dashboards/institution/interactions.js"></script>
-  <script defer src="js/dashboards/institution/learning-paths.js"></script>
-  <script defer src="js/dashboards/institution/operations.js"></script>
-  <script defer src="js/dashboards/institution/org-structure.js"></script>
-  <script defer src="js/dashboards/institution/overview.js"></script>
-  <script defer src="js/dashboards/institution/profile.js"></script>
-  <script defer src="js/dashboards/institution/programmes.js"></script>
-  <script defer src="js/dashboards/institution/projects.js"></script>
-  <script defer src="js/dashboards/institution/question-bank.js"></script>
-  <script defer src="js/dashboards/institution/reports.js"></script>
-  <script defer src="js/dashboards/institution/skills.js"></script>
-  <script defer src="js/dashboards/institution/trainees.js"></script>
-  <script defer src="js/dashboards/institution/training.js"></script>
-
-  <!-- Administration dashboard -->
-  <script defer src="js/dashboards/admin/analytics.js"></script>
-  <script defer src="js/dashboards/admin/audit.js"></script>
-  <script defer src="js/dashboards/admin/broadcasts.js"></script>
-  <script defer src="js/dashboards/admin/charts.js"></script>
-  <script defer src="js/dashboards/admin/claims.js"></script>
-  <script defer src="js/dashboards/admin/consultations.js"></script>
-  <script defer src="js/dashboards/admin/events.js"></script>
-  <script defer src="js/dashboards/admin/experts.js"></script>
-  <script defer src="js/dashboards/admin/index.js"></script>
-  <script defer src="js/dashboards/admin/institutions.js"></script>
-  <script defer src="js/dashboards/admin/overview.js"></script>
-  <script defer src="js/dashboards/admin/profile.js"></script>
-  <script defer src="js/dashboards/admin/reviews.js"></script>
-  <script defer src="js/dashboards/admin/settings.js"></script>
-  <script defer src="js/dashboards/admin/tickets.js"></script>
-  <script defer src="js/dashboards/admin/users.js"></script>
-
-  <!-- Dashboard dispatch -->
-  <script defer src="js/dashboards/dashboard-dispatch.js"></script>
-
-  <!-- Modal workflows -->
-  <script defer src="js/modals/shared-modal-helpers.js"></script>
-  <script defer src="js/modals/course-modals.js"></script>
-  <script defer src="js/modals/expert-modals.js"></script>
-  <script defer src="js/modals/consultation-modals.js"></script>
-  <script defer src="js/modals/payment-modals.js"></script>
-  <script defer src="js/modals/wallet-modals.js"></script>
-  <script defer src="js/modals/certificate-modals.js"></script>
-  <script defer src="js/modals/scheduling-modals.js"></script>
-  <script defer src="js/modals/academic-modals.js"></script>
-  <script defer src="js/modals/project-modals.js"></script>
-  <script defer src="js/modals/institution-modals.js"></script>
-  <script defer src="js/modals/learner-modals.js"></script>
-  <script defer src="js/modals/admin-modals.js"></script>
-  <script defer src="js/modals/support-modals.js"></script>
-  <script defer src="js/modals/index.js"></script>
-
-  <!-- Startup diagnostics: report missing assets without blocking the application. -->
-  <script>
-    window.addEventListener('load', function () {
-      var root = document.getElementById('app-root');
-      if (root) {
-        root.setAttribute('aria-busy', 'false');
-        var status = document.getElementById('app-startup-status');
-        if (status && root.children.length > 1) status.hidden = true;
-      }
-      if (!document.querySelector('link[rel="stylesheet"][href="styles.css"]')) {
-        console.warn('ExpertHub: styles.css link is missing.');
-      }
-    });
-  </script>
-</body>
-</html>
+<script src="js/08-shell.js"></script>
+<script src="js/09-admin.js"></script>
+<script src="js/10-expert.js"></script>
+<script src="js/11-user.js"></script>
+<script src="js/12-institution.js"></script>
+<script src="js/13-modals.js"></script>
+<script src="js/14-actions.js"></script>
+<script src="js/15-router.js"></script>
