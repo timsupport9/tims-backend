@@ -1,39 +1,46 @@
 /* ============================================================
-   public/landing/index.js — Landing page composition
+   ExpertHub — js/public/landing/index.js
+   Coordinator for the landing page (#/).
+   Keeps the global `renderLanding()` name for backward compat
+   with the existing 15-router.js.
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
 
-  const EH = (global.EH = global.EH || {});
+  function renderLanding() {
+    /* eslint-disable no-undef */
+    try { appPhase = 'landing'; } catch (_) { try { window.appPhase = 'landing'; } catch (__) {} }
+    P.ensureStyles();
 
-  function render() {
-    EH.state.appPhase = 'landing';
-    const root = document.getElementById('app-root');
+    var root = document.getElementById('app-root');
     if (!root) return;
 
-    root.innerHTML = `
-      <div class="landing">
-        ${EH.PublicNavbar.render()}
-        ${EH.Hero.render()}
-        ${EH.FeaturesSection.render()}
-        ${EH.CategoryCard.grid()}
-        ${EH.PricingSection.render()}
-        ${EH.TestimonialsSection.render()}
-        ${EH.FaqSection.render()}
-        ${EH.DiscoverSection.render()}
-        ${EH.PublicCTA.render()}
-        ${EH.PublicFooter.render()}
-      </div>`;
+    root.innerHTML = '' +
+      '<div class="landing">' +
+        P.components.navbar('home') +
+        P.components.hero() +
+        P.landing.discover() +
+        P.landing.features() +
+        P.landing.pricing() +
+        P.landing.testimonials() +
+        P.landing.faq() +
+        P.components.cta() +
+        P.components.footer() +
+      '</div>';
 
-    EH.PublicNavbar.attach(root);
-    EH.Hero.attach(root);
-    EH.FaqSection.attach(root);
-    EH.PublicCTA.attach(root);
-    EH.PublicFooter.attach(root);
-    EH.MobileNavigation.attach(root);
-    EH.ScrollBehavior.init();
+    /* Wire DOM. */
+    P.bindGoto(root);
+    P.components.mountSearch(root);
+
+    /* Async hydration. */
+    P.landing.hydrateDiscover();
+    P.landing.hydrateTestimonials();
+
+    /* FAQ uses data-action="faq" — handled by global delegation in bind.js. */
   }
 
-  EH.Landing = { render };
-  global.renderLanding = render;
-})(window);
+  /* Expose globally so the legacy router keeps working. */
+  window.renderLanding = renderLanding;
+  P.landing.render = renderLanding;
+})();

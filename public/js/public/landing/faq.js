@@ -1,34 +1,43 @@
 /* ============================================================
-   public/landing/faq.js
+   ExpertHub — js/public/landing/faq.js
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
+  P.landing = P.landing || {};
+  var esc = P.format.esc;
 
-  const EH = (global.EH = global.EH || {});
+  var ITEMS = [
+    ['How does registration work?',
+     'Learners are approved instantly. Experts and institutions require admin approval.'],
+    ['What is the platform commission?',
+     'We charge a flat 20% commission on all course sales and consultations.'],
+    ['How long do payouts take?',
+     'Withdrawals have a 7-day holding period, then process within 3 to 5 business days.'],
+    ['Can I switch from learner to expert?',
+     'Yes. Apply to become an expert from your dashboard. Our team reviews each application.'],
+    ['Do you support corporate training?',
+     'Yes. Institutions get programmes, cohorts, assessments, projects, certifications and compliance tracking.'],
+    ['How do I contact support?',
+     'Use the contact page or email support@experthub.example. We reply within one business day.']
+  ];
 
-  const FaqSection = {
-    render() {
-      const items = EH.PublicConfig.faq || [];
-      return `
-        <section class="section" id="faq">
-          <h2 class="section-title">Frequently asked questions</h2>
-          <p class="section-sub">Everything you need to know.</p>
-          <div class="faq-list">
-            ${items.map(([q, a]) => `
-              <div class="faq-item">
-                <div class="faq-q">${EH.Fmt.esc(q)}<i class="fas fa-chevron-down"></i></div>
-                <div class="faq-a">${EH.Fmt.esc(a)}</div>
-              </div>
-            `).join('')}
-          </div>
-        </section>`;
-    },
-
-    attach(root) {
-      if (!root) return;
-      EH.Accordion.initFaq(root);
-    },
+  P.landing.faq = function () {
+    return '' +
+      '<section class="section">' +
+        '<h2 class="section-title">Frequently asked questions</h2>' +
+        '<p class="section-sub">Everything you need to know.</p>' +
+        '<div class="faq-list">' +
+          ITEMS.map(function (qa) {
+            return '<div class="faq-item">' +
+              '<div class="faq-q" data-action="faq">' + esc(qa[0]) +
+                '<i class="fas fa-chevron-down"></i></div>' +
+              '<div class="faq-a">' + esc(qa[1]) + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</section>';
   };
 
-  EH.FaqSection = FaqSection;
-})(window);
+  P.landing.faqItems = ITEMS;
+})();
