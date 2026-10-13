@@ -1,60 +1,62 @@
 /* ============================================================
-   ExpertHub — js/public/pages/experts.js
-   #/experts  —  browse experts.
+   public/pages/experts.js
    ============================================================ */
-(function () {
+(function (global) {
   'use strict';
-  var P = window.PublicUI = window.PublicUI || {};
-  P.pages = P.pages || {};
-  var F = P.format;
 
-  function render() {
-    try { appPhase = 'landing'; } catch (_) {}
-    P.ensureStyles();
+  const EH = (global.EH = global.EH || {});
 
-    var root = document.getElementById('app-root');
-    root.innerHTML = '' +
-      '<div class="landing">' +
-        P.components.navbar('experts') +
-        '<div class="pub-page">' +
-          '<h1 class="section-title" style="margin-bottom:6px">Find an expert</h1>' +
-          '<p class="section-sub">Verified professionals for 1-on-1 consultations, coaching and mentoring.</p>' +
-          '<div class="pub-search" style="margin:22px 0;max-width:520px">' +
-            '<i class="fas fa-magnifying-glass"></i>' +
-            '<input type="search" id="pubExpertQuery" placeholder="Search by name, skill or field…">' +
-          '</div>' +
-          '<div class="pub-grid pub-grid-4" id="pubExpertList">' + F.skeletons(8, 250) + '</div>' +
-        '</div>' +
-        P.components.footer() +
-      '</div>';
+  let state = { query: '', experts: [] };
 
-    P.bindGoto(root);
+  async function render() {
+    const root = document.getElementById('app-root');
+    if (!root) return;
 
-    var input = root.querySelector('#pubExpertQuery');
-    if (input) input.addEventListener('input', F.debounce(function () { load(input.value); }, 280));
-    load('');
+    root.innerHTML = `
+      <div class="public-page">
+        ${EH.PublicNavbar.render()}
+        <header class="public-page-header">
+          <h1>Find an Expert</h1>
+          <p>Book 1-on-1 consultations with verified professionals.</p>
+        </header>
+        <section class="public-filters">
+          ${EH.PublicSearch.render({ id: 'expertSearch', placeholder: 'Search by name or specialization' })}
+        </section>
+        <section class="public-content">
+          <div id="expertsGrid" class="card-grid">
+            <div class="skeleton skeleton-card"></div>
+            <div class="skeleton skeleton-card"></div>
+          </div>
+        </section>
+        ${EH.PublicCTA.render()}
+        ${EH.PublicFooter.render()}
+      </div>`;
+
+    EH.PublicNavbar.attach(root);
+    EH.PublicCTA.attach(root);
+    EH.PublicFooter.attach(root);
+    EH.MobileNavigation.attach(root);
+
+    const d = await EH.ExpertsService.list();
+    state.experts = d.experts || [];
+
+    EH.PublicSearch.attach(root, (q) => { state.query = q; paint(); });
+    paint();
   }
 
-  async function load(q) {
-    var el = document.getElementById('pubExpertList');
-    if (!el) return;
-    el.innerHTML = F.skeletons(8, 250);
-
-    var params = ['limit=24'];
-    if (q) params.push('q=' + encodeURIComponent(q));
-
-    var list;
-    try {
-      var raw = await P.api.fetch('/experts?' + params.join('&'));
-      list = F.listOf(raw, ['experts']).map(P.normalize.expert);
-    } catch (_) { list = []; }
-    if (!list.length) list = P.demo.experts.map(P.normalize.expert);
-
-    if (!document.body.contains(el)) return;
-    el.innerHTML = list.length
-      ? list.map(P.components.expertCard).join('')
-      : F.empty('No experts match your search.');
+  function paint() {
+    const filtered = EH.ExpertsService.filter(state.experts, state.query);
+    const grid = document.getElementById('expertsGrid');
+    if (!grid) return;
+    if (!filtered.length) {
+      grid.innerHTML = EH.EmptyState.render({
+        icon: 'fa-user-tie', title: 'No experts found',
+        description: 'Try a different search.',
+      });
+      return;
+    }
+    grid.innerHTML = filtered.map(e => EH.ExpertCard.render(e)).join('');
   }
 
-  P.pages.experts = { render: render, load: load };
-})();
+  EH.ExpertsPage = { render };
+})(window);
