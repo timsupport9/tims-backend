@@ -1,171 +1,137 @@
-/* ExpertHub action domain: consultation. */
-(function(){
-  window.ExpertHubActions=window.ExpertHubActions||{};
-  window.ExpertHubActions["consultation"]={
-    execute(actionName,payload={}){
-      if(typeof window.handleAction==="function") return window.handleAction(actionName,payload);
-      return window.ExpertHubApi?.consultation?.post?.("/"+actionName,payload);
-    }
-  };
-})();
+/* ============================================================
+   actions/consultation-actions.js
+   ============================================================ */
+(function (global) {
+  'use strict';
 
-/* ================================================================
-   ExpertHub 3x Expansion Layer
-   Module: js/actions/consultation-actions.js
-   Source SHA-256: db8d0110c6db9f817d7ec51f2b61258b8be85f700ad26f1c44d5ee78ccf5ca0d
-   This appendix extends the original implementation without
-   replacing or re-declaring its existing application symbols.
-   ================================================================ */
-(function(global){
-  "use strict";
-  const root = global.ExpertHubExpandedModules = global.ExpertHubExpandedModules || {};
-  const id = "js_actions_consultation_actions_js";
-  const previous = root[id] || {};
+  const EH = (global.EH = global.EH || {});
 
-  function isObject(value){
-    return value !== null && typeof value === "object";
+  function viewConsultation(id) {
+    const c = (EH.state.consultations || []).find(x => String(x.id) === String(id));
+    if (!c) return;
+    EH.Modal.open({
+      title: c.title || 'Consultation',
+      body: `
+        <p><strong>Client:</strong> ${EH.Fmt.esc(c.client_name || '-')}</p>
+        <p><strong>Expert:</strong> ${EH.Fmt.esc(c.expert_name || 'Unassigned')}</p>
+        <p><strong>Status:</strong> <span class="${EH.Fmt.statusClass(c.status)}">${EH.Fmt.esc(c.status)}</span></p>
+        <p><strong>Type:</strong> ${EH.Fmt.esc(c.consultation_type || '')}</p>
+        <p><strong>Priority:</strong> ${EH.Fmt.esc(c.priority || '')}</p>
+        <p><strong>Description:</strong> ${EH.Fmt.esc(c.description || '')}</p>
+        <p><strong>Created:</strong> ${EH.Dates.fmtDateTime(c.created_at)}</p>`,
+      footer: `<button class="btn btn-secondary" data-close-modal>Close</button>`,
+    });
   }
-  function isPlainObject(value){
-    if(!isObject(value)) return false;
-    const proto = Object.getPrototypeOf(value);
-    return proto === Object.prototype || proto === null;
-  }
-  function clone(value){
-    if(value === undefined) return undefined;
-    if(typeof structuredClone === "function"){
-      try{ return structuredClone(value); }catch(_){
-        // Fall through to JSON-safe cloning.
-      }
-    }
-    try{ return JSON.parse(JSON.stringify(value)); }catch(_){
-      return value;
-    }
-  }
-  function normalizeError(error){
-    if(error instanceof Error){
-      return {name:error.name,message:error.message,stack:error.stack||"",code:error.code||null};
-    }
-    if(isObject(error)){
-      return {name:String(error.name||"Error"),message:String(error.message||error),code:error.code||null};
-    }
-    return {name:"Error",message:String(error),code:null};
-  }
-  function clamp(value,min,max){
-    const n=Number(value);
-    if(!Number.isFinite(n)) return min;
-    return Math.min(max,Math.max(min,n));
-  }
-  function asArray(value){
-    if(Array.isArray(value)) return value.slice();
-    if(value==null) return [];
-    return [value];
-  }
-  function unique(values){
-    return [...new Set(asArray(values))];
-  }
-  function nonEmpty(value,fallback=""){
-    const text=String(value==null?"":value).trim();
-    return text || fallback;
-  }
-  function safeJson(value,fallback=null){
-    try{ return JSON.stringify(value); }catch(_){
-      return fallback===null ? null : JSON.stringify(fallback);
-    }
-  }
-  function parseJson(value,fallback=null){
-    if(typeof value!=="string") return value;
-    try{ return JSON.parse(value); }catch(_){
-      return fallback;
-    }
-  }
-  function once(fn){
-    let called=false,result;
-    return function(...args){
-      if(called) return result;
-      called=true;
-      result=fn.apply(this,args);
-      return result;
+
+  function bookExpert(expertId, expertName) {
+    EH.Modal.open({
+      title: `Book ${EH.Fmt.esc(expertName || 'Expert')}`,
+      body: `
+        <label class="form-group"><span class="form-label">Title</span>
+          <input id="bkTitle" class="form-input" /></label>
+        <label class="form-group">
+          <span class="form-label">Type</span>
+          <select id="bkType" class="form-select">
+            <option value="video">Video</option>
+            <option value="audio">Audio</option>
+            <option value="chat">Chat</option>
+          </select>
+        </label>
+        <label class="form-group"><span class="form-label">Describe your issue</span>
+          <textarea id="bkDesc" class="form-textarea" rows="4"></textarea></label>`,
+      footer: `<button class="btn btn-secondary" data-close-modal>Cancel</button>
+               <button id="bkSave" class="btn btn-primary">Book</button>`,
+    });
+    document.getElementById('bkSave').onclick = async () => {
+      const title = document.getElementById('bkTitle').value;
+      const description = document.getElementById('bkDesc').value;
+      if (!title || !description) return EH.Toast.error('Fill all fields');
+      try {
+        await EH.API.post('/api/user/consultations', {
+          title, description,
+          consultation_type: document.getElementById('bkType').value,
+          expert_id: Number(expertId),
+        });
+        EH.Modal.close();
+        await EH.Data.reload.consultations();
+        EH.NavigationActions.switchTab(EH.state.activeTab);
+        EH.Toast.success('Consultation booked');
+      } catch (e) { EH.Toast.error(e.message); }
     };
   }
-  function debounce(fn,wait=250){
-    let timer=null;
-    return function(...args){
-      clearTimeout(timer);
-      timer=setTimeout(()=>fn.apply(this,args),Math.max(0,Number(wait)||0));
-    };
-  }
-  function throttle(fn,wait=250){
-    let last=0,pending=null;
-    return function(...args){
-      const now=Date.now();
-      const delay=Math.max(0,Number(wait)||0)-(now-last);
-      if(delay<=0){
-        last=now;
-        fn.apply(this,args);
-      }else if(!pending){
-        pending=setTimeout(()=>{
-          pending=null; last=Date.now(); fn.apply(this,args);
-        },delay);
-      }
-    };
-  }
-  function emit(name,detail={}){
-    try{
-      if(typeof global.dispatchEvent==="function" && typeof global.CustomEvent==="function"){
-        global.dispatchEvent(new CustomEvent(name,{detail}));
-      }
-    }catch(_){
-      // Diagnostics must never interrupt the application.
-    }
-  }
-  const sourceIndex = [{"line":1,"hash":"9c5ab12bd6"},{"line":2,"hash":"05fceb9164"},{"line":3,"hash":"50ee2063e4"},{"line":4,"hash":"88c6f2ddcf"},{"line":5,"hash":"6bfde016fc"},{"line":6,"hash":"99b47b789a"},{"line":7,"hash":"2af3d5f4db"},{"line":8,"hash":"e266bf1873"},{"line":9,"hash":"5f2fc80b57"},{"line":10,"hash":"cd0a678a0f"}];
-  const api = {
-    id,
-    path:"js/actions/consultation-actions.js",
-    version:"3x",
-    sourceHash:"db8d0110c6db9f817d7ec51f2b61258b8be85f700ad26f1c44d5ee78ccf5ca0d",
-    originalLineCount:10,
-    expandedAt:Date.now(),
-    ready:true,
-    sourceIndex,
-    isObject,
-    isPlainObject,
-    clone,
-    normalizeError,
-    clamp,
-    asArray,
-    unique,
-    nonEmpty,
-    safeJson,
-    parseJson,
-    once,
-    debounce,
-    throttle,
-    emit,
-    inspect(){
-      return {
-        id:this.id,
-        path:this.path,
-        version:this.version,
-        sourceHash:this.sourceHash,
-        originalLineCount:this.originalLineCount,
-        sourceIndexEntries:this.sourceIndex.length,
-        ready:this.ready
-      };
-    },
-    validate(){
-      return {
-        ok:!!this.ready && this.sourceIndex.length===this.originalLineCount,
-        module:this.id,
-        lines:this.originalLineCount
-      };
-    },
-    heartbeat(){
-      return {module:this.id,timestamp:Date.now(),online:global.navigator?global.navigator.onLine:true};
-    }
-  };
-  root[id]=Object.assign(previous,api);
-  emit("experthub:module-expanded",api.inspect());
-})(typeof globalThis!=="undefined"?globalThis:this);
 
-/* End ExpertHub 3x Expansion Layer for js/actions/consultation-actions.js. */
+  function newConsultation() {
+    const experts = EH.state.experts || [];
+    EH.Modal.open({
+      title: 'Request Consultation',
+      body: `
+        <label class="form-group"><span class="form-label">Title</span>
+          <input id="ncTitle" class="form-input" /></label>
+        <label class="form-group"><span class="form-label">Expert (optional)</span>
+          <select id="ncExpert" class="form-select">
+            <option value="">Any available expert</option>
+            ${experts.map(e => `<option value="${e.id}">${EH.Fmt.esc(e.name)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="form-group">
+          <span class="form-label">Type</span>
+          <select id="ncType" class="form-select">
+            <option value="career">Career</option>
+            <option value="academic">Academic</option>
+            <option value="business">Business</option>
+            <option value="technical">Technical</option>
+          </select>
+        </label>
+        <label class="form-group">
+          <span class="form-label">Priority</span>
+          <select id="ncPriority" class="form-select">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </label>
+        <label class="form-group"><span class="form-label">Description</span>
+          <textarea id="ncDesc" class="form-textarea" rows="4"></textarea></label>`,
+      footer: `<button class="btn btn-secondary" data-close-modal>Cancel</button>
+               <button id="ncSave" class="btn btn-primary">Submit</button>`,
+    });
+    document.getElementById('ncSave').onclick = async () => {
+      const title = document.getElementById('ncTitle').value;
+      const description = document.getElementById('ncDesc').value;
+      if (!title || !description) return EH.Toast.error('Fill all fields');
+      try {
+        await EH.API.post('/api/user/consultations', {
+          title, description,
+          consultation_type: document.getElementById('ncType').value,
+          priority: document.getElementById('ncPriority').value,
+          expert_id: document.getElementById('ncExpert').value
+            ? Number(document.getElementById('ncExpert').value) : null,
+        });
+        EH.Modal.close();
+        await EH.Data.reload.consultations();
+        EH.NavigationActions.switchTab(EH.state.activeTab);
+        EH.Toast.success('Consultation requested');
+      } catch (e) { EH.Toast.error(e.message); }
+    };
+  }
+
+  function openVideoCall(cid) {
+    if (!cid) return EH.Toast.error('No consultation selected');
+    const room = `experthub-${cid}-${EH.Fmt.uid(6)}`;
+    EH.Modal.open({
+      title: 'Video Call',
+      className: 'chat-modal',
+      body: `
+        <div class="chat-video-wrap">
+          <iframe src="https://meet.jit.si/${room}"
+                  allow="camera;microphone;fullscreen;display-capture"
+                  style="width:100%;height:100%;border:0" title="Video call"></iframe>
+        </div>
+        <p class="form-hint">Room ID: <code class="code">${room}</code></p>`,
+      footer: `<button class="btn btn-secondary" data-close-modal>End call</button>`,
+    });
+  }
+
+  EH.ConsultationActions = { viewConsultation, bookExpert, newConsultation, openVideoCall };
+})(window);
