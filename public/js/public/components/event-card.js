@@ -1,33 +1,34 @@
 /* ============================================================
-   ExpertHub — js/public/components/event-card.js
+   public/components/event-card.js
    ============================================================ */
-(function () {
+(function (global) {
   'use strict';
-  var P = window.PublicUI = window.PublicUI || {};
-  P.components = P.components || {};
-  var F = P.format, esc = F.esc;
 
-  P.components.eventRow = function (ev) {
-    if (!ev) return '';
-    var d = ev.startsAt ? new Date(ev.startsAt) : null;
-    var day = d && !isNaN(d) ? d.getDate() : '—';
-    var mon = d && !isNaN(d) ? d.toLocaleDateString(undefined, { month: 'short' }) : '';
+  const EH = (global.EH = global.EH || {});
 
-    return '' +
-      '<article class="pub-row-card" data-goto="#/events/' +
-        encodeURIComponent(ev.id) + '" style="cursor:pointer">' +
-        '<div class="pub-date-chip"><b>' + esc(day) + '</b><span>' + esc(mon) + '</span></div>' +
-        '<div style="flex:1;min-width:0">' +
-          '<h3 class="pub-card-title" style="margin-bottom:4px">' + esc(ev.title) + '</h3>' +
-          '<p class="pub-card-text" style="margin-bottom:6px">' + esc(ev.summary || '') + '</p>' +
-          '<div class="pub-card-meta" style="padding-top:0">' +
-            '<span><i class="fas fa-' + (ev.mode === 'physical' ? 'location-dot' : 'video') + '"></i> ' +
-              esc(ev.mode === 'physical' ? (ev.location || 'In person') : 'Online') + '</span>' +
-            '<span><i class="fas fa-clock"></i> ' + esc(F.dateTime(ev.startsAt)) + '</span>' +
-            '<span><i class="fas fa-tag"></i> ' + esc(F.money(ev.price, ev.currency)) + '</span>' +
-          '</div>' +
-        '</div>' +
-        '<i class="fas fa-chevron-right" style="opacity:.35"></i>' +
-      '</article>';
-  };
-})();
+  function render(ev) {
+    const d = new Date(ev.date || ev.created_at || Date.now());
+    const day = d.getDate();
+    const month = d.toLocaleString('en-US', { month: 'short' });
+    const price = (ev.price || 0) > 0 ? EH.Fmt.cur(ev.price) : 'Free';
+    return `
+      <article class="event-card public-event-card">
+        <div class="event-date">
+          <span class="event-day">${day}</span>
+          <span class="event-month">${month}</span>
+        </div>
+        <div class="event-body">
+          <h4 class="event-title">${EH.Fmt.esc(ev.title)}</h4>
+          <p class="event-desc">${EH.Fmt.esc(EH.Fmt.truncate(ev.description, 140))}</p>
+          <p class="event-meta">
+            ${ev.registered_count || 0}/${ev.capacity || 0} registered · ${price}
+          </p>
+        </div>
+        <div class="event-actions">
+          <a href="#/event/${ev.id}" class="btn btn-primary btn-sm">Details</a>
+        </div>
+      </article>`;
+  }
+
+  EH.EventCard = { render };
+})(window);

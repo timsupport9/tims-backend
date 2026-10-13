@@ -1,29 +1,32 @@
 /* ============================================================
-   ExpertHub — js/public/components/public-cta.js
-   Closing call-to-action band.
+   public/components/public-cta.js — Bottom CTA band
    ============================================================ */
-(function () {
+(function (global) {
   'use strict';
-  var P = window.PublicUI = window.PublicUI || {};
-  P.components = P.components || {};
-  var esc = P.format.esc;
 
-  P.components.cta = function (opts) {
-    opts = opts || {};
-    var title = opts.title || 'Ready to start?';
-    var text  = opts.text  || 'Join thousands of learners, experts and institutions already growing on ExpertHub.';
-    var label = opts.label || 'Create your free account';
-    var href  = opts.href  || '#/register';
-    var icon  = opts.icon  || 'fa-rocket';
+  const EH = (global.EH = global.EH || {});
 
-    return '' +
-      '<section class="section alt">' +
-        '<div class="pub-cta">' +
-          '<h2>' + esc(title) + '</h2>' +
-          '<p>' + esc(text) + '</p>' +
-          '<button class="btn btn-primary" data-goto="' + href + '">' +
-            '<i class="fas ' + icon + '"></i> ' + esc(label) + '</button>' +
-        '</div>' +
-      '</section>';
-  };
-})();
+  function render() {
+    return `
+      <section class="public-cta">
+        <div class="public-cta-content">
+          <h2>Ready to start your journey?</h2>
+          <p>Join thousands of learners, experts and institutions growing on ExpertHub.</p>
+          <div class="hero-cta">
+            <button class="btn btn-primary btn-lg" id="ctaStart">
+              <i class="fas fa-rocket"></i> Get started free</button>
+            <button class="btn btn-secondary btn-lg" id="ctaContact">
+              <i class="fas fa-envelope"></i> Talk to sales</button>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function attach(root) {
+    if (!root) return;
+    root.querySelector('#ctaStart')?.addEventListener('click', () => { location.hash = '#/register'; });
+    root.querySelector('#ctaContact')?.addEventListener('click', () => { location.hash = '#/contact'; });
+  }
+
+  EH.PublicCTA = { render, attach };
+})(window);

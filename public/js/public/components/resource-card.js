@@ -1,31 +1,23 @@
 /* ============================================================
-   ExpertHub — js/public/components/resource-card.js
+   public/components/resource-card.js
    ============================================================ */
-(function () {
+(function (global) {
   'use strict';
-  var P = window.PublicUI = window.PublicUI || {};
-  P.components = P.components || {};
-  var F = P.format, esc = F.esc;
 
-  P.components.resourceCard = function (r) {
-    if (!r) return '';
-    return '' +
-      '<article class="pub-card" data-action="resource-open" ' +
-        'data-url="' + esc(r.url || '') + '" style="cursor:pointer">' +
-        '<div class="pub-card-media" style="aspect-ratio:16/10">' +
-          (r.cover
-            ? '<img src="' + esc(r.cover) + '" alt="" loading="lazy">'
-            : '<img src="' + esc(F.avatar(r.title, '0ea5e9')) + '" alt="" loading="lazy">') +
-          '<span class="pub-card-tag">' + esc(r.type || 'Article') + '</span>' +
-        '</div>' +
-        '<div class="pub-card-body">' +
-          '<h3 class="pub-card-title">' + esc(r.title) + '</h3>' +
-          '<p class="pub-card-text">' + esc(r.summary || '') + '</p>' +
-          '<div class="pub-card-meta">' +
-            '<span>' + esc(r.author || 'ExpertHub') + '</span>' +
-            (r.readMinutes ? '<span>· ' + r.readMinutes + ' min read</span>' : '') +
-          '</div>' +
-        '</div>' +
-      '</article>';
-  };
-})();
+  const EH = (global.EH = global.EH || {});
+
+  function render(resource) {
+    return `
+      <article class="program-card public-resource-card">
+        <span class="chip chip-neutral">${EH.Fmt.esc(resource.category || 'Resource')}</span>
+        <h4 class="program-title">${EH.Fmt.esc(resource.title)}</h4>
+        <p class="program-desc">${EH.Fmt.esc(EH.Fmt.truncate(resource.description || '', 130))}</p>
+        <div class="panel-actions" style="margin-top:10px">
+          <a href="#/resources" class="btn btn-secondary btn-sm">
+            <i class="fas fa-book-open"></i> Read</a>
+        </div>
+      </article>`;
+  }
+
+  EH.ResourceCard = { render };
+})(window);
