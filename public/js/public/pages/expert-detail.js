@@ -1,76 +1,101 @@
 /* ============================================================
-   public/pages/expert-detail.js
+   ExpertHub — js/public/pages/expert-detail.js
+   #/experts/:id  —  public expert profile.
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
+  P.pages = P.pages || {};
+  var F = P.format, esc = F.esc;
 
-  const EH = (global.EH = global.EH || {});
+  function render(params) {
+    try { appPhase = 'landing'; } catch (_) {}
+    P.ensureStyles();
 
-  async function render(id) {
-    const root = document.getElementById('app-root');
-    if (!root) return;
+    var root = document.getElementById('app-root');
+    root.innerHTML = '' +
+      '<div class="landing">' +
+        P.components.navbar('experts') +
+        '<div class="pub-page" id="pubExpertDetail">' + F.skeletons(1, 360) + '</div>' +
+        P.components.footer() +
+      '</div>';
 
-    root.innerHTML = `
-      <div class="public-page">
-        ${EH.PublicNavbar.render()}
-        <div class="skeleton skeleton-line" style="height:120px;margin:20px 0"></div>
-      </div>`;
+    P.bindGoto(root);
+    load(params && params.id);
+  }
 
-    const d = await EH.ExpertsService.detail(id);
-    const expert = d?.expert || d || null;
+  async function load(id) {
+    var host = document.getElementById('pubExpertDetail');
+    if (!id || !host) return;
+
+    var expert;
+    try {
+      var raw = await P.api.fetch('/experts/' + encodeURIComponent(id));
+      var e = F.oneOf(raw, ['expert']);
+      expert = e ? P.normalize.expert(e) : null;
+    } catch (_) { expert = null; }
+    if (!expert) {
+      for (var i = 0; i < P.demo.experts.length; i++) {
+        if (String(P.demo.experts[i].id) === String(id)) { expert = P.normalize.expert(P.demo.experts[i]); break; }
+      }
+    }
+    if (!document.body.contains(host)) return;
 
     if (!expert) {
-      root.innerHTML = `
-        <div class="public-page">
-          ${EH.PublicNavbar.render()}
-          <section class="public-content">
-            ${EH.EmptyState.render({
-              icon: 'fa-user-tie', title: 'Expert not found',
-            })}
-          </section>
-          ${EH.PublicFooter.render()}
-        </div>`;
-      EH.PublicNavbar.attach(root);
-      EH.PublicFooter.attach(root);
+      host.innerHTML = F.empty('That expert could not be found.',
+                               'Back to experts',
+                               'data-goto="#/experts"');
+      P.bindGoto(host);
       return;
     }
 
-    const avatar = expert.avatar || EH.PublicFormat.avatar(expert.name);
-    root.innerHTML = `
-      <div class="public-page">
-        ${EH.PublicNavbar.render()}
-        <header class="public-page-header detail-hero">
-          <img class="profile-avatar" src="${EH.Fmt.esc(avatar)}" alt="" />
-          <div>
-            <h1>${EH.Fmt.esc(expert.name)}</h1>
-            <p>${EH.Fmt.esc(expert.specialization || '')}</p>
-            <p>
-              <i class="fas fa-star" style="color:#f59e0b"></i>
-              ${EH.PublicFormat.rating(expert.average_rating)} · ${EH.Fmt.cur(expert.hourly_rate || 0)} / hr
-            </p>
-          </div>
-        </header>
-        <section class="public-content detail-layout">
-          <article class="detail-main">
-            <h2>About</h2>
-            <p>${EH.Fmt.esc(expert.bio || 'No bio provided.')}</p>
-          </article>
-          <aside class="detail-sidebar">
-            <div class="panel">
-              <a href="#/register" class="btn btn-primary btn-block">
-                <i class="fas fa-calendar-plus"></i> Book consultation</a>
-              <a href="#/experts" class="btn btn-secondary btn-block">
-                <i class="fas fa-arrow-left"></i> All experts</a>
-            </div>
-          </aside>
-        </section>
-        ${EH.PublicFooter.render()}
-      </div>`;
+    var authed = !!(window.S && (S.user || S.token));
 
-    EH.PublicNavbar.attach(root);
-    EH.PublicFooter.attach(root);
-    EH.MobileNavigation.attach(root);
+    host.innerHTML = '' +
+      '<button class="pub-link" data-goto="#/experts" style="margin-bottom:20px">' +
+        '<i class="fas fa-arrow-left"></i> All experts</button>' +
+
+      '<div class="pub-detail-hero">' +
+        '<div>' +
+          '<div class="pub-author" style="margin-bottom:16px">' +
+            '<img src="' + esc(F.safeImage(expert.avatar, expert.name)) + '" alt="" ' +
+              'style="width:86px;height:86px;border-radius:50%;object-fit:cover">' +
+            '<div>' +
+              '<h1 class="section-title" style="margin:0 0 4px;font-size:1.7rem">' + esc(expert.name) +
+                (expert.verified ? ' <i class="fas fa-circle-check pub-verified"></i>' : '') + '</h1>' +
+              '<p style="margin:0;opacity:.68">' + esc(expert.headline || 'ExpertHub consultant') + '</p>' +
+            '</div>' +
+          '</div>' +
+          '<div class="pub-stars" style="font-size:.95rem;margin-bottom:14px">' + F.stars(expert.rating) +
+            ' <span style="color:inherit;opacity:.6;margin-left:6px">' +
+            (expert.rating ? Number(expert.rating).toFixed(1) : 'New') +
+            (expert.reviews ? ' · ' + expert.reviews + ' reviews' : '') + '</span>' +
+          '</div>' +
+          (expert.specializations.length
+            ? '<div class="pub-tags" style="justify-content:flex-start;margin-bottom:20px">' +
+              expert.specializations.map(function (s) {
+                return '<span class="pub-tag">' + esc(s) + '</span>';
+              }).join('') + '</div>'
+            : '') +
+          '<p style="line-height:1.75;opacity:.76">' + esc(expert.headline) + '</p>' +
+        '</div>' +
+
+        '<aside class="pub-side">' +
+          '<div class="pub-side-price">' +
+            (expert.rate ? esc(F.money(expert.rate, expert.currency)) : 'Contact') +
+            (expert.rate ? '<span style="font-size:.82rem;font-weight:500;opacity:.6"> / session</span>' : '') +
+          '</div>' +
+          '<button class="btn btn-primary btn-block" data-goto="' +
+            (authed ? '#/messages' : '#/register') + '">' +
+            '<i class="fas fa-comments"></i> ' +
+            (authed ? 'Book a consultation' : 'Sign up to book') + '</button>' +
+          '<button class="btn btn-secondary btn-block" data-goto="#/contact">' +
+            '<i class="fas fa-envelope"></i> Send a message</button>' +
+        '</aside>' +
+      '</div>';
+
+    P.bindGoto(host);
   }
 
-  EH.ExpertDetailPage = { render };
-})(window);
+  P.pages.expertDetail = { render: render, load: load };
+})();

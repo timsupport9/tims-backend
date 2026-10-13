@@ -1,45 +1,50 @@
 /* ============================================================
-   public/pages/resources.js
+   ExpertHub — js/public/pages/resources.js
+   #/resources  —  public resources index.
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
+  P.pages = P.pages || {};
+  var F = P.format;
 
-  const EH = (global.EH = global.EH || {});
+  function render() {
+    try { appPhase = 'landing'; } catch (_) {}
+    P.ensureStyles();
 
-  async function render() {
-    const root = document.getElementById('app-root');
-    if (!root) return;
+    var root = document.getElementById('app-root');
+    root.innerHTML = '' +
+      '<div class="landing">' +
+        P.components.navbar('resources') +
+        '<div class="pub-page">' +
+          '<h1 class="section-title" style="margin-bottom:6px">Resources</h1>' +
+          '<p class="section-sub">Free articles, guides, templates and learning materials.</p>' +
+          '<div class="pub-grid pub-grid-4" id="pubResourceList" style="margin-top:24px">' +
+            F.skeletons(8, 240) + '</div>' +
+        '</div>' +
+        P.components.footer() +
+      '</div>';
 
-    root.innerHTML = `
-      <div class="public-page">
-        ${EH.PublicNavbar.render()}
-        <header class="public-page-header">
-          <h1>Resources</h1>
-          <p>Guides, checklists and articles to accelerate your growth.</p>
-        </header>
-        <section class="public-content">
-          <div id="resourcesGrid" class="card-grid"></div>
-        </section>
-        ${EH.PublicCTA.render()}
-        ${EH.PublicFooter.render()}
-      </div>`;
-
-    EH.PublicNavbar.attach(root);
-    EH.PublicCTA.attach(root);
-    EH.PublicFooter.attach(root);
-    EH.MobileNavigation.attach(root);
-
-    const d = await EH.ResourcesService.list();
-    const resources = d.resources || [];
-    const grid = document.getElementById('resourcesGrid');
-    if (!resources.length) {
-      grid.innerHTML = EH.EmptyState.render({
-        icon: 'fa-book', title: 'No resources yet',
-      });
-      return;
-    }
-    grid.innerHTML = resources.map(r => EH.ResourceCard.render(r)).join('');
+    P.bindGoto(root);
+    load();
   }
 
-  EH.ResourcesPage = { render };
-})(window);
+  async function load() {
+    var el = document.getElementById('pubResourceList');
+    if (!el) return;
+
+    var list;
+    try {
+      var raw = await P.api.fetch('/resources?limit=32');
+      list = F.listOf(raw, ['resources']).map(P.normalize.resource);
+    } catch (_) { list = []; }
+    if (!list.length) list = P.demo.resources.map(P.normalize.resource);
+
+    if (!document.body.contains(el)) return;
+    el.innerHTML = list.length
+      ? list.map(P.components.resourceCard).join('')
+      : F.empty('No resources published yet.');
+  }
+
+  P.pages.resources = { render: render, load: load };
+})();

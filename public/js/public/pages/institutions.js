@@ -1,81 +1,69 @@
 /* ============================================================
-   public/pages/institutions.js — Corporate/institution marketing
+   ExpertHub — js/public/pages/institutions.js
+   #/institutions  —  public pitch to institutions.
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
+  P.pages = P.pages || {};
+  var esc = P.format.esc;
+  var feature = P.landing.feature;
 
-  const EH = (global.EH = global.EH || {});
+  function render() {
+    try { appPhase = 'landing'; } catch (_) {}
+    P.ensureStyles();
 
-  async function render() {
-    const root = document.getElementById('app-root');
-    if (!root) return;
+    var root = document.getElementById('app-root');
+    root.innerHTML = '' +
+      '<div class="landing">' +
+        P.components.navbar('institutions') +
+        '<div class="pub-page" style="max-width:1000px">' +
+          '<span class="hero-badge">For institutions</span>' +
+          '<h1 class="section-title" style="margin:0 0 16px">Corporate training that actually reports back</h1>' +
+          '<p style="font-size:1.05rem;line-height:1.8;opacity:.78;max-width:70ch">' +
+            'Run cohorts, assign trainers, assess trainees and prove compliance — all from one dashboard. ' +
+            'ExpertHub gives L&amp;D teams the operational control of an LMS with the flexibility of a marketplace.' +
+          '</p>' +
 
-    root.innerHTML = `
-      <div class="public-page">
-        ${EH.PublicNavbar.render()}
-        <header class="public-page-header">
-          <h1>Corporate & Institutional Training</h1>
-          <p>Run programmes, cohorts, assessments and compliance in one place.</p>
-        </header>
+          '<div class="features-grid" style="margin-top:36px">' +
+            feature('fa-users-rectangle', '', 'Programmes &amp; cohorts',
+                    'Build multi-week programmes and group trainees into cohorts.') +
+            feature('fa-clipboard-check', 'linear-gradient(135deg,#10b981,#059669)', 'Assessments',
+                    'Quizzes, assignments and capstone projects with automatic scoring.') +
+            feature('fa-certificate', 'linear-gradient(135deg,#f59e0b,#d97706)', 'Certifications',
+                    'Issue verifiable certificates your HR system can validate.') +
+            feature('fa-chart-pie', 'linear-gradient(135deg,#8b5cf6,#6d28d9)', 'Analytics',
+                    'Completion, scores and engagement across every cohort.') +
+            feature('fa-shield-halved', 'linear-gradient(135deg,#ef4444,#b91c1c)', 'Compliance',
+                    'Audit logs, attendance records and exportable reports.') +
+            feature('fa-plug', 'linear-gradient(135deg,#0ea5e9,#0369a1)', 'Integrations',
+                    'SSO, custom branding and API access on enterprise plans.') +
+          '</div>' +
 
-        <section class="section">
-          <h2 class="section-title">Built for L&D teams</h2>
-          <div class="features-grid">
-            <div class="feature-card">
-              <div class="feature-icon"><i class="fas fa-diagram-project"></i></div>
-              <h3>Programmes</h3>
-              <p>Design sequenced learning journeys with prerequisites and modules.</p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon green"><i class="fas fa-layer-group"></i></div>
-              <h3>Cohorts</h3>
-              <p>Run multiple batches with instructors, capacity and waitlists.</p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon yellow"><i class="fas fa-clipboard-check"></i></div>
-              <h3>Assessments</h3>
-              <p>Quizzes, exams, projects and capstone grading.</p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon purple"><i class="fas fa-award"></i></div>
-              <h3>Certifications</h3>
-              <p>Issue verifiable certificates with CPD points and expiry tracking.</p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon red"><i class="fas fa-shield-halved"></i></div>
-              <h3>Compliance</h3>
-              <p>Rules, recurrence, and status across your workforce.</p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon blue"><i class="fas fa-chart-line"></i></div>
-              <h3>Reports</h3>
-              <p>Scorecards, cost analysis, compliance and skills matrices.</p>
-            </div>
-          </div>
-        </section>
+          '<h2 class="section-title" style="font-size:1.3rem;margin:48px 0 16px">How onboarding works</h2>' +
+          '<ul class="pub-list">' +
+            ['Register your institution and tell us about your training needs.',
+             'Our team reviews and approves your account, usually within one business day.',
+             'An operations manager is assigned to help you structure your first programme.',
+             'Enrol trainees, assign trainers and start tracking progress immediately.'
+            ].map(function (t, i) {
+              return '<li><span class="pub-tag" style="flex:none">' + (i + 1) + '</span>' +
+                     '<span>' + esc(t) + '</span></li>';
+            }).join('') +
+          '</ul>' +
+        '</div>' +
+        P.components.cta({
+          title: 'Talk to our training team',
+          text: 'Tell us about your organisation and we will design a programme around your goals.',
+          label: 'Register institution',
+          href: '#/register',
+          icon: 'fa-building-columns'
+        }) +
+        P.components.footer() +
+      '</div>';
 
-        <section class="section alt">
-          <div class="cta-band">
-            <h2>Ready to onboard your organisation?</h2>
-            <p>Talk to our team to plan your rollout.</p>
-            <div class="hero-cta">
-              <a href="#/register" class="btn btn-primary btn-lg">
-                <i class="fas fa-building"></i> Register institution</a>
-              <a href="#/contact" class="btn btn-secondary btn-lg">
-                <i class="fas fa-envelope"></i> Talk to sales</a>
-            </div>
-          </div>
-        </section>
-
-        ${EH.PublicCTA.render()}
-        ${EH.PublicFooter.render()}
-      </div>`;
-
-    EH.PublicNavbar.attach(root);
-    EH.PublicCTA.attach(root);
-    EH.PublicFooter.attach(root);
-    EH.MobileNavigation.attach(root);
+    P.bindGoto(root);
   }
 
-  EH.InstitutionsPage = { render };
-})(window);
+  P.pages.institutions = { render: render };
+})();

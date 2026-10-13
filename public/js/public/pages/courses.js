@@ -1,90 +1,97 @@
 /* ============================================================
-   public/pages/courses.js — Public course listing page
+   ExpertHub — js/public/pages/courses.js
+   #/courses  —  browse courses.
    ============================================================ */
-(function (global) {
+(function () {
   'use strict';
+  var P = window.PublicUI = window.PublicUI || {};
+  P.pages = P.pages || {};
+  var F = P.format, esc = F.esc;
+  var currentCategory = 'all';
 
-  const EH = (global.EH = global.EH || {});
+  function render(ctx) {
+    try { appPhase = 'landing'; } catch (_) {}
+    P.ensureStyles();
 
-  let state = { query: '', type: 'all', level: 'all', courses: [] };
+    var q = (ctx && ctx.query && ctx.query.get && ctx.query.get('q')) || '';
 
-  async function render() {
-    const root = document.getElementById('app-root');
-    if (!root) return;
+    var root = document.getElementById('app-root');
+    root.innerHTML = '' +
+      '<div class="landing">' +
+        P.components.navbar('courses') +
+        '<div class="pub-page">' +
+          '<h1 class="section-title" style="margin-bottom:6px">Browse courses</h1>' +
+          '<p class="section-sub">Bootcamps, short courses, tuition and exam prep from verified experts.</p>' +
 
-    state.query = new URLSearchParams(location.hash.split('?')[1] || '').get('q') || '';
-    state.type = new URLSearchParams(location.hash.split('?')[1] || '').get('type') || 'all';
+          '<form class="pub-search" id="pubCourseSearch" style="margin:22px 0" autocomplete="off">' +
+            '<i class="fas fa-magnifying-glass"></i>' +
+            '<input type="search" id="pubCourseQuery" placeholder="Search courses…" value="' + esc(q) + '">' +
+            '<button class="btn btn-primary" type="submit">Search</button>' +
+          '</form>' +
 
-    root.innerHTML = `
-      <div class="public-page">
-        ${EH.PublicNavbar.render()}
-        <header class="public-page-header">
-          <h1>All Courses</h1>
-          <p>${EH.PublicConfig.brand.description}</p>
-        </header>
-        <section class="public-filters">
-          ${EH.PublicSearch.render({ id: 'courseSearch', value: state.query })}
-          <select id="courseTypeFilter" class="form-select">
-            <option value="all">All types</option>
-            <option value="bootcamp">Bootcamps</option>
-            <option value="short_course">Short Courses</option>
-            <option value="tuition">Tuition</option>
-            <option value="exam_prep">Exam Prep</option>
-            <option value="career">Career</option>
-          </select>
-          <select id="courseLevelFilter" class="form-select">
-            <option value="all">All levels</option>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-        </section>
-        <section class="public-content">
-          <div id="coursesGrid" class="card-grid">
-            <div class="skeleton skeleton-card"></div>
-            <div class="skeleton skeleton-card"></div>
-            <div class="skeleton skeleton-card"></div>
-          </div>
-        </section>
-        ${EH.PublicCTA.render()}
-        ${EH.PublicFooter.render()}
-      </div>`;
+          '<div class="pub-chips" id="pubCourseFilters" style="margin-bottom:24px">' +
+            ['all|All', 'Web Development|Web', 'Data Science|Data', 'Business|Business',
+             'Exam Prep|Exam prep', 'Design|Design']
+              .map(function (f, i) {
+                var parts = f.split('|');
+                return '<button class="pub-chip' + (i === 0 ? ' is-active' : '') + '" ' +
+                  'data-action="course-filter" data-filter="' + esc(parts[0]) + '">' +
+                  esc(parts[1]) + '</button>';
+              }).join('') +
+          '</div>' +
 
-    EH.PublicNavbar.attach(root);
-    EH.PublicCTA.attach(root);
-    EH.PublicFooter.attach(root);
-    EH.MobileNavigation.attach(root);
+          '<div class="pub-grid pub-grid-3" id="pubCourseList">' + F.skeletons(6, 280) + '</div>' +
+        '</div>' +
+        P.components.footer() +
+      '</div>';
 
-    const d = await EH.CoursesService.list();
-    state.courses = d.courses || [];
-
-    EH.PublicSearch.attach(root, (q) => { state.query = q; paint(); });
-
-    document.getElementById('courseTypeFilter').onchange = (e) => {
-      state.type = e.target.value; paint();
-    };
-    document.getElementById('courseLevelFilter').onchange = (e) => {
-      state.level = e.target.value; paint();
-    };
-
-    paint();
+    P.bindGoto(root);
+    bind(root);
+    load({ q: q, category: 'all' });
   }
 
-  function paint() {
-    const filtered = EH.CoursesService.filter(state.courses, {
-      type: state.type, level: state.level, query: state.query,
-    });
-    const grid = document.getElementById('coursesGrid');
-    if (!grid) return;
-    if (!filtered.length) {
-      grid.innerHTML = EH.EmptyState.render({
-        icon: 'fa-book-open', title: 'No courses found',
-        description: 'Try adjusting your filters.',
+  function bind(root) {
+    var form = root.querySelector('#pubCourseSearch');
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        load({ q: (root.querySelector('#pubCourseQuery') || {}).value || '', category: currentCategory });
       });
-      return;
     }
-    grid.innerHTML = filtered.map(c => EH.CourseCard.render(c)).join('');
+    /* Category chips. */
+    (root.querySelectorAll('[data-action="course-filter"]') || []).forEach(function (el) {
+      el.addEventListener('click', function () {
+        (root.querySelectorAll('.pub-chip') || []).forEach(function (s) { s.classList.remove('is-active'); });
+        el.classList.add('is-active');
+        currentCategory = el.getAttribute('data-filter') || 'all';
+        var qInput = root.querySelector('#pubCourseQuery');
+        load({ q: qInput ? qInput.value : '', category: currentCategory });
+      });
+    });
   }
 
-  EH.CoursesPage = { render };
-})(window);
+  async function load(opts) {
+    var el = document.getElementById('pubCourseList');
+    if (!el) return;
+    el.innerHTML = F.skeletons(6, 280);
+
+    var params = [];
+    if (opts.q) params.push('q=' + encodeURIComponent(opts.q));
+    if (opts.category && opts.category !== 'all') params.push('category=' + encodeURIComponent(opts.category));
+    params.push('limit=24');
+
+    var list;
+    try {
+      var raw = await P.api.fetch('/courses?' + params.join('&'));
+      list = F.listOf(raw, ['courses']).map(P.normalize.course);
+    } catch (_) { list = []; }
+    if (!list.length) list = P.demo.courses.map(P.normalize.course);
+
+    if (!document.body.contains(el)) return;
+    el.innerHTML = list.length
+      ? list.map(P.components.courseCard).join('')
+      : F.empty('No courses match your filters.');
+  }
+
+  P.pages.courses = { render: render, load: load };
+})();
