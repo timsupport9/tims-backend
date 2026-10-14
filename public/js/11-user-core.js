@@ -1,6 +1,20 @@
 /* ============================================================
    ExpertHub 2.0 — 11-user-core.js
    Learner dashboard shell, tab router, and overview panel.
+
+   Wired to Tier 1–3 modules:
+     17-quiz.js                → no direct tab
+     20-study-groups.js        → 'study-groups'
+     21-leaderboard.js         → 'leaderboard'
+     22-ai-study-buddy.js      → no direct tab
+     23-subscriptions.js       → 'subscription'
+     24-referrals.js           → 'referrals'
+     25-skill-map.js           → 'skill-map'
+     26-srs.js                 → 'flashcards'
+     27-forum.js               → 'community'
+     28-digest.js              → 'digest'
+   If any of those files is missing, only its tab fails; the
+   rest of the dashboard keeps working.
    ============================================================ */
 
 /* ============================================================
@@ -19,6 +33,7 @@ function renderUserDashboard() {
 
   const nav = `
     ${sidebarItem('dashboard','Dashboard','fa-chart-line')}
+
     ${showLearn ? sidebarItem('eschool','E-School','fa-school') : ''}
     ${showLearn ? sidebarItem('my-learning','My Learning','fa-graduation-cap') : ''}
     ${showLearn ? sidebarItem('learning-paths','Learning Paths','fa-route') : ''}
@@ -27,18 +42,37 @@ function renderUserDashboard() {
     ${showLearn ? sidebarItem('certificates','Certificates','fa-certificate') : ''}
     ${showLearn ? sidebarItem('achievements','Achievements','fa-trophy', unreadBadges) : ''}
     ${showLearn ? sidebarItem('course-notes','My Notes','fa-sticky-note') : ''}
+
+    ${/* TIER 1–3 additions — learning tools */ ''}
+    ${showLearn ? sidebarItem('flashcards','Flashcards','fa-layer-group') : ''}
+    ${showLearn ? sidebarItem('skill-map','Skill Map','fa-route') : ''}
+
     ${sidebarItem('events','Events','fa-calendar-alt')}
+
     ${showConsult ? sidebarItem('experts','Find Experts','fa-search') : ''}
     ${sidebarItem('consultations','My Consultations','fa-comments', activeCons)}
     ${showConsult ? sidebarItem('packages','Session Packages','fa-ticket-alt') : ''}
     ${showConsult ? sidebarItem('shortlist','Shortlist','fa-bookmark') : ''}
+
+    ${/* TIER 1–3 additions — community + growth */ ''}
+    ${sidebarItem('community','Community','fa-comments')}
+    ${sidebarItem('study-groups','Study Groups','fa-users')}
+    ${sidebarItem('leaderboard','Leaderboard','fa-trophy')}
+    ${sidebarItem('digest','Weekly Digest','fa-calendar-week')}
+
     ${sidebarItem('wallet','Wallet','fa-wallet')}
     ${sidebarItem('transactions','Transactions','fa-receipt')}
     ${showLearn ? sidebarItem('refunds','Refund Requests','fa-rotate-left') : ''}
+
+    ${/* TIER 1–3 additions — account */ ''}
+    ${sidebarItem('referrals','Refer & Earn','fa-gift')}
+    ${sidebarItem('subscription','Subscription','fa-star')}
+
     ${sidebarItem('claims','Claims','fa-gavel')}
     ${sidebarItem('support','Support','fa-headset')}
     ${sidebarItem('profile','Profile','fa-user')}
   `;
+
   shell({
     roleClass: 'role-user',
     brandIcon: 'fa-user-circle',
@@ -53,6 +87,7 @@ function renderUserDashboard() {
 
 function renderUserContent() {
   switch (activeTab) {
+    /* ---------- original tabs ---------- */
     case 'dashboard':       return userOverview();
     case 'eschool':         return userESchool();
     case 'my-learning':     return userMyLearning();
@@ -73,10 +108,77 @@ function renderUserContent() {
     case 'claims':          return userClaims();
     case 'support':         return userSupport();
     case 'profile':         return userProfile();
+
+    /* ---------- TIER 1–3 additions ----------
+       Each function lives in its own file. If that file isn't
+       loaded, only this tab breaks; every other tab renders.
+       ------------------------------------------------------------------ */
+    case 'flashcards':      return safeTab(userSRS,           'Flashcards',     'js/26-srs.js');
+    case 'community':       return safeTab(userForum,         'Community',      'js/27-forum.js');
+    case 'study-groups':    return safeTab(userStudyGroups,   'Study Groups',   'js/20-study-groups.js');
+    case 'leaderboard':     return safeTab(userLeaderboard,   'Leaderboard',    'js/21-leaderboard.js');
+    case 'skill-map':       return safeTab(userSkillMap,      'Skill Map',      'js/25-skill-map.js');
+    case 'digest':          return safeTab(userDigestTab,     'Weekly Digest',  'js/28-digest.js');
+    case 'referrals':       return safeTab(userReferrals,     'Refer & Earn',   'js/24-referrals.js');
+    case 'subscription':    return safeTab(userSubscription,  'Subscription',   'js/23-subscriptions.js');
+
     default:                return userOverview();
   }
 }
 
+/* ---------- Tab safety wrapper ----------
+   Guards against a Tier file failing to load. Shows a visible
+   error card for that tab only, so the sidebar and every other
+   tab stay usable. */
+function safeTab(fn, label, hintFile) {
+  if (typeof fn !== 'function') {
+    console.error('[renderUserContent] Missing renderer for "' + label + '" — expected from ' + hintFile);
+    return `
+      <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>${esc(label)}</span></div>
+      <section class="panel">
+        <div style="padding:20px;border-radius:12px;background:#fef2f2;
+                    color:#991b1b;border:1px solid #fecaca">
+          <h3 style="margin:0 0 8px;font-size:16px">
+            <i class="fas fa-exclamation-triangle"></i> "${esc(label)}" module not loaded
+          </h3>
+          <p style="margin:6px 0;font-size:13px">
+            The file <code>${esc(hintFile)}</code> was not found on this server,
+            or failed to parse.
+          </p>
+          <p style="margin:6px 0;font-size:13px">
+            Open DevTools → <strong>Network</strong> and reload; look for a 404 on
+            <code>${esc(hintFile)}</code>.
+          </p>
+        </div>
+      </section>`;
+  }
+  try {
+    return fn();
+  } catch (err) {
+    console.error('[renderUserContent] "' + label + '" threw:', err);
+    return `
+      <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>${esc(label)}</span></div>
+      <section class="panel">
+        <div style="padding:20px;border-radius:12px;background:#fef2f2;
+                    color:#991b1b;border:1px solid #fecaca">
+          <h3 style="margin:0 0 8px;font-size:16px">
+            <i class="fas fa-exclamation-triangle"></i> "${esc(label)}" failed to render
+          </h3>
+          <p style="margin:6px 0;font-size:13px">
+            <strong>Error:</strong> ${esc(err && err.message ? err.message : String(err))}
+          </p>
+          <details style="margin-top:8px">
+            <summary style="cursor:pointer;font-size:13px">Stack trace</summary>
+            <pre style="white-space:pre-wrap;font-size:11px;margin-top:8px">${esc(err && err.stack ? err.stack : '')}</pre>
+          </details>
+        </div>
+      </section>`;
+  }
+}
+
+/* ============================================================
+   OVERVIEW PANEL — unchanged from original
+   ============================================================ */
 function userOverview() {
   const intent = S.userIntent || currentUser?.intent || 'both';
   const mine = S.consultations.filter(c => c.user_id === currentUser?.id);
@@ -212,5 +314,34 @@ function userOverview() {
         <p class="tile-desc">${S.certificates.length} earned</p>
         <button class="btn btn-info" data-action="switch-tab" data-tab="certificates">View</button>
       </article>
+
+      ${/* TIER 1–3 quick tiles ---------------------------------- */ ''}
+      ${showLearn ? `
+        <article class="dashboard-card tile-card">
+          <i class="fas fa-layer-group tile-icon"></i>
+          <h3 class="tile-title">Flashcards</h3>
+          <p class="tile-desc">Review what you learned with spaced repetition</p>
+          <button class="btn btn-primary" data-action="switch-tab" data-tab="flashcards">Review</button>
+        </article>
+      ` : ''}
+      <article class="dashboard-card tile-card">
+        <i class="fas fa-users tile-icon"></i>
+        <h3 class="tile-title">Study Groups</h3>
+        <p class="tile-desc">Learn with a cohort and share notes</p>
+        <button class="btn btn-success" data-action="switch-tab" data-tab="study-groups">Open</button>
+      </article>
+      <article class="dashboard-card tile-card">
+        <i class="fas fa-comments tile-icon"></i>
+        <h3 class="tile-title">Community</h3>
+        <p class="tile-desc">Ask questions, help other learners</p>
+        <button class="btn btn-info" data-action="switch-tab" data-tab="community">Browse</button>
+      </article>
+      <article class="dashboard-card tile-card">
+        <i class="fas fa-gift tile-icon"></i>
+        <h3 class="tile-title">Refer &amp; Earn</h3>
+        <p class="tile-desc">Get $10 for every friend who joins</p>
+        <button class="btn btn-warning" data-action="switch-tab" data-tab="referrals">Share</button>
+      </article>
     </section>
   `;
+}
