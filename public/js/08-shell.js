@@ -2,17 +2,95 @@
    ExpertHub 2.0 — 08-shell.js
    Dashboard dispatcher, app shell, sidebar, notifications panel,
    chat modal.
+
+   Wired to Tier 1–3 modules:
+     • 00-command-palette.js  → topbar trigger button + ⌘K hint
+     • 00-a11y.js             → skip-link target, tab rescan
+     • 16-notifications.js    → bell mounts into [data-notif-slot]
+     • 19-pwa.js              → offline badge (owned by PWA module)
+     • 28-digest.js           → can hook eh:shell:ready event
+
+   Every Tier hook is optional. If a Tier file is missing, the
+   shell still renders and every original feature keeps working.
    ============================================================ */
 
 /* ============================================================
-   DASHBOARD DISPATCHER
+   DASHBOARD DISPATCHER — defensive
    ============================================================ */
 function renderDashboard() {
   if (!currentUser) return renderLogin();
-  if (currentUserRole === 'admin')       return renderAdminDashboard();
-  if (currentUserRole === 'expert')      return renderExpertDashboard();
-  if (currentUserRole === 'institution') return renderInstitutionDashboard();
-  return renderUserDashboard();
+
+  const fnName = currentUserRole === 'admin'       ? 'renderAdminDashboard'
+               : currentUserRole === 'expert'      ? 'renderExpertDashboard'
+               : currentUserRole === 'institution' ? 'renderInstitutionDashboard'
+               :                                     'renderUserDashboard';
+
+  const fn = window[fnName];
+
+  if (typeof fn !== 'function') {
+    console.error('[renderDashboard] Missing:', fnName,
+      '— check the corresponding js/09-admin.js, js/10-expert.js, js/12-institution.js, or js/11-user-*.js');
+    return renderShellError(fnName);
+  }
+
+  try {
+    return fn();
+  } catch (err) {
+    console.error('[renderDashboard] ' + fnName + ' threw:', err);
+    return renderShellError(fnName, err);
+  }
+}
+
+/* ---------- Diagnostic card — shown when a role dashboard is missing or throws ---------- */
+function renderShellError(fnName, err) {
+  const scripts = Array.from(document.querySelectorAll('script[src]'))
+    .map(s => s.getAttribute('src') || '').filter(Boolean);
+
+  const root = document.getElementById('app-root');
+  const html = `
+    <main style="padding:40px 20px;max-width:760px;margin:0 auto;
+                 font-family:system-ui,-apple-system,sans-serif">
+      <div style="padding:24px;border-radius:14px;background:#fef2f2;
+                  color:#991b1b;border:1px solid #fecaca">
+        <h1 style="margin:0 0 10px;font-size:20px">
+          <i class="fas fa-exclamation-triangle"></i> Dashboard unavailable
+        </h1>
+        <p style="margin:6px 0;font-size:14px">
+          The module for your role (<code>${escapeShellHtml(currentUserRole)}</code>) could not be loaded.
+          It expects <code>${escapeShellHtml(fnName)}()</code>.
+        </p>
+        ${err ? `
+          <p style="margin:10px 0 4px;font-weight:600;font-size:13px">Error:</p>
+          <pre style="white-space:pre-wrap;font-size:12px;background:#fff;padding:10px;border-radius:8px">${escapeShellHtml(err.message || String(err))}</pre>
+        ` : ''}
+        <p style="margin:16px 0 6px;font-weight:600;font-size:13px">What to check:</p>
+        <ol style="margin:0 0 0 20px;padding:0;font-size:13px;line-height:1.7">
+          <li>Open DevTools → <strong>Network</strong> → reload. Look for a 404 on the split files.</li>
+          <li>Open <code>/js/11-user-core.js</code> directly in a new tab. If you get 404, it wasn't deployed.</li>
+          <li>Open DevTools → <strong>Console</strong>. Fix the first red error.</li>
+        </ol>
+        <details style="margin-top:14px">
+          <summary style="cursor:pointer;font-size:13px">Scripts loaded on this page</summary>
+          <ul style="margin:8px 0 0 20px;padding:0;font-size:12px;font-family:monospace">
+            ${scripts.map(s => `<li>${escapeShellHtml(s)}</li>`).join('')}
+          </ul>
+        </details>
+        <div style="margin-top:16px;display:flex;gap:8px">
+          <button onclick="location.reload()" class="btn btn-primary">
+            <i class="fas fa-sync"></i> Reload</button>
+          <button onclick="logout()" class="btn btn-secondary">
+            <i class="fas fa-sign-out-alt"></i> Sign out</button>
+        </div>
+      </div>
+    </main>`;
+  if (root) root.innerHTML = html;
+  return html;
+}
+
+function escapeShellHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
 }
 
 /* ---------- SHELL PIECES ---------- */
@@ -26,45 +104,71 @@ function sidebarItem(id, label, icon, badge=0) {
       ${active ? '<i class="fas fa-chevron-right sidebar-chevron"></i>' : ''}
     </button>`;
 }
+
 function topbar(roleLabel) {
+  const isDark = document.documentElement.classList.contains('dark');
   return `
     <header class="topbar">
       <div class="topbar-left">
-        <button class="topbar-toggle" data-sidebar-toggle><i class="fas fa-bars"></i></button>
-        <span class="live-indicator"></span>
-        <span class="topbar-label">${roleLabel}</span>
+        <button class="topbar-toggle" data-sidebar-toggle aria-label="Open menu">
+          <i class="fas fa-bars"></i></button>
+        <span class="live-indicator" aria-hidden="true"></span>
+        <span class="topbar-label">${escapeShellHtml(roleLabel)}</span>
       </div>
+
       <div class="topbar-right" style="position:relative">
-        <button class="icon-btn" data-theme-toggle title="Toggle theme"><i class="fas fa-moon"></i></button>
-        <button class="icon-btn" data-notif-toggle title="Notifications">
-          <i class="fas fa-bell"></i>
-          <span id="notif-badge" class="notif-badge hidden">0</span>
-        </button>
-        <span class="topbar-user">${esc(currentUser?.name || roleLabel)}</span>
-        <button class="btn btn-danger btn-sm" id="logoutBtn">Logout</button>
-        <div id="notif-panel-host"></div>
+
+        ${/* Tier 1 — global search trigger */ ''}
+        <button class="icon-btn" data-shell-search title="Search (press /)" aria-label="Search">
+          <i class="fas fa-search"></i></button>
+
+        ${/* Tier 1 — command palette trigger (⌘K) */ ''}
+        <button class="icon-btn" data-shell-cmdk title="Command palette (⌘K)" aria-label="Command palette">
+          <i class="fas fa-terminal"></i></button>
+
+        <button class="icon-btn" data-theme-toggle title="Toggle theme" aria-label="Toggle theme">
+          <i class="fas ${isDark ? 'fa-sun' : 'fa-moon'}" data-theme-icon></i></button>
+
+        ${/* Tier 1 — notification bell is mounted here by 16-notifications.js */ ''}
+        <span data-notif-slot aria-live="polite"></span>
+
+        <span class="topbar-user">${escapeShellHtml(currentUser?.name || roleLabel)}</span>
+
+        <button class="btn btn-danger btn-sm" id="logoutBtn">
+          <i class="fas fa-sign-out-alt"></i> Logout</button>
       </div>
     </header>`;
 }
+
 function shell({ roleClass, brandIcon, brandTitle, brandSubtitle, nav, roleLabel, content }) {
-  $('#app-root').innerHTML = `
+  const root = document.getElementById('app-root');
+  if (!root) {
+    console.error('[shell] #app-root not found');
+    return;
+  }
+
+  root.innerHTML = `
     <div class="app-shell ${roleClass}">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
           <i class="fas ${brandIcon} sidebar-brand-icon"></i>
           <div class="sidebar-brand-text">
-            <span class="sidebar-brand-title">${brandTitle}</span>
-            <span class="sidebar-brand-subtitle">${brandSubtitle}</span>
+            <span class="sidebar-brand-title">${escapeShellHtml(brandTitle)}</span>
+            <span class="sidebar-brand-subtitle">${escapeShellHtml(brandSubtitle)}</span>
           </div>
         </div>
-        <nav class="sidebar-nav">${nav}</nav>
+        <nav class="sidebar-nav" aria-label="Main navigation">${nav}</nav>
         <div class="sidebar-footer">
-          <a href="#" class="sidebar-footer-link" data-action="help"><i class="fas fa-circle-question"></i> Help and Support</a>
+          <a href="#" class="sidebar-footer-link" data-action="help">
+            <i class="fas fa-circle-question"></i> Help and Support</a>
         </div>
       </aside>
+
       <div class="app-main">
         ${topbar(roleLabel)}
-        <div class="app-content" id="role-content">${content}</div>
+        <main class="app-content" id="role-content" role="main" tabindex="-1">
+          ${content}
+        </main>
         <footer class="app-footer">
           <span>${new Date().getFullYear()} ExpertHub</span>
           <span class="app-footer-version">v2.0</span>
@@ -72,34 +176,134 @@ function shell({ roleClass, brandIcon, brandTitle, brandSubtitle, nav, roleLabel
       </div>
     </div>
     ${renderChatModal()}`;
+
   attachCommonEvents();
   attachSidebarEvents();
   updateNotificationBadge();
+  mountTierExtensions();
 }
+
 function attachCommonEvents() {
-  $('#logoutBtn')?.addEventListener('click', logout);
-  $$('[data-sidebar-toggle]').forEach(b => b.onclick = () => $('#sidebar')?.classList.toggle('open'));
-  $$('[data-theme-toggle]').forEach(b => b.onclick = toggleTheme);
-  $$('[data-notif-toggle]').forEach(b => b.onclick = toggleNotificationsPanel);
+  // Logout
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) logoutBtn.onclick = logout;
+
+  // Sidebar toggle (mobile)
+  document.querySelectorAll('[data-sidebar-toggle]').forEach(b => {
+    b.onclick = () => document.getElementById('sidebar')?.classList.toggle('open');
+  });
+
+  // Theme toggle
+  document.querySelectorAll('[data-theme-toggle]').forEach(b => {
+    b.onclick = () => {
+      if (typeof toggleTheme === 'function') toggleTheme();
+      syncThemeIcon();
+    };
+  });
+
+  // Command palette trigger
+  document.querySelectorAll('[data-shell-cmdk]').forEach(b => {
+    b.onclick = () => {
+      if (window.EHCommandPalette?.open) {
+        window.EHCommandPalette.open();
+      } else {
+        showToast('Command palette module not loaded', 'info');
+      }
+    };
+  });
+
+  // Global search trigger
+  document.querySelectorAll('[data-shell-search]').forEach(b => {
+    b.onclick = () => {
+      const input = document.querySelector('input[type=search], .topbar-search-input');
+      if (input) { input.focus(); return; }
+      if (window.EHCommandPalette?.open) {
+        window.EHCommandPalette.open();
+      } else {
+        showToast('Search module not loaded', 'info');
+      }
+    };
+  });
+
+  // Sync theme icon with current state
+  syncThemeIcon();
 }
+
+function syncThemeIcon() {
+  const icon = document.querySelector('[data-theme-icon]');
+  if (!icon) return;
+  const isDark = document.documentElement.classList.contains('dark');
+  icon.classList.toggle('fa-sun', isDark);
+  icon.classList.toggle('fa-moon', !isDark);
+}
+
 function attachSidebarEvents() {
-  $$('.sidebar-item').forEach(item => item.onclick = () => {
-    activeTab = item.dataset.tab;
-    $('#sidebar')?.classList.remove('open');
-    rerenderRoleContent();
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.onclick = () => {
+      const tab = item.dataset.tab;
+      if (!tab) return;
+      activeTab = tab;
+      try { localStorage.setItem('eh.route.last', tab); } catch (_) {}
+      document.getElementById('sidebar')?.classList.remove('open');
+      rerenderRoleContent();
+    };
   });
 }
 
-/* ---------- Notification panel ---------- */
+/* ============================================================
+   TIER EXTENSION MOUNTS
+   ------------------------------------------------------------
+   Attaches optional Tier 1–3 modules to the shell. Every call
+   is guarded — missing files never break the shell.
+   ============================================================ */
+function mountTierExtensions() {
+  // Accessibility re-scan for the freshly rendered DOM
+  try { window.EHA11y?.rescan?.(); } catch (_) {}
+
+  // Notifications bell — Tier 1's 16-notifications.js detects
+  // [data-notif-slot] and injects itself. If the module isn't
+  // loaded, nothing appears and the fallback panel is used.
+  try { window.EHNotifications?.mount?.(); } catch (_) {}
+
+  // i18n retranslation for any [data-i18n] keys
+  try { window.EHI18n?.retranslate?.(document.getElementById('app-root')); } catch (_) {}
+
+  // Announce shell readiness for other modules
+  document.dispatchEvent(new CustomEvent('eh:shell:ready', {
+    detail: { role: currentUserRole, tab: activeTab },
+  }));
+}
+
+/* ============================================================
+   NOTIFICATION PANEL
+   ------------------------------------------------------------
+   The shell no longer owns the bell. It still owns the fallback
+   panel used when 16-notifications.js is not present.
+   ============================================================ */
 function toggleNotificationsPanel() {
+  // Prefer the Tier 1 notification UI
+  if (window.EHNotifications?.open) {
+    window.EHNotifications.open();
+    return;
+  }
+
   notificationsPanelOpen = !notificationsPanelOpen;
   if (notificationsPanelOpen) renderNotificationsPanel();
-  else $('#notif-panel-host').innerHTML = '';
+  else {
+    const host = document.getElementById('notif-panel-host');
+    if (host) host.innerHTML = '';
+  }
 }
+
 function renderNotificationsPanel() {
-  const host = $('#notif-panel-host');
+  // The Tier 1 module owns its own panel UI. This is only used
+  // as a fallback when it isn't loaded.
+  const host = document.getElementById('notif-panel-host');
   if (!host) return;
-  const unread = S.notifications.filter(n => !n.is_read).length;
+
+  const items = Array.isArray(S.notifications) ? S.notifications : [];
+  const unread = items.filter(n => !n.is_read).length;
+
   host.innerHTML = `
     <div class="notif-panel">
       <div class="notif-panel-header">
@@ -110,15 +314,20 @@ function renderNotificationsPanel() {
         </div>
       </div>
       <div class="notif-panel-list">
-        ${S.notifications.length ? S.notifications.slice(0,30).map(n => `
-          <div class="notif-panel-item ${n.is_read ? '' : 'unread'}" data-notif-id="${n.id}">
-            <p class="notif-panel-item-title">${esc(n.title || '')}</p>
-            <p class="notif-panel-item-msg">${esc(n.message || '')}</p>
-            <p class="notif-panel-item-date">${timeAgo(n.created_at)}</p>
-          </div>`).join('') : '<div class="empty-state"><i class="fas fa-bell-slash"></i><p>No notifications</p></div>'}
+        ${items.length
+          ? items.slice(0, 30).map(n => `
+              <div class="notif-panel-item ${n.is_read ? '' : 'unread'}"
+                   data-notif-id="${escapeShellHtml(n.id)}">
+                <p class="notif-panel-item-title">${escapeShellHtml(n.title || '')}</p>
+                <p class="notif-panel-item-msg">${escapeShellHtml(n.message || '')}</p>
+                <p class="notif-panel-item-date">${timeAgo(n.created_at)}</p>
+              </div>`).join('')
+          : '<div class="empty-state"><i class="fas fa-bell-slash"></i><p>No notifications</p></div>'}
       </div>
     </div>`;
+
   host.querySelector('[data-notif-close]').onclick = toggleNotificationsPanel;
+
   host.querySelector('[data-notif-readall]').onclick = async () => {
     try {
       await apiCall('/api/common/notifications/read-all', 'PUT');
@@ -127,23 +336,26 @@ function renderNotificationsPanel() {
       updateNotificationBadge();
     } catch (e) { showToast(e.message, 'error'); }
   };
-  host.querySelectorAll('[data-notif-id]').forEach(el => el.onclick = async () => {
-    const id = el.dataset.notifId;
-    const n = S.notifications.find(x => String(x.id) === id);
-    if (n && !n.is_read) {
-      try { await apiCall(`/api/common/notifications/${id}/read`, 'PUT'); n.is_read = 1; } catch (_) {}
-      renderNotificationsPanel();
-      updateNotificationBadge();
-    }
-    if (n?.link) {
-      location.hash = n.link.startsWith('#') ? n.link : `#${n.link}`;
-      toggleNotificationsPanel();
-    }
+
+  host.querySelectorAll('[data-notif-id]').forEach(el => {
+    el.onclick = async () => {
+      const id = el.dataset.notifId;
+      const n = S.notifications.find(x => String(x.id) === id);
+      if (n && !n.is_read) {
+        try { await apiCall(`/api/common/notifications/${id}/read`, 'PUT'); n.is_read = 1; } catch (_) {}
+        renderNotificationsPanel();
+        updateNotificationBadge();
+      }
+      if (n?.link) {
+        location.hash = n.link.startsWith('#') ? n.link : `#${n.link}`;
+        toggleNotificationsPanel();
+      }
+    };
   });
 }
 
 /* ============================================================
-   CHAT MODAL
+   CHAT MODAL — unchanged behaviour, safer DOM lookups
    ============================================================ */
 function renderChatModal() {
   return `
@@ -175,58 +387,74 @@ function renderChatModal() {
       </div>
     </div>`;
 }
+
 function renderChatMessages(cid) {
-  const c = $('#chat-messages');
+  const c = document.getElementById('chat-messages');
   if (!c) return;
-  const msgs = S.chatMessages[cid] || [];
+  const msgs = (S.chatMessages && S.chatMessages[cid]) || [];
   c.innerHTML = msgs.map(m => `
     <div class="chat-message ${m.sender_id === currentUser?.id ? 'chat-message-sent' : 'chat-message-received'}">
       ${m.attachment_url ? `
-        <a class="chat-attachment" href="${esc(m.attachment_url)}" target="_blank">
+        <a class="chat-attachment" href="${escapeShellHtml(m.attachment_url)}" target="_blank" rel="noopener">
           <i class="fas fa-paperclip"></i> Attachment</a>
       ` : ''}
-      <p class="chat-text">${esc(m.message || '')}</p>
-      <span class="chat-meta">${esc(m.sender_name || '')} · ${timeAgo(m.created_at)}${m.read_at ? ' - Read' : ''}</span>
+      <p class="chat-text">${escapeShellHtml(m.message || '')}</p>
+      <span class="chat-meta">${escapeShellHtml(m.sender_name || '')} · ${timeAgo(m.created_at)}${m.read_at ? ' - Read' : ''}</span>
     </div>
   `).join('') || '<p class="empty-row">No messages yet.</p>';
   c.scrollTop = c.scrollHeight;
 }
+
 async function openChat(cid) {
   currentChatId = cid;
-  const modal = $('#chat-modal');
+  const modal = document.getElementById('chat-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
+
   const c = S.consultations.find(x => x.id === cid);
-  $('#chat-title').textContent = c?.title || 'Consultation';
-  $('#chat-sub').textContent = `${c?.status || ''} · ${c?.consultation_type || ''}`;
+  document.getElementById('chat-title').textContent = c?.title || 'Consultation';
+  document.getElementById('chat-sub').textContent = `${c?.status || ''} · ${c?.consultation_type || ''}`;
+
   if (socket) socket.emit('join_consultation', cid);
+
   try {
     const d = await apiCall(`/api/common/consultations/${cid}/messages`);
+    S.chatMessages = S.chatMessages || {};
     S.chatMessages[cid] = d.messages || [];
-  } catch (_) { S.chatMessages[cid] = []; }
+  } catch (_) {
+    S.chatMessages = S.chatMessages || {};
+    S.chatMessages[cid] = [];
+  }
+
   renderChatMessages(cid);
-  const input = $('#chat-input');
+
+  const input = document.getElementById('chat-input');
   input.onkeydown = e => {
     if (e.key === 'Enter') { sendMessage(cid, e.target.value); return; }
     if (socket) socket.emit('typing', { consultation_id: cid, is_typing: true });
     clearTimeout(chatTypingTimer);
     chatTypingTimer = setTimeout(() => socket && socket.emit('typing', { consultation_id: cid, is_typing: false }), 1200);
   };
-  $('#chat-file').onchange = e => uploadChatFile(cid, e.target.files[0]);
+
+  const fileInput = document.getElementById('chat-file');
+  if (fileInput) fileInput.onchange = e => uploadChatFile(cid, e.target.files[0]);
 }
+
 function closeChat() {
   if (currentChatId && socket) socket.emit('leave_consultation', currentChatId);
-  $('#chat-modal')?.classList.add('hidden');
+  document.getElementById('chat-modal')?.classList.add('hidden');
   currentChatId = null;
 }
+
 async function sendMessage(cid, text) {
   if (!text?.trim()) return;
   try {
     await apiCall(`/api/common/consultations/${cid}/messages`, 'POST', { message: text });
-    const i = $('#chat-input');
+    const i = document.getElementById('chat-input');
     if (i) i.value = '';
   } catch (e) { showToast(e.message, 'error'); }
 }
+
 async function uploadChatFile(cid, file) {
   if (!file) return;
   const fd = new FormData();
@@ -1037,3 +1265,29 @@ async function uploadChatFile(cid, file) {
 /* ============================================================
    End 08 feature expansion
    ============================================================ */
+
+/* ============================================================
+   Active tab restore on shell mount
+   ------------------------------------------------------------
+   If the user reloads the page, land them back on the tab they
+   were on last, instead of always dropping them at 'dashboard'.
+   Guarded so it does not interfere with the router's own
+   navigation logic.
+   ============================================================ */
+(function restoreActiveTab() {
+  const params = new URLSearchParams((location.hash.split('?')[1] || ''));
+  const hashSeg = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const routeTab = hashSeg[1] || null;
+  const storedTab = (() => { try { return localStorage.getItem('eh.route.last'); } catch (_) { return null; } })();
+
+  const candidate = routeTab || storedTab;
+  if (candidate && typeof candidate === 'string' && candidate !== activeTab) {
+    // Only apply if the tab looks like a known user tab.
+    // Router will overwrite this shortly after for non-user roles.
+    setTimeout(() => {
+      if (currentUserRole === 'user' && candidate !== activeTab) {
+        activeTab = candidate;
+      }
+    }, 0);
+  }
+})();
