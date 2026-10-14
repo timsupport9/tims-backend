@@ -1,0 +1,21 @@
+{
+  "name": "ExpertHub 2.0 — E-School & Consultation Platform",
+  "short_name": "ExpertHub",
+  "description": "Bootcamps, 1-on-1 expert consultations, and corporate training in one platform.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#6366f1",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "E-School", "url": "/#/dashboard", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Find Experts", "url": "/#/dashboard" },
+    { "name": "My Consultations", "url": "/#/dashboard" }
+  ]
