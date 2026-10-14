@@ -1,6 +1,22 @@
 /* ============================================================
    ExpertHub 2.0 — 06-data.js
    All data-loading functions + polling + notification badge.
+
+   Wired to Tier 1–3 modules:
+     • 17-quiz.js              → S.quizzes, S.quizAttempts
+     • 20-study-groups.js      → S.studyGroups
+     • 21-leaderboard.js       → S.leaderboards, S.weeklyChallenges
+     • 23-subscriptions.js     → S.subscription
+     • 24-referrals.js         → S.referrals, S.referralStats
+     • 28-digest.js            → S.userXPHistory
+     • 32/33/36 (institution)  → S.institutionMembers,
+                                 S.complianceAssignments,
+                                 S.institution.seats
+     • 35-expert-tiers.js      → S.expertTiers
+     • 16-notifications.js     → notification bridge in polling
+
+   Every new loader is `.catch(() => {})` — a missing backend
+   endpoint never breaks the app.
    ============================================================ */
 
 /* ============================================================
@@ -29,6 +45,9 @@ async function loadAllData() {
     tasks.push(apiCall('/api/admin/disputes').then(d => { S.consultationDisputes = d.disputes || []; }).catch(() => {}));
     tasks.push(apiCall('/api/admin/consultation-analytics').then(d => { S.adminConsultationAnalytics = d; }).catch(() => {}));
     tasks.push(apiCall('/api/admin/refunds').then(d => { S.userRefunds = d.refunds || []; }).catch(() => {}));
+
+    /* Tier 3: expert tiers admin overview */
+    tasks.push(apiCall('/api/admin/expert-tiers').then(d => { S.expertTiers = d.tiers || {}; }).catch(() => {}));
   } else if (currentUserRole === 'expert') {
     tasks.push(apiCall('/api/expert/earnings').then(d => { S.earnings = d.summary; S.wallet.ledger = d.ledger || []; }).catch(() => {}));
     tasks.push(apiCall('/api/expert/reviews').then(d => { S.reviews = d.reviews || []; }).catch(() => {}));
@@ -41,6 +60,11 @@ async function loadAllData() {
     tasks.push(apiCall('/api/experts/me/slots').then(d => { S.consultationSlots = d.slots || []; }).catch(() => {}));
     tasks.push(apiCall('/api/experts/me/tiers').then(d => { S.consultationTiers = d.tiers || []; }).catch(() => {}));
     tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics = d; }).catch(() => {}));
+
+    /* Tier 3: expert tier badge + progress */
+    tasks.push(apiCall('/api/expert/tier').then(d => {
+      S.expertTiers = { current: d.tier, progress: d.progress, gaps: d.gaps || [] };
+    }).catch(() => {}));
   } else if (currentUserRole === 'institution') {
     /* Base institution data */
     tasks.push(apiCall('/api/institution/me').then(d => { S.myInstitution = d.institution; }).catch(() => {}));
@@ -92,11 +116,34 @@ async function loadAllData() {
     tasks.push(apiCall('/api/institution/exam-proctor-sessions').then(d => { S.examProctorSessions = d.sessions || []; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/blockchain-certs').then(d => { S.blockchainCerts = d.certificates || []; }).catch(() => {}));
 
+    /* ============================================================
+       TIER 1–3 additions — institution role
+       ============================================================ */
+
+    // 32-institution-analytics.js needs the member roster to
+    // compute cohort breakdowns, at-risk learners, seat utilization.
+    tasks.push(apiCall('/api/institution/members?per=500').then(d => {
+      S.institutionMembers = d.members || [];
+    }).catch(() => {}));
+
+    // 36-compliance.js needs mandatory assignments.
+    tasks.push(apiCall('/api/institution/compliance').then(d => {
+      S.complianceAssignments = d.assignments || [];
+    }).catch(() => {}));
+
+    // 33-bulk-enrollment.js needs seat inventory.
+    tasks.push(apiCall('/api/institution/seats').then(d => {
+      if (!S.myInstitution) S.myInstitution = {};
+      S.myInstitution.seats = d.seats || [];
+    }).catch(() => {}));
+
     if (currentUser?.institution_role === 'operations_manager') {
       tasks.push(apiCall('/api/institution/team').then(d => { S.institutionTeam = d.team || []; }).catch(() => {}));
     }
   } else {
-    /* Learner */
+    /* ============================================================
+       LEARNER branch
+       ============================================================ */
     tasks.push(apiCall('/api/user/experts').then(d => { S.experts = d.experts || []; }).catch(() => {}));
     tasks.push(apiCall('/api/user/enrollments').then(d => { S.enrollments = d.enrollments || []; }).catch(() => {}));
     tasks.push(apiCall('/api/user/wallet').then(d => {
@@ -130,26 +177,129 @@ async function loadAllData() {
     tasks.push(apiCall('/api/user/watch-history').then(d => { S.recentWatchHistory = d.history || []; }).catch(() => {}));
     tasks.push(apiCall('/api/user/course-reviews').then(d => { S.courseReviews = d.reviews || []; }).catch(() => {}));
 
+    /* ============================================================
+       TIER 1–3 additions — learner role
+       ============================================================ */
+
+    // 17-quiz.js — quiz catalog + prior attempts
+    tasks.push(apiCall('/api/user/quizzes').then(d => {
+      S.quizzes = d.quizzes || [];
+    }).catch(() => {}));
+    tasks.push(apiCall('/api/user/quiz-attempts').then(d => {
+      S.quizAttempts = d.attempts || [];
+    }).catch(() => {}));
+
+    // 20-study-groups.js — cohort learning
+    tasks.push(apiCall('/api/user/study-groups').then(d => {
+      S.studyGroups = d.groups || [];
+    }).catch(() => {}));
+
+    // 21-leaderboard.js — leaderboards + challenges
+    tasks.push(apiCall('/api/user/leaderboards').then(d => {
+      S.leaderboards = d.leaderboards || {};
+    }).catch(() => {}));
+    tasks.push(apiCall('/api/user/challenges').then(d => {
+      S.weeklyChallenges = d.challenges || [];
+    }).catch(() => {}));
+
+    // 23-subscriptions.js — active plan
+    tasks.push(apiCall('/api/user/subscription').then(d => {
+      S.subscription = d.subscription || { tier: 'free', cycle: 'monthly', status: 'active' };
+    }).catch(() => {}));
+
+    // 24-referrals.js — referral history + stats
+    tasks.push(apiCall('/api/user/referrals').then(d => {
+      S.referrals = d.referrals || [];
+      S.referralStats = d.stats || { clicks: 0, signups: 0, conversions: 0, earned: 0 };
+    }).catch(() => {}));
+
+    // 21-leaderboard.js + 28-digest.js — XP event history
+    tasks.push(apiCall('/api/user/xp-history').then(d => {
+      S.userXPHistory = d.history || [];
+    }).catch(() => {}));
+
     S.enrolledCourseIds = new Set((S.enrollments || []).map(e => String(e.course_id)));
   }
 
-  await Promise.allSettled(tasks);
+  /* Wait for every task to settle (never rejects) */
+  const results = await Promise.allSettled(tasks);
+
+  /* Optional diagnostic: in verbose mode, log rejected tasks */
+  if (window.FLAGS?.VERBOSE) {
+    const rejected = results.filter(r => r.status === 'rejected');
+    if (rejected.length) {
+      console.warn('[loadAllData] ' + rejected.length + ' task(s) failed:',
+        rejected.map(r => r.reason?.message || r.reason));
+    }
+  }
 
   if (currentUserRole === 'learner' || currentUserRole === 'expert' || currentUserRole === 'admin') {
     S.enrolledCourseIds = new Set((S.enrollments || []).map(e => String(e.course_id)));
   }
+
+  /* Bridge fresh notifications into the Tier 1 bell */
+  bridgeNotificationsToTier1();
 }
 
 async function reloadUsers()            { try { const d = await apiCall('/api/admin/users');          S.users = d.users || []; } catch (_) {} }
 async function reloadExperts()          { try { const d = await apiCall('/api/admin/experts');        S.experts = d.experts || []; } catch (_) {} }
 async function reloadConsultations()    { try { const d = await apiCall('/api/common/consultations'); S.consultations = d.consultations || []; } catch (_) {} }
-async function reloadNotifications()    { try { const d = await apiCall('/api/common/notifications'); S.notifications = d.notifications || []; } catch (_) {} }
+async function reloadNotifications()    {
+  try {
+    const d = await apiCall('/api/common/notifications');
+    S.notifications = d.notifications || [];
+    bridgeNotificationsToTier1();
+  } catch (_) {}
+}
 async function reloadWallet()           { try { const d = await apiCall('/api/user/wallet');          S.wallet.balance = d.balance; S.wallet.ledger = d.ledger || []; } catch (_) {} }
 async function reloadEarnings()         { try { const d = await apiCall('/api/expert/earnings');      S.earnings = d.summary; S.wallet.ledger = d.ledger || []; } catch (_) {} }
 async function reloadInstitutionProgrammes() { try { const d = await apiCall('/api/institution/programmes'); S.programmes = d.programmes || []; } catch (_) {} }
 async function reloadInstitutionCohorts()    { try { const d = await apiCall('/api/institution/cohorts');    S.cohorts    = d.cohorts || []; } catch (_) {} }
 async function reloadInstitutions()          { try { const d = await apiCall('/api/admin/institutions');     S.institutions = d.institutions || []; } catch (_) {} }
 
+/* ============================================================
+   NOTIFICATION BRIDGE
+   ------------------------------------------------------------
+   The original shell rendered its own badge from
+   S.notifications. The new shell delegates the bell to
+   Tier 1's EHNotifications module (localStorage-backed).
+   This bridge copies server-side notifications into that
+   store so the bell reflects the actual state.
+   ============================================================ */
+function bridgeNotificationsToTier1() {
+  if (!window.EHNotifications || typeof window.EHNotifications.push !== 'function') return;
+  const items = Array.isArray(S.notifications) ? S.notifications : [];
+  if (!items.length) return;
+
+  // Get the set of IDs already present in the Tier 1 store
+  const existingIds = new Set(
+    (typeof window.EHNotifications.items === 'function'
+      ? window.EHNotifications.items()
+      : []
+    ).map(n => String(n.id))
+  );
+
+  items.forEach(n => {
+    if (n.is_read) return;
+    const id = String(n.id);
+    if (existingIds.has(id)) return;
+    try {
+      window.EHNotifications.push({
+        id,
+        kind: n.type || 'system',
+        title: n.title || 'Notification',
+        body: n.message || '',
+        action: n.link ? { href: n.link } : null,
+        toast: false,
+        level: 'info',
+      });
+    } catch (_) { /* non-fatal */ }
+  });
+}
+
+/* ============================================================
+   POLLING
+   ============================================================ */
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
@@ -160,11 +310,18 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 function updateNotificationBadge() {
-  const b = $('#notif-badge');
-  if (!b) return;
-  const unread = S.notifications.filter(n => !n.is_read).length;
-  b.textContent = unread;
-  b.classList.toggle('hidden', unread === 0);
+  const unread = (S.notifications || []).filter(n => !n.is_read).length;
+
+  // Legacy badge — kept for any view that still renders #notif-badge
+  const legacy = document.getElementById('notif-badge');
+  if (legacy) {
+    legacy.textContent = unread;
+    legacy.classList.toggle('hidden', unread === 0);
+  }
+
+  // Tier 1 badge is owned by EHNotifications; we just keep its
+  // local store in sync with the server state.
+  bridgeNotificationsToTier1();
 }
 
 /* ============================================================
