@@ -49,6 +49,7 @@ const CONFIG = Object.freeze({
     DRAFT_PREFIX:  'eh.draft.',
     LAST_ROUTE:    'eh.route.last',
     CONSENT:       'eh.consent',
+    WISHLIST:      'eh.user.wishlist',
   }),
 
   /* ---------- CURRENCY ---------- */
@@ -307,22 +308,23 @@ const CONFIG = Object.freeze({
 /* ============================================================
    RUNTIME FLAGS
    ============================================================ */
+function CONFIG_ENV_IS_DEV(env) {
+  return env === 'development' || env === 'dev' || env === 'local';
+}
+
 const FLAGS = {
-  DEBUG: CONFIG_ENV_IS_DEV(CONFIG.ENV),
+  DEBUG: CONFIG_ENV_IS_DEV(APP.ENV),
   VERBOSE: false,
   USE_MOCKS: false,
   DISABLE_POLLING: false,
   FORCE_OFFLINE: false,
 };
-function CONFIG_ENV_IS_DEV(env) {
-  return env === 'development' || env === 'dev' || env === 'local';
-}
 
 /* ============================================================
    GLOBAL SOCKET / AUTH
    ============================================================ */
 let socket = null;
-let socketStatus = 'disconnected'; // disconnected | connecting | connected | error
+let socketStatus = 'disconnected';   // disconnected | connecting | connected | error
 let authToken = null;
 let refreshToken = null;
 let tokenExpiresAt = null;
@@ -330,7 +332,7 @@ let refreshTimer = null;
 let currentUser = null;
 let currentUserRole = null;
 let userPermissions = new Set();
-let appPhase = 'landing'; // landing | auth | onboarding | app | error
+let appPhase = 'landing';            // landing | auth | onboarding | app | error
 let appInitialised = false;
 
 /* ============================================================
@@ -344,7 +346,7 @@ let routeHistory = [];
 let breadcrumbs = [];
 
 /* ============================================================
-   CHAT
+   CHAT / POLLING
    ============================================================ */
 let currentChatId = null;
 let chatTypingTimer = null;
@@ -378,9 +380,9 @@ const UI = {
   lastFocusedElement: null,
   scrollPositions: {},
   stickyHeaders: true,
-  tableColumns: {},       // { [entity]: ['id','name',...] }
-  tableColumnWidths: {},  // { [entity]: { id: 80, name: 200 } }
-  viewMode: {},           // { [entity]: 'list'|'grid'|'table' }
+  tableColumns: {},        // { [entity]: ['id','name',...] }
+  tableColumnWidths: {},   // { [entity]: { id: 80, name: 200 } }
+  viewMode: {},            // { [entity]: 'list'|'grid'|'table' }
   expandedRows: new Set(),
   collapsedSections: {},
 };
@@ -389,26 +391,26 @@ const UI = {
    ASYNC / REQUEST STATE
    ============================================================ */
 const ASYNC = {
-  loading: {},       // { [key]: boolean }
-  errors: {},        // { [key]: Error | string | null }
-  inflight: {},      // { [key]: Promise }
-  controllers: {},   // { [key]: AbortController }
-  lastFetched: {},   // { [key]: number (timestamp) }
-  cacheTTL: {},      // { [key]: number (ms) }
-  retryCount: {},    // { [key]: number }
+  loading: {},        // { [key]: boolean }
+  errors: {},         // { [key]: Error | string | null }
+  inflight: {},       // { [key]: Promise }
+  controllers: {},    // { [key]: AbortController }
+  lastFetched: {},    // { [key]: number (timestamp) }
+  cacheTTL: {},       // { [key]: number (ms) }
+  retryCount: {},     // { [key]: number }
 };
 
 /* ============================================================
    FORM DRAFTS / OFFLINE QUEUE
    ============================================================ */
 const FORMS = {
-  drafts: {},        // { [formKey]: { data, savedAt } }
-  dirty: new Set(),  // set of dirty form keys
-  validationErrors: {}, // { [formKey]: { field: msg } }
-  touched: {},       // { [formKey]: Set<field> }
+  drafts: {},             // { [formKey]: { data, savedAt } }
+  dirty: new Set(),       // set of dirty form keys
+  validationErrors: {},   // { [formKey]: { field: msg } }
+  touched: {},            // { [formKey]: Set<field> }
 };
 const OFFLINE = {
-  queue: [],         // pending writes
+  queue: [],              // pending writes
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
   lastSyncAt: null,
   syncInProgress: false,
@@ -430,51 +432,50 @@ const SEARCH = {
   campuses: '', announcements: '', apiKeys: '', webhooks: '', auditLogs: '',
 };
 const SORT = {
-  users:     { field: 'created_at', dir: 'desc' },
-  experts:   { field: 'rating',     dir: 'desc' },
-  courses:   { field: 'created_at', dir: 'desc' },
+  users:         { field: 'created_at',   dir: 'desc' },
+  experts:       { field: 'rating',       dir: 'desc' },
+  courses:       { field: 'created_at',   dir: 'desc' },
   consultations: { field: 'scheduled_at', dir: 'desc' },
-  transactions:  { field: 'created_at', dir: 'desc' },
-  trainees:  { field: 'name', dir: 'asc' },
-  programmes:{ field: 'created_at', dir: 'desc' },
-  cohorts:   { field: 'start_date', dir: 'desc' },
+  transactions:  { field: 'created_at',   dir: 'desc' },
+  trainees:      { field: 'name',         dir: 'asc'  },
+  programmes:    { field: 'created_at',   dir: 'desc' },
+  cohorts:       { field: 'start_date',   dir: 'desc' },
 };
 const PAGINATION = {
-  users:     { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  experts:   { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  courses:   { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  users:         { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  experts:       { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  courses:       { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
   consultations: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
   transactions:  { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionTrainees:      { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionEnrollments:   { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionCertificates:  { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionSessions:      { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionProgrammes:    { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionCohorts:       { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionTrainees:     { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionEnrollments:  { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionCertificates: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionSessions:     { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionProgrammes:   { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionCohorts:      { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
 };
 
 /* ============================================================
    SELECTION
    ============================================================ */
 let selectedRows = {
-  users: new Set(),
-  trainees: new Set(),
-  certificates: new Set(),
-  programmes: new Set(),
-  cohorts: new Set(),
-  campuses: new Set(),
-  // additions
-  experts: new Set(),
-  courses: new Set(),
+  users:         new Set(),
+  trainees:      new Set(),
+  certificates:  new Set(),
+  programmes:    new Set(),
+  cohorts:       new Set(),
+  campuses:      new Set(),
+  experts:       new Set(),
+  courses:       new Set(),
   consultations: new Set(),
-  transactions: new Set(),
-  enrollments: new Set(),
-  assessments: new Set(),
-  instructors: new Set(),
+  transactions:  new Set(),
+  enrollments:   new Set(),
+  assessments:   new Set(),
+  instructors:   new Set(),
   announcements: new Set(),
-  apiKeys: new Set(),
-  webhooks: new Set(),
-  auditLogs: new Set(),
+  apiKeys:       new Set(),
+  webhooks:      new Set(),
+  auditLogs:     new Set(),
   notifications: new Set(),
 };
 
@@ -512,6 +513,11 @@ const S = {
 
   userIntent: 'both',
 
+  /* ---------- Wishlist (used by 11-user-eschool.js & toggle-wishlist) ---------- */
+  wishlist: [],                 // [{ id, course_id, course_slug, title, price, added_at }]
+  wishlistIds: new Set(),       // Set<string> of course ids (fast membership checks)
+  wishlistByCourse: {},         // { [courseId]: wishlistItem }
+
   /* ---------- Consultation extensions ---------- */
   consultationSlots: [], consultationPackages: [], consultationTiers: [],
   consultationEscrow: {}, consultationDisputes: [], consultationFollowups: [],
@@ -529,7 +535,8 @@ const S = {
   userXP: null, userBadges: [], userStreak: null, userLevel: null,
   availableTrials: [], userRefunds: [], lessonQuestions: [],
   recentWatchHistory: [], studyPartners: [], courseReviews: [],
-  enrolledCourseIds: new Set(), wishlistIds: new Set(),
+  enrolledCourseIds: new Set(),
+  enrolledCourseIdsBySlug: new Set(),   // fast slug lookups from userESchool/userMyLearning
   courseAnalytics: null, courseCertificates: [],
 
   /* ---------- Institution extensions ---------- */
@@ -545,32 +552,32 @@ const S = {
   institutionAnalytics: null, skillsGapAnalysis: null, complianceRuns: [],
   blockchainCerts: [], announcementReads: [], apiCallLogs: [],
 
-  /* ---------- NEW: messaging ---------- */
+  /* ---------- Messaging ---------- */
   conversations: [], activeConversationId: null, unreadCounts: {},
   typingUsers: {}, messageDrafts: {},
 
-  /* ---------- NEW: calendar / scheduling ---------- */
+  /* ---------- Calendar / scheduling ---------- */
   calendarEvents: [], calendarView: 'month', calendarRange: { start: null, end: null },
 
-  /* ---------- NEW: files ---------- */
+  /* ---------- Files ---------- */
   uploads: {},         // { [uploadId]: { file, progress, status, error, url } }
   attachments: {},     // { [entityId]: Attachment[] }
 
-  /* ---------- NEW: search / discovery ---------- */
+  /* ---------- Search / discovery ---------- */
   globalSearchResults: { users: [], experts: [], courses: [], programmes: [], events: [] },
   recentSearches: [],
   savedSearches: [],
 
-  /* ---------- NEW: prefs ---------- */
+  /* ---------- Preferences ---------- */
   userPreferences: null,
   notificationPreferences: null,
   consentState: null,
 
-  /* ---------- NEW: realtime ---------- */
+  /* ---------- Realtime ---------- */
   presence: {},        // { [userId]: { online, lastSeen } }
   liveEvents: [],      // ephemeral push events
 
-  /* ---------- NEW: meta ---------- */
+  /* ---------- Meta ---------- */
   lastServerSync: null,
   serverTimeOffsetMs: 0,
   buildInfo: { version: APP.VERSION, env: APP.ENV },
@@ -588,6 +595,7 @@ const MAPS = {
   traineesById: new Map(),
   consultationsById: new Map(),
   certificatesBySerial: new Map(),
+  wishlistByCourseId: new Map(),
 };
 
 const INDEXES = {
@@ -622,6 +630,37 @@ function setError(key, err = null) {
   else delete ASYNC.errors[key];
 }
 
+/**
+ * Fast membership test used by 11-user-eschool.js
+ * Accepts either a course object or a raw id/slug.
+ */
+function isCourseWishlisted(courseOrId) {
+  if (!courseOrId) return false;
+  const id   = typeof courseOrId === 'object' ? String(courseOrId.id   ?? '') : String(courseOrId);
+  const slug = typeof courseOrId === 'object' ? String(courseOrId.slug ?? '') : '';
+  return S.wishlistIds.has(id) || (slug && S.wishlistIds.has(slug));
+}
+
+/**
+ * Keeps wishlist + wishlistIds + wishlistByCourse + MAPS.wishlistByCourseId in sync.
+ * Call this from the toggle-wishlist action in 14-actions.js.
+ */
+function setWishlist(items) {
+  S.wishlist = Array.isArray(items) ? items : [];
+  S.wishlistIds.clear();
+  S.wishlistByCourse = {};
+  MAPS.wishlistByCourseId.clear();
+  for (const w of S.wishlist) {
+    if (w?.course_id != null) {
+      const key = String(w.course_id);
+      S.wishlistIds.add(key);
+      S.wishlistByCourse[key] = w;
+      MAPS.wishlistByCourseId.set(key, w);
+    }
+    if (w?.course_slug) S.wishlistIds.add(String(w.course_slug));
+  }
+}
+
 function resetAllState() {
   // clear primary arrays
   for (const k of Object.keys(S)) {
@@ -634,14 +673,14 @@ function resetAllState() {
     }
   }
   // clear async
-  for (const k of Object.keys(ASYNC.loading)) delete ASYNC.loading[k];
-  for (const k of Object.keys(ASYNC.errors)) delete ASYNC.errors[k];
-  for (const k of Object.keys(ASYNC.inflight)) delete ASYNC.inflight[k];
+  for (const k of Object.keys(ASYNC.loading))     delete ASYNC.loading[k];
+  for (const k of Object.keys(ASYNC.errors))      delete ASYNC.errors[k];
+  for (const k of Object.keys(ASYNC.inflight))    delete ASYNC.inflight[k];
   for (const k of Object.keys(ASYNC.lastFetched)) delete ASYNC.lastFetched[k];
   // clear selection
   for (const key of Object.keys(selectedRows)) selectedRows[key].clear();
   // clear maps
-  for (const m of Object.values(MAPS)) m.clear();
+  for (const m of Object.values(MAPS))    m.clear();
   for (const m of Object.values(INDEXES)) m.clear();
 }
 
@@ -655,42 +694,54 @@ if (typeof window !== 'undefined') {
     FILTERS, SEARCH, SORT, PAGINATION,
     MAPS, INDEXES,
     S,
-    // mutable top-level bindings
-    get socket() { return socket; },
-    set socket(v) { socket = v; },
-    get socketStatus() { return socketStatus; },
-    set socketStatus(v) { socketStatus = v; },
-    get authToken() { return authToken; },
-    set authToken(v) { authToken = v; },
-    get refreshToken() { return refreshToken; },
-    set refreshToken(v) { refreshToken = v; },
-    get tokenExpiresAt() { return tokenExpiresAt; },
-    set tokenExpiresAt(v) { tokenExpiresAt = v; },
-    get currentUser() { return currentUser; },
-    set currentUser(v) { currentUser = v; },
-    get currentUserRole() { return currentUserRole; },
-    set currentUserRole(v) { currentUserRole = v; },
-    get userPermissions() { return userPermissions; },
-    set userPermissions(v) { userPermissions = v; },
-    get appPhase() { return appPhase; },
-    set appPhase(v) { appPhase = v; },
-    get activeTab() { return activeTab; },
-    set activeTab(v) { activeTab = v; },
-    get activeESchoolTab() { return activeESchoolTab; },
-    set activeESchoolTab(v) { activeESchoolTab = v; },
-    get activeInstTab() { return activeInstTab; },
-    set activeInstTab(v) { activeInstTab = v; },
-    get currentChatId() { return currentChatId; },
-    set currentChatId(v) { currentChatId = v; },
-    get chatTypingTimer() { return chatTypingTimer; },
-    set chatTypingTimer(v) { chatTypingTimer = v; },
-    get pollTimer() { return pollTimer; },
-    set pollTimer(v) { pollTimer = v; },
+    /* ---------- Live getters/setters for mutable top-level bindings ---------- */
+    get socket()               { return socket; },
+    set socket(v)              { socket = v; },
+    get socketStatus()         { return socketStatus; },
+    set socketStatus(v)        { socketStatus = v; },
+    get authToken()            { return authToken; },
+    set authToken(v)           { authToken = v; },
+    get refreshToken()         { return refreshToken; },
+    set refreshToken(v)        { refreshToken = v; },
+    get tokenExpiresAt()       { return tokenExpiresAt; },
+    set tokenExpiresAt(v)      { tokenExpiresAt = v; },
+    get refreshTimer()         { return refreshTimer; },
+    set refreshTimer(v)        { refreshTimer = v; },
+    get currentUser()          { return currentUser; },
+    set currentUser(v)         { currentUser = v; },
+    get currentUserRole()      { return currentUserRole; },
+    set currentUserRole(v)     { currentUserRole = v; },
+    get userPermissions()      { return userPermissions; },
+    set userPermissions(v)     { userPermissions = v; },
+    get appPhase()             { return appPhase; },
+    set appPhase(v)            { appPhase = v; },
+    get appInitialised()       { return appInitialised; },
+    set appInitialised(v)      { appInitialised = v; },
+    get activeTab()            { return activeTab; },
+    set activeTab(v)           { activeTab = v; },
+    get activeESchoolTab()     { return activeESchoolTab; },
+    set activeESchoolTab(v)    { activeESchoolTab = v; },
+    get activeInstTab()        { return activeInstTab; },
+    set activeInstTab(v)       { activeInstTab = v; },
+    get currentRoute()         { return currentRoute; },
+    set currentRoute(v)        { currentRoute = v; },
+    get routeHistory()         { return routeHistory; },
+    set routeHistory(v)        { routeHistory = v; },
+    get breadcrumbs()          { return breadcrumbs; },
+    set breadcrumbs(v)         { breadcrumbs = v; },
+    get currentChatId()        { return currentChatId; },
+    set currentChatId(v)       { currentChatId = v; },
+    get chatTypingTimer()      { return chatTypingTimer; },
+    set chatTypingTimer(v)     { chatTypingTimer = v; },
+    get pollTimer()            { return pollTimer; },
+    set pollTimer(v)           { pollTimer = v; },
     get notificationsPanelOpen() { return notificationsPanelOpen; },
     set notificationsPanelOpen(v) { notificationsPanelOpen = v; },
-    get selectedRows() { return selectedRows; },
-    set selectedRows(v) { selectedRows = v; },
-    // utilities
+    get selectedRows()         { return selectedRows; },
+    set selectedRows(v)        { selectedRows = v; },
+
+    /* ---------- Utilities (callable from any later classic script) ---------- */
     isAuthenticated, hasPermission, setLoading, setError, resetAllState,
+    isCourseWishlisted, setWishlist,
   });
-}9
+}
