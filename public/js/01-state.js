@@ -39,29 +39,29 @@ const CONFIG = Object.freeze({
 
   /* ---------- STORAGE KEYS ---------- */
   STORAGE_KEYS: Object.freeze({
-    AUTH_TOKEN: 'eh.auth.token',
+    AUTH_TOKEN:    'eh.auth.token',
     REFRESH_TOKEN: 'eh.auth.refresh',
-    USER: 'eh.auth.user',
-    THEME: 'eh.ui.theme',
-    LOCALE: 'eh.ui.locale',
-    SIDEBAR: 'eh.ui.sidebar',
-    ONBOARDING: 'eh.onboarding',
-    DRAFT_PREFIX: 'eh.draft.',
-    LAST_ROUTE: 'eh.route.last',
-    CONSENT: 'eh.consent',
+    USER:          'eh.auth.user',
+    THEME:         'eh.ui.theme',
+    LOCALE:        'eh.ui.locale',
+    SIDEBAR:       'eh.ui.sidebar',
+    ONBOARDING:    'eh.onboarding',
+    DRAFT_PREFIX:  'eh.draft.',
+    LAST_ROUTE:    'eh.route.last',
+    CONSENT:       'eh.consent',
   }),
 
   /* ---------- CURRENCY ---------- */
   CURRENCY: 'USD',
   CURRENCY_SYMBOL: '$',
   CURRENCIES: Object.freeze({
-    USD: { symbol: '$', decimals: 2, locale: 'en-US' },
-    EUR: { symbol: '€', decimals: 2, locale: 'de-DE' },
-    GBP: { symbol: '£', decimals: 2, locale: 'en-GB' },
-    NGN: { symbol: '₦', decimals: 2, locale: 'en-NG' },
-    KES: { symbol: 'KSh', decimals: 2, locale: 'en-KE' },
-    ZAR: { symbol: 'R', decimals: 2, locale: 'en-ZA' },
-    INR: { symbol: '₹', decimals: 2, locale: 'en-IN' },
+    USD: { symbol: '$',  decimals: 2, locale: 'en-US' },
+    EUR: { symbol: '€',  decimals: 2, locale: 'de-DE' },
+    GBP: { symbol: '£',  decimals: 2, locale: 'en-GB' },
+    NGN: { symbol: '₦',  decimals: 2, locale: 'en-NG' },
+    KES: { symbol: 'KSh',decimals: 2, locale: 'en-KE' },
+    ZAR: { symbol: 'R',  decimals: 2, locale: 'en-ZA' },
+    INR: { symbol: '₹',  decimals: 2, locale: 'en-IN' },
     CAD: { symbol: 'C$', decimals: 2, locale: 'en-CA' },
     AUD: { symbol: 'A$', decimals: 2, locale: 'en-AU' },
   }),
@@ -83,7 +83,9 @@ const CONFIG = Object.freeze({
   MAX_UPLOAD_MB: 25,
   MAX_VIDEO_UPLOAD_MB: 500,
   ALLOWED_IMAGE_TYPES: Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml']),
-  ALLOWED_DOC_TYPES: Object.freeze(['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv', 'application/json']),
+  ALLOWED_DOC_TYPES: Object.freeze(['application/pdf', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain', 'text/csv', 'application/json']),
   ALLOWED_MEDIA_TYPES: Object.freeze(['video/mp4', 'video/webm', 'audio/mpeg', 'audio/wav']),
 
   /* ---------- PAYMENTS ---------- */
@@ -132,15 +134,15 @@ const CONFIG = Object.freeze({
     'forum_engagement', 'quiz_performance', 'feedback_sentiment',
   ]),
   SUCCESSION_BOXES: Object.freeze([
-    { code: 'star', label: 'Star', readiness: 'ready_now', performance: 'high', potential: 'high' },
-    { code: 'high_pot', label: 'High Potential', readiness: 'ready_soon', performance: 'medium', potential: 'high' },
-    { code: 'enigma', label: 'Enigma', readiness: 'ready_later', performance: 'low', potential: 'high' },
-    { code: 'current_star', label: 'Current Star', readiness: 'ready_now', performance: 'high', potential: 'medium' },
-    { code: 'core', label: 'Core Player', readiness: 'ready_later', performance: 'medium', potential: 'medium' },
-    { code: 'inconsistent', label: 'Inconsistent', readiness: 'developing', performance: 'low', potential: 'medium' },
-    { code: 'trusted', label: 'Trusted Pro', readiness: 'ready_now', performance: 'high', potential: 'low' },
-    { code: 'dilemma', label: 'Dilemma', readiness: 'developing', performance: 'medium', potential: 'low' },
-    { code: 'risk', label: 'At Risk', readiness: 'not_ready', performance: 'low', potential: 'low' },
+    { code: 'star',         label: 'Star',           readiness: 'ready_now',  performance: 'high',   potential: 'high'   },
+    { code: 'high_pot',     label: 'High Potential', readiness: 'ready_soon', performance: 'medium', potential: 'high'   },
+    { code: 'enigma',       label: 'Enigma',         readiness: 'ready_later',performance: 'low',    potential: 'high'   },
+    { code: 'current_star', label: 'Current Star',   readiness: 'ready_now',  performance: 'high',   potential: 'medium' },
+    { code: 'core',         label: 'Core Player',    readiness: 'ready_later',performance: 'medium', potential: 'medium' },
+    { code: 'inconsistent', label: 'Inconsistent',   readiness: 'developing', performance: 'low',    potential: 'medium' },
+    { code: 'trusted',      label: 'Trusted Pro',    readiness: 'ready_now',  performance: 'high',   potential: 'low'    },
+    { code: 'dilemma',      label: 'Dilemma',        readiness: 'developing', performance: 'medium', potential: 'low'    },
+    { code: 'risk',         label: 'At Risk',        readiness: 'not_ready',  performance: 'low',    potential: 'low'    },
   ]),
   SSO_PROVIDERS: Object.freeze(['saml', 'azure_ad', 'google_workspace', 'okta', 'onelogin', 'custom_oidc']),
   WEBHOOK_EVENTS: Object.freeze([
@@ -160,13 +162,13 @@ const CONFIG = Object.freeze({
   ANNOUNCEMENT_SCOPES: Object.freeze(['all', 'campus', 'programme', 'cohort', 'department', 'role']),
   ANNOUNCEMENT_PRIORITIES: Object.freeze(['info', 'important', 'urgent', 'critical']),
   REPORT_FIELD_LIBRARY: Object.freeze({
-    trainee: ['id', 'name', 'email', 'department', 'job_title', 'campus', 'status', 'progress', 'joined_at', 'last_active'],
-    programme: ['id', 'title', 'category', 'status', 'enrolled_count', 'capacity', 'avg_progress', 'start_date', 'end_date'],
-    cohort: ['id', 'name', 'programme_title', 'instructor_name', 'capacity', 'trainee_count', 'start_date', 'end_date', 'status'],
-    assessment: ['id', 'title', 'type', 'cohort_name', 'weight', 'due_date', 'submissions', 'avg_score', 'pass_rate'],
+    trainee:     ['id', 'name', 'email', 'department', 'job_title', 'campus', 'status', 'progress', 'joined_at', 'last_active'],
+    programme:   ['id', 'title', 'category', 'status', 'enrolled_count', 'capacity', 'avg_progress', 'start_date', 'end_date'],
+    cohort:      ['id', 'name', 'programme_title', 'instructor_name', 'capacity', 'trainee_count', 'start_date', 'end_date', 'status'],
+    assessment:  ['id', 'title', 'type', 'cohort_name', 'weight', 'due_date', 'submissions', 'avg_score', 'pass_rate'],
     certificate: ['serial', 'trainee_name', 'programme_title', 'issued_at', 'expires_at', 'cpd_points', 'status'],
-    budget: ['department', 'allocated', 'spent', 'remaining', 'utilization_pct', 'period'],
-    instructor: ['name', 'specialization', 'programmes', 'sessions', 'avg_rating', 'utilization_pct'],
+    budget:      ['department', 'allocated', 'spent', 'remaining', 'utilization_pct', 'period'],
+    instructor:  ['name', 'specialization', 'programmes', 'sessions', 'avg_rating', 'utilization_pct'],
   }),
   REPORT_FORMATS: Object.freeze(['csv', 'xlsx', 'pdf', 'json']),
   REPORT_SCHEDULES: Object.freeze(['once', 'daily', 'weekly', 'monthly', 'quarterly']),
@@ -203,25 +205,25 @@ const CONFIG = Object.freeze({
     forum_answer: 15, first_lesson_today: 5,
   }),
   XP_LEVELS: Object.freeze([
-    { level: 1, title: 'Novice', min: 0 },
-    { level: 2, title: 'Apprentice', min: 100 },
-    { level: 3, title: 'Learner', min: 300 },
-    { level: 4, title: 'Achiever', min: 700 },
-    { level: 5, title: 'Scholar', min: 1500 },
-    { level: 6, title: 'Expert', min: 3000 },
-    { level: 7, title: 'Master', min: 6000 },
-    { level: 8, title: 'Grandmaster', min: 12000 },
+    { level: 1, title: 'Novice',        min: 0 },
+    { level: 2, title: 'Apprentice',    min: 100 },
+    { level: 3, title: 'Learner',       min: 300 },
+    { level: 4, title: 'Achiever',      min: 700 },
+    { level: 5, title: 'Scholar',       min: 1500 },
+    { level: 6, title: 'Expert',        min: 3000 },
+    { level: 7, title: 'Master',        min: 6000 },
+    { level: 8, title: 'Grandmaster',   min: 12000 },
   ]),
   BADGES: Object.freeze({
-    first_lesson: { name: 'First Steps', icon: 'fa-shoe-prints' },
-    first_course: { name: 'Course Champion', icon: 'fa-trophy' },
-    five_courses: { name: 'Learning Machine', icon: 'fa-rocket' },
-    perfect_quiz: { name: 'Perfect Score', icon: 'fa-star' },
-    streak_7: { name: 'Week Warrior', icon: 'fa-fire' },
-    streak_30: { name: 'Month Master', icon: 'fa-crown' },
-    help_10: { name: 'Helpful Hand', icon: 'fa-hands-helping' },
-    night_owl: { name: 'Night Owl', icon: 'fa-moon' },
-    early_bird: { name: 'Early Bird', icon: 'fa-sun' },
+    first_lesson:   { name: 'First Steps',      icon: 'fa-shoe-prints' },
+    first_course:   { name: 'Course Champion',  icon: 'fa-trophy' },
+    five_courses:   { name: 'Learning Machine', icon: 'fa-rocket' },
+    perfect_quiz:   { name: 'Perfect Score',    icon: 'fa-star' },
+    streak_7:       { name: 'Week Warrior',     icon: 'fa-fire' },
+    streak_30:      { name: 'Month Master',     icon: 'fa-crown' },
+    help_10:        { name: 'Helpful Hand',     icon: 'fa-hands-helping' },
+    night_owl:      { name: 'Night Owl',        icon: 'fa-moon' },
+    early_bird:     { name: 'Early Bird',       icon: 'fa-sun' },
   }),
   COURSE_REFUND_WINDOW_DAYS: 14,
   TRIAL_DURATION_HOURS: 48,
@@ -387,26 +389,26 @@ const UI = {
    ASYNC / REQUEST STATE
    ============================================================ */
 const ASYNC = {
-  loading: {},
-  errors: {},
-  inflight: {},
-  controllers: {},
-  lastFetched: {},
-  cacheTTL: {},
-  retryCount: {},
+  loading: {},       // { [key]: boolean }
+  errors: {},        // { [key]: Error | string | null }
+  inflight: {},      // { [key]: Promise }
+  controllers: {},   // { [key]: AbortController }
+  lastFetched: {},   // { [key]: number (timestamp) }
+  cacheTTL: {},      // { [key]: number (ms) }
+  retryCount: {},    // { [key]: number }
 };
 
 /* ============================================================
    FORM DRAFTS / OFFLINE QUEUE
    ============================================================ */
 const FORMS = {
-  drafts: {},
-  dirty: new Set(),
-  validationErrors: {},
-  touched: {},
+  drafts: {},        // { [formKey]: { data, savedAt } }
+  dirty: new Set(),  // set of dirty form keys
+  validationErrors: {}, // { [formKey]: { field: msg } }
+  touched: {},       // { [formKey]: Set<field> }
 };
 const OFFLINE = {
-  queue: [],
+  queue: [],         // pending writes
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
   lastSyncAt: null,
   syncInProgress: false,
@@ -428,27 +430,27 @@ const SEARCH = {
   campuses: '', announcements: '', apiKeys: '', webhooks: '', auditLogs: '',
 };
 const SORT = {
-  users: { field: 'created_at', dir: 'desc' },
-  experts: { field: 'rating', dir: 'desc' },
-  courses: { field: 'created_at', dir: 'desc' },
+  users:     { field: 'created_at', dir: 'desc' },
+  experts:   { field: 'rating',     dir: 'desc' },
+  courses:   { field: 'created_at', dir: 'desc' },
   consultations: { field: 'scheduled_at', dir: 'desc' },
-  transactions: { field: 'created_at', dir: 'desc' },
-  trainees: { field: 'name', dir: 'asc' },
-  programmes: { field: 'created_at', dir: 'desc' },
-  cohorts: { field: 'start_date', dir: 'desc' },
+  transactions:  { field: 'created_at', dir: 'desc' },
+  trainees:  { field: 'name', dir: 'asc' },
+  programmes:{ field: 'created_at', dir: 'desc' },
+  cohorts:   { field: 'start_date', dir: 'desc' },
 };
 const PAGINATION = {
-  users: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  experts: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  courses: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  users:     { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  experts:   { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  courses:   { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
   consultations: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  transactions: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionTrainees: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionEnrollments: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionCertificates: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionSessions: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionProgrammes: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
-  institutionCohorts: { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  transactions:  { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionTrainees:      { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionEnrollments:   { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionCertificates:  { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionSessions:      { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionProgrammes:    { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
+  institutionCohorts:       { page: 1, perPage: CONFIG.PER_PAGE, total: 0 },
 };
 
 /* ============================================================
@@ -461,6 +463,7 @@ let selectedRows = {
   programmes: new Set(),
   cohorts: new Set(),
   campuses: new Set(),
+  // additions
   experts: new Set(),
   courses: new Set(),
   consultations: new Set(),
@@ -479,19 +482,23 @@ let selectedRows = {
    PRIMARY STATE TREE
    ============================================================ */
 const S = {
+  /* ---------- Core ---------- */
   users: [], experts: [], events: [], consultations: [], courses: [], notifications: [],
   reviews: [], transactions: [], payouts: [], enrollments: [], auditLogs: [], claims: [],
   tickets: [], coupons: [], certificates: [], wallet: { balance: 0, ledger: [] }, earnings: null,
   analytics: null, eventRegistrations: [], availability: [], timeOff: [], chatMessages: {},
   expertStats: null, expertPortfolio: [],
 
+  /* ---------- Legacy pagination shim ---------- */
   page: {
     users: 1, experts: 1, courses: 1, consultations: 1, transactions: 1,
     institutionTrainees: 1, institutionEnrollments: 1, institutionCertificates: 1,
     institutionSessions: 1, institutionProgrammes: 1, institutionCohorts: 1,
   },
 
+  /* ---------- Institutions ---------- */
   institutions: [],
+
   programmes: [], cohorts: [], assessments: [], projects: [],
   trainees: [], instructors: [], myInstitution: null, institutionStats: null,
   institutionTeam: [], institutionEnrollments: [], institutionSessions: [],
@@ -505,6 +512,7 @@ const S = {
 
   userIntent: 'both',
 
+  /* ---------- Consultation extensions ---------- */
   consultationSlots: [], consultationPackages: [], consultationTiers: [],
   consultationEscrow: {}, consultationDisputes: [], consultationFollowups: [],
   consultationRecordings: {}, expertQuestions: [], userShortlist: [], userPackages: [],
@@ -513,6 +521,7 @@ const S = {
   instantConsultationExpert: null, corporateBudgets: [], consultationReviews: [],
   consultationReminders: [], consultationAttendees: [],
 
+  /* ---------- E-School extensions ---------- */
   courseCurriculum: {}, currentLesson: null, currentLessonProgress: null,
   currentQuiz: null, currentQuizAttempts: [], currentAssignment: null,
   currentAssignmentSubmission: null, lessonNotes: [], courseDiscussions: [],
@@ -523,6 +532,7 @@ const S = {
   enrolledCourseIds: new Set(), wishlistIds: new Set(),
   courseAnalytics: null, courseCertificates: [],
 
+  /* ---------- Institution extensions ---------- */
   campuses: [], activeCampusId: null,
   budgetAllocations: [], budgetTransactions: [],
   examProctorSessions: [], examProctorFlags: [],
@@ -535,25 +545,32 @@ const S = {
   institutionAnalytics: null, skillsGapAnalysis: null, complianceRuns: [],
   blockchainCerts: [], announcementReads: [], apiCallLogs: [],
 
+  /* ---------- NEW: messaging ---------- */
   conversations: [], activeConversationId: null, unreadCounts: {},
   typingUsers: {}, messageDrafts: {},
 
+  /* ---------- NEW: calendar / scheduling ---------- */
   calendarEvents: [], calendarView: 'month', calendarRange: { start: null, end: null },
 
-  uploads: {},
-  attachments: {},
+  /* ---------- NEW: files ---------- */
+  uploads: {},         // { [uploadId]: { file, progress, status, error, url } }
+  attachments: {},     // { [entityId]: Attachment[] }
 
+  /* ---------- NEW: search / discovery ---------- */
   globalSearchResults: { users: [], experts: [], courses: [], programmes: [], events: [] },
   recentSearches: [],
   savedSearches: [],
 
+  /* ---------- NEW: prefs ---------- */
   userPreferences: null,
   notificationPreferences: null,
   consentState: null,
 
-  presence: {},
-  liveEvents: [],
+  /* ---------- NEW: realtime ---------- */
+  presence: {},        // { [userId]: { online, lastSeen } }
+  liveEvents: [],      // ephemeral push events
 
+  /* ---------- NEW: meta ---------- */
   lastServerSync: null,
   serverTimeOffsetMs: 0,
   buildInfo: { version: APP.VERSION, env: APP.ENV },
@@ -606,6 +623,7 @@ function setError(key, err = null) {
 }
 
 function resetAllState() {
+  // clear primary arrays
   for (const k of Object.keys(S)) {
     const v = S[k];
     if (Array.isArray(v)) v.length = 0;
@@ -615,124 +633,17 @@ function resetAllState() {
       for (const kk of Object.keys(v)) delete v[kk];
     }
   }
-
+  // clear async
   for (const k of Object.keys(ASYNC.loading)) delete ASYNC.loading[k];
   for (const k of Object.keys(ASYNC.errors)) delete ASYNC.errors[k];
   for (const k of Object.keys(ASYNC.inflight)) delete ASYNC.inflight[k];
   for (const k of Object.keys(ASYNC.lastFetched)) delete ASYNC.lastFetched[k];
-
+  // clear selection
   for (const key of Object.keys(selectedRows)) selectedRows[key].clear();
+  // clear maps
   for (const m of Object.values(MAPS)) m.clear();
   for (const m of Object.values(INDEXES)) m.clear();
 }
-
-/* ============================================================
-   PERSISTED STATE HELPERS
-   ============================================================ */
-function cloneValue(value) {
-  if (typeof structuredClone === 'function') {
-    try { return structuredClone(value); } catch (_) {}
-  }
-
-  try {
-    return JSON.parse(JSON.stringify(value));
-  } catch (_) {
-    return value;
-  }
-}
-
-function safeStorageGet(key, fallback) {
-  if (typeof localStorage === 'undefined') return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw == null) return fallback;
-    return JSON.parse(raw);
-  } catch (_) {
-    return fallback;
-  }
-}
-
-function safeStorageSet(key, value) {
-  if (typeof localStorage === 'undefined') return false;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-function createStateStore(initialState, options = {}) {
-  const persistKey = options.persistKey || null;
-  const store = Object.assign({}, initialState);
-  const listeners = new Set();
-
-  const emit = function() {
-    const snapshot = cloneValue(store);
-    listeners.forEach(fn => {
-      try { fn(snapshot); } catch (_) {}
-    });
-  };
-
-  const api = {
-    get(key) {
-      return key == null ? cloneValue(store) : cloneValue(store[key]);
-    },
-    set(key, value) {
-      if (key == null) return false;
-      store[key] = cloneValue(value);
-      if (persistKey) safeStorageSet(persistKey, store);
-      emit();
-      return true;
-    },
-    update(key, updater) {
-      if (key == null) return false;
-      const current = store[key];
-      const next = typeof updater === 'function' ? updater(cloneValue(current)) : updater;
-      store[key] = cloneValue(next);
-      if (persistKey) safeStorageSet(persistKey, store);
-      emit();
-      return true;
-    },
-    reset() {
-      Object.keys(store).forEach(key => delete store[key]);
-      Object.assign(store, cloneValue(initialState));
-      if (persistKey) safeStorageSet(persistKey, store);
-      emit();
-    },
-    subscribe(fn) {
-      if (typeof fn !== 'function') return () => {};
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
-    hydrate(obj) {
-      if (!obj || typeof obj !== 'object') return this;
-      Object.keys(store).forEach(key => delete store[key]);
-      Object.assign(store, cloneValue(obj));
-      if (persistKey) safeStorageSet(persistKey, store);
-      emit();
-      return this;
-    },
-  };
-
-  if (persistKey) {
-    try {
-      const restored = safeStorageGet(persistKey, null);
-      if (restored && typeof restored === 'object') {
-        Object.assign(store, restored);
-      }
-    } catch (_) {}
-  }
-
-  return api;
-}
-
-const stateStore = createStateStore({
-  authenticated: false,
-  userIntent: 'both',
-  lastRoute: '#/',
-  theme: null,
-}, { persistKey: 'expertHub.state' });
 
 /* ============================================================
    EXPORT TO GLOBAL (browser-friendly, no bundler assumed)
@@ -744,11 +655,7 @@ if (typeof window !== 'undefined') {
     FILTERS, SEARCH, SORT, PAGINATION,
     MAPS, INDEXES,
     S,
-    createStateStore,
-    stateStore,
-    safeStorageGet,
-    safeStorageSet,
-    cloneValue,
+    // mutable top-level bindings
     get socket() { return socket; },
     set socket(v) { socket = v; },
     get socketStatus() { return socketStatus; },
@@ -783,6 +690,7 @@ if (typeof window !== 'undefined') {
     set notificationsPanelOpen(v) { notificationsPanelOpen = v; },
     get selectedRows() { return selectedRows; },
     set selectedRows(v) { selectedRows = v; },
+    // utilities
     isAuthenticated, hasPermission, setLoading, setError, resetAllState,
   });
-}
+}9
