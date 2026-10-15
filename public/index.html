@@ -4,142 +4,132 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#6366f1" />
-  <meta name="description" content="ExpertHub 2.0 â€” E-School, expert consultations, events, resources, and institutional training in one platform." />
+  <meta name="description" content="ExpertHub 2.0 — E-School, 1-on-1 expert consultations, and corporate training in one platform." />
   <meta name="color-scheme" content="light dark" />
-  <meta name="application-name" content="ExpertHub 2.0" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="format-detection" content="telephone=no" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%236366f1'/%3E%3Ctext x='50' y='68' text-anchor='middle' font-size='60' font-family='Arial,sans-serif' font-weight='700' fill='white'%3EE%3C/text%3E%3C/svg%3E" />
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%236366f1'/%3E%3Ctext x='50' y='68' text-anchor='middle' font-size='60' font-family='Arial,sans-serif' font-weight='700' fill='white'%3EE%3C/text%3E%3C/svg%3E" />
   <title>ExpertHub 2.0 | E-School &amp; Consultation Platform</title>
 
-  <!-- External fonts and icons -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  <link rel="stylesheet" href="/styles.css" />
+  <!-- Favicon (inline SVG) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
 
-  <!-- Optional charting library for admin and institution analytics. -->
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <!-- Chart.js (used by renderCharts and renderInstitutionCharts) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 
-  <!-- Socket.IO must load before js/04-api.js initializes realtime features. -->
+  <!--
+    Socket.IO client.
+    MUST load before /js/04-api.js runs initializeSocket().
+    Do NOT add `defer` — server.js serves this synchronously and
+    the split files below depend on `io` being defined globally.
+  -->
   <script src="/socket.io/socket.io.js"></script>
 
-  <!-- Apply saved theme before first paint. -->
+  <!-- App styles -->
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Avoid flash of unstyled theme: apply saved dark mode before paint -->
   <script>
     (function () {
       try {
-        if (localStorage.getItem('theme') === 'dark') {
-          document.documentElement.classList.add('dark');
-        }
-      } catch (error) {
-        // Storage may be unavailable in restricted browsing contexts.
-      }
+        var t = localStorage.getItem('theme');
+        if (t === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {}
     })();
   </script>
 </head>
 
 <body>
   <!-- SPA mount points -->
-  <div id="app-root" aria-live="off"></div>
-  <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+  <div id="app-root"></div>
+  <div id="toast-container"></div>
   <div id="modal-root"></div>
 
-  <!-- Tier 0 utilities: load early for later modules. -->
-  <script src="/js/00-i18n.js"></script>
-  <script src="/js/00-a11y.js"></script>
+<script src="js/01-state.js"></script>
+<script src="js/02-utils.js"></script>
+<script src="js/03-ui.js"></script>
+<script src="js/04-api.js"></script>
+<script src="js/05-auth.js"></script>
+<script src="js/06-data.js"></script>
 
-  <!-- Core foundation; keep dependency order. -->
-  <script src="/js/01-state.js"></script>
-  <script src="/js/02-utils.js"></script>
-  <script src="/js/03-ui.js"></script>
-  <script src="/js/04-api.js"></script>
-  <script src="/js/05-auth.js"></script>
-  <script src="/js/06-data.js"></script>
+<!-- ============================================================
+     js/public/ — public front door
+     Replaces the original single js/07-landing.js.
+     Load order inside this block matters:
+       components/format.js   must be first (defines PublicUI.format)
+       landing/features.js    before pages/about.js & pages/institutions.js
+       landing/discover.js    before landing/index.js
+     ============================================================ -->
+<script src="js/public/components/format.js"></script>
+<script src="js/public/components/styles.js"></script>
+<script src="js/public/components/bind.js"></script>
+<script src="js/public/components/public-navbar.js"></script>
+<script src="js/public/components/public-footer.js"></script>
+<script src="js/public/components/hero.js"></script>
+<script src="js/public/components/public-search.js"></script>
+<script src="js/public/components/course-card.js"></script>
+<script src="js/public/components/expert-card.js"></script>
+<script src="js/public/components/event-card.js"></script>
+<script src="js/public/components/resource-card.js"></script>
+<script src="js/public/components/category-card.js"></script>
+<script src="js/public/components/public-cta.js"></script>
 
-  <!-- Public front door: format component first; shared landing dependencies next. -->
-  <script src="/js/public/components/format.js"></script>
-  <script src="/js/public/components/styles.js"></script>
-  <script src="/js/public/components/bind.js"></script>
-  <script src="/js/public/components/public-navbar.js"></script>
-  <script src="/js/public/components/public-footer.js"></script>
-  <script src="/js/public/components/hero.js"></script>
-  <script src="/js/public/components/public-search.js"></script>
-  <script src="/js/public/components/course-card.js"></script>
-  <script src="/js/public/components/expert-card.js"></script>
-  <script src="/js/public/components/event-card.js"></script>
-  <script src="/js/public/components/resource-card.js"></script>
-  <script src="/js/public/components/category-card.js"></script>
-  <script src="/js/public/components/public-cta.js"></script>
+<script src="js/public/landing/features.js"></script>
+<script src="js/public/landing/pricing.js"></script>
+<script src="js/public/landing/testimonials.js"></script>
+<script src="js/public/landing/faq.js"></script>
+<script src="js/public/landing/discover.js"></script>
+<script src="js/public/landing/index.js"></script>
 
-  <script src="/js/public/landing/features.js"></script>
-  <script src="/js/public/landing/pricing.js"></script>
-  <script src="/js/public/landing/testimonials.js"></script>
-  <script src="/js/public/landing/faq.js"></script>
-  <script src="/js/public/landing/discover.js"></script>
-  <script src="/js/public/landing/index.js"></script>
+<script src="js/public/pages/courses.js"></script>
+<script src="js/public/pages/experts.js"></script>
+<script src="js/public/pages/events.js"></script>
+<script src="js/public/pages/resources.js"></script>
+<script src="js/public/pages/course-detail.js"></script>
+<script src="js/public/pages/expert-detail.js"></script>
+<script src="js/public/pages/event-detail.js"></script>
+<script src="js/public/pages/about.js"></script>
+<script src="js/public/pages/contact.js"></script>
+<script src="js/public/pages/institutions.js"></script>
 
-  <script src="/js/public/pages/courses.js"></script>
-  <script src="/js/public/pages/experts.js"></script>
-  <script src="/js/public/pages/events.js"></script>
-  <script src="/js/public/pages/resources.js"></script>
-  <script src="/js/public/pages/course-detail.js"></script>
-  <script src="/js/public/pages/expert-detail.js"></script>
-  <script src="/js/public/pages/event-detail.js"></script>
-  <script src="/js/public/pages/about.js"></script>
-  <script src="/js/public/pages/contact.js"></script>
-  <script src="/js/public/pages/institutions.js"></script>
+<script src="js/08-shell.js"></script>
+<script src="js/09-admin.js"></script>
+<script src="js/10-expert.js"></script>
 
-  <!-- Main application shell and role experiences. -->
-  <script src="/js/08-shell.js"></script>
-  <script src="/js/09-admin.js"></script>
-  <script src="/js/10-expert.js"></script>
+<!-- User / Learner dashboard -->
+<script src="js/user/01-dashboard.js"></script>
+<script src="js/user/02-overview.js"></script>
+<script src="js/user/03-eschool.js"></script>
+<script src="js/user/04-course-detail.js"></script>
+<script src="js/user/05-course-player.js"></script>
+<script src="js/user/06-my-learning.js"></script>
+<script src="js/user/07-learning-paths.js"></script>
+<script src="js/user/08-bundles.js"></script>
+<script src="js/user/09-wishlist.js"></script>
+<script src="js/user/10-certificates.js"></script>
+<script src="js/user/11-achievements.js"></script>
+<script src="js/user/12-course-notes.js"></script>
+<script src="js/user/13-refunds.js"></script>
+<script src="js/user/14-events.js"></script>
+<script src="js/user/15-find-experts.js"></script>
+<script src="js/user/16-consultations.js"></script>
+<script src="js/user/17-packages.js"></script>
+<script src="js/user/18-shortlist.js"></script>
+<script src="js/user/19-wallet.js"></script>
+<script src="js/user/20-transactions.js"></script>
+<script src="js/user/21-claims.js"></script>
+<script src="js/user/22-support.js"></script>
+<script src="js/user/23-profile.js"></script>
+<script src="js/user/24-feature-expansion.js"></script>
+<script src="js/user/25-capability-catalog.js"></script>
 
-  <!-- Learner dashboard split. Feature registry precedes its catalog. -->
-  <script src="/js/11-user-core.js"></script>
-  <script src="/js/11-user-eschool.js"></script>
-  <script src="/js/11-user-learning.js"></script>
-  <script src="/js/11-user-consulting.js"></script>
-  <script src="/js/11-user-account.js"></script>
-  <script src="/js/11-user-features.js"></script>
-  <script src="/js/11-user-catalog.js"></script>
-
-  <script src="/js/12-institution.js"></script>
-  <script src="/js/13-modals.js"></script>
-  <script src="/js/14-actions.js"></script>
-  <script src="/js/15-router.js"></script>
-
-  <!-- Tier 1: navigation, notifications, assessment, calendar, PWA. -->
-  <script src="/js/00-command-palette.js"></script>
-  <script src="/js/16-notifications.js"></script>
-  <script src="/js/17-quiz.js"></script>
-  <script src="/js/18-calendar-sync.js"></script>
-  <script src="/js/19-pwa.js"></script>
-
-  <!-- Tier 2: learner engagement and personalization. -->
-  <script src="/js/20-study-groups.js"></script>
-  <script src="/js/21-leaderboard.js"></script>
-  <script src="/js/22-ai-study-buddy.js"></script>
-  <script src="/js/23-subscriptions.js"></script>
-  <script src="/js/24-referrals.js"></script>
-  <script src="/js/25-skill-map.js"></script>
-
-  <!-- Retention, community, trust, identity, and observability. -->
-  <script src="/js/26-srs.js"></script>
-  <script src="/js/27-forum.js"></script>
-  <script src="/js/28-digest.js"></script>
-  <script src="/js/29-public-profile.js"></script>
-  <script src="/js/30-2fa.js"></script>
-  <script src="/js/31-observability.js"></script>
-
-  <!-- Tier 3: enterprise and institutional capabilities. -->
-  <script src="/js/32-institution-analytics.js"></script>
-  <script src="/js/33-bulk-enrollment.js"></script>
-  <script src="/js/34-xapi-scorm.js"></script>
-  <script src="/js/35-expert-tiers.js"></script>
-  <script src="/js/36-compliance.js"></script>
-</body>
-</html>
+<script src="js/12-institution.js"></script>
+<script src="js/13-modals.js"></script>
+<script src="js/14-actions.js"></script>
+<script src="js/15-router.js"></script>
