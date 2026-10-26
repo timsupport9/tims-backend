@@ -1,7 +1,7 @@
 /* ============================================================
    ExpertHub 2.0 — dashboards/user/learning.js
    E-School catalog + My Learning.
-   Shared renderer for tabs: eschool, my-learning.
+   Persistent filters, pagination, verified enrollment gating.
    ============================================================ */
 
 const USER_ESCHOOL_TABS = [
@@ -14,82 +14,129 @@ const USER_ESCHOOL_TABS = [
   { id: 'certification',label: 'Certifications', icon: 'fa-certificate' },
 ];
 
-let _activeESchoolTab = 'courses';
+const ESCHOOL_PAGE_SIZE = 12;
+
+function _eschoolFilters() {
+  return {
+    tab:   UserFilters.get('eschool', 'tab', 'courses') || 'courses',
+    query: UserFilters.get('eschool', 'q', '') || '',
+    level: UserFilters.get('eschool', 'level', '') || '',
+    sort:  UserFilters.get('eschool', 'sort', 'popular') || 'popular',
+    page:  Number(UserFilters.get('eschool', 'page', 1)) || 1,
+  };
+}
+
+function _setESchoolFilter(k, v) {
+  UserFilters.set('eschool', k, v);
+  if (k !== 'page') UserFilters.set('eschool', 'page', 1);
+}
 
 function renderUserLearning(tab) {
   if (tab === 'my-learning') return renderUserMyLearning();
 
-  const query = ($('#eschool-search')?.value || '').toLowerCase();
-  const level = $('#eschool-level')?.value || '';
+  const f = _eschoolFilters();
 
   return UserUI.page({
     title: 'E-School Learning Hub',
     breadcrumb: 'E-School',
-    actions: `
-      <input type="search" id="eschool-search" class="form-input"
-             placeholder="Search courses..." value="${esc(query)}" style="max-width:240px" />
-      <select id="eschool-level" class="form-select" style="max-width:150px">
-        <option value="">All levels</option>
-        <option value="beginner"     ${level === 'beginner' ? 'selected' : ''}>Beginner</option>
-        <option value="intermediate" ${level === 'intermediate' ? 'selected' : ''}>Intermediate</option>
-        <option value="advanced"     ${level === 'advanced' ? 'selected' : ''}>Advanced</option>
-      </select>
-    `,
     content: `
-      ${UserUI.tabs(USER_ESCHOOL_TABS, _activeESchoolTab, 'data-eschool-tab')}
-      <section class="panel" id="eschool-panel">${renderESchoolPanel(query, level)}</section>
+      ${UserUI.tabs(USER_ESCHOOL_TABS, f.tab, 'data-eschool-tab')}
+
+      <section class="panel">
+        <div class="expert-filters">
+          <input type="search" id="eschool-search" class="form-input"
+                 placeholder="Search courses..." value="${esc(f.query)}" style="max-width:240px"
+                 aria-label="Search courses" />
+          <select id="eschool-level" class="form-select" style="max-width:150px" aria-label="Level">
+            <option value="">All levels</option>
+            <option value="beginner"     ${f.level === 'beginner' ? 'selected' : ''}>Beginner</option>
+            <option value="intermediate" ${f.level === 'intermediate' ? 'selected' : ''}>Intermediate</option>
+            <option value="advanced"     ${f.level === 'advanced' ? 'selected' : ''}>Advanced</option>
+          </select>
+          <select id="eschool-sort" class="form-select" style="max-width:170px" aria-label="Sort">
+            <option value="popular"    ${f.sort === 'popular' ? 'selected' : ''}>Most popular</option>
+            <option value="price_asc"  ${f.sort === 'price_asc' ? 'selected' : ''}>Price: low → high</option>
+            <option value="price_desc" ${f.sort === 'price_desc' ? 'selected' : ''}>Price: high → low</option>
+            <option value="newest"     ${f.sort === 'newest' ? 'selected' : ''}>Newest</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" data-action="clear-eschool-filters">
+            <i class="fas fa-eraser"></i> Clear</button>
+        </div>
+
+        <div id="eschool-panel">${renderESchoolPanel(f)}</div>
+      </section>
     `,
   });
 }
 
-function renderESchoolPanel(query = '', level = '') {
-  const filter = _activeESchoolTab === 'courses' ? null : _activeESchoolTab;
-  let list = filter ? S.courses.filter(c => c.course_type === filter) : S.courses;
-  if (query) list = list.filter(c =>
-    (c.title || '').toLowerCase().includes(query) ||
-    (c.description || '').toLowerCase().includes(query) ||
-    (c.category || '').toLowerCase().includes(query)
-  );
-  if (level) list = list.filter(c => c.level === level);
+function renderESchoolPanel(f = _eschoolFilters()) {
+  const filter = f.tab === 'courses' ? null : f.tab;
+  let list = filter ? (S.courses || []).filter(c => c.course_type === filter) : (S.courses || []);
 
-  if (!list.length) return UserUI.empty({
+  if (f.query) {
+    const q = f.query.toLowerCase();
+    list = list.filter(c =>
+      (c.title || '').toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q) ||
+      (c.category || '').toLowerCase().includes(q)
+    );
+  }
+  if (f.level) list = list.filter(c => c.level === f.level);
+
+  list = list.slice().sort((a, b) => {
+    if (f.sort === 'price_asc')  return Number(a.price||0) - Number(b.price||0);
+    if (f.sort === 'price_desc') return Number(b.price||0) - Number(a.price||0);
+    if (f.sort === 'newest')     return new Date(b.created_at||0) - new Date(a.created_at||0);
+    return Number(b.enrolled_count||0) - Number(a.enrolled_count||0);
+  });
+
+  const total = list.length;
+  const page = Math.min(f.page, Math.max(1, Math.ceil(total / ESCHOOL_PAGE_SIZE)));
+  const paged = list.slice((page - 1) * ESCHOOL_PAGE_SIZE, page * ESCHOOL_PAGE_SIZE);
+
+  if (!total) return UserUI.empty({
     icon: 'fa-book-open',
     title: 'No courses found',
     desc: 'Try adjusting filters or search term.',
   });
 
-  return `<div class="card-grid">
-    ${list.map(c => {
-      const enrolled   = S.enrolledCourseIds.has(String(c.id));
-      const inWishlist = S.wishlistIds.has(String(c.id));
-      return `
-        <article class="program-card">
-          <div style="display:flex;justify-content:space-between;gap:8px">
-            <span class="chip chip-blue">${esc((c.course_type || '').replace('_',' '))}</span>
-            <span class="chip chip-neutral">${esc(c.level || '')}</span>
-          </div>
-          <h4 class="program-title">${esc(c.title || '')}</h4>
-          <p class="program-desc">${esc((c.description || '').slice(0, 120))}</p>
-          ${c.expert_name ? `<p class="program-meta"><i class="fas fa-user-tie"></i> ${esc(c.expert_name)}</p>` : ''}
-          <footer class="program-footer">
-            <span class="program-price">${fmtCur(c.price || 0)}</span>
-            <span class="program-meta">${c.duration_weeks ? c.duration_weeks + 'w' : (c.duration_hours || 0) + 'h'} · ${c.enrolled_count || 0} enrolled</span>
-          </footer>
-          <div class="panel-actions" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-            ${enrolled
-              ? `<button class="btn btn-success btn-sm flex-1" data-action="open-course-player" data-id="${c.id}">
-                  <i class="fas fa-play"></i> Continue</button>`
-              : `<button class="btn btn-primary btn-sm flex-1" data-action="enroll-modal" data-id="${c.id}">
-                  <i class="fas fa-shopping-cart"></i> Enroll</button>`}
-            <button class="btn btn-secondary btn-sm" data-action="view-course-detail" data-id="${c.id}">
-              <i class="fas fa-eye"></i></button>
-            <button class="btn btn-secondary btn-sm" data-action="toggle-wishlist" data-id="${c.id}">
-              <i class="fas fa-heart" style="color:${inWishlist ? 'var(--danger)' : 'inherit'}"></i></button>
-          </div>
-        </article>
-      `;
-    }).join('')}
-  </div>`;
+  return `
+    <p class="program-meta" style="margin:8px 0">${total} course${total === 1 ? '' : 's'}</p>
+    <div class="card-grid">
+      ${paged.map(c => {
+        const enrolled   = S.enrolledCourseIds.has(String(c.id));
+        const inWishlist = S.wishlistIds.has(String(c.id));
+        return `
+          <article class="program-card">
+            <div style="display:flex;justify-content:space-between;gap:8px">
+              <span class="chip chip-blue">${esc((c.course_type || '').replace('_',' '))}</span>
+              <span class="chip chip-neutral">${esc(c.level || '')}</span>
+            </div>
+            <h4 class="program-title">${esc(c.title || '')}</h4>
+            <p class="program-desc">${esc((c.description || '').slice(0, 120))}</p>
+            ${c.expert_name ? `<p class="program-meta"><i class="fas fa-user-tie"></i> ${esc(c.expert_name)}</p>` : ''}
+            <footer class="program-footer">
+              <span class="program-price">${fmtCur(c.price || 0)}</span>
+              <span class="program-meta">${c.duration_weeks ? c.duration_weeks + 'w' : (c.duration_hours || 0) + 'h'} · ${c.enrolled_count || 0} enrolled</span>
+            </footer>
+            <div class="panel-actions" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+              ${enrolled
+                ? `<button class="btn btn-success btn-sm flex-1" data-action="open-course-player" data-id="${c.id}">
+                    <i class="fas fa-play"></i> Continue</button>`
+                : `<button class="btn btn-primary btn-sm flex-1" data-action="enroll-modal" data-id="${c.id}">
+                    <i class="fas fa-shopping-cart"></i> Enroll</button>`}
+              <button class="btn btn-secondary btn-sm" data-action="view-course-detail" data-id="${c.id}"
+                      aria-label="View details"><i class="fas fa-eye"></i></button>
+              <button class="btn btn-secondary btn-sm" data-action="toggle-wishlist" data-id="${c.id}"
+                      aria-label="${inWishlist ? 'Remove from wishlist' : 'Add to wishlist'}">
+                <i class="fas fa-heart" style="color:${inWishlist ? 'var(--danger)' : 'inherit'}"></i></button>
+            </div>
+          </article>
+        `;
+      }).join('')}
+    </div>
+    ${UserUI.pagination({ page, pageSize: ESCHOOL_PAGE_SIZE, total, action: 'eschool-page', key: 'courses' })}
+  `;
 }
 
 function renderUserMyLearning() {
@@ -180,76 +227,113 @@ window.ExpertHubUser.registerModule('learning', renderUserLearning);
 window.ExpertHubUser.registerModule('eschool', renderUserLearning);
 window.ExpertHubUser.registerModule('my-learning', renderUserMyLearning);
 
-/* ------------------------------------------------------------------ */
-/*  E-School tab + filter bindings                                     */
-/* ------------------------------------------------------------------ */
+/* ---------------- Bindings (re-attached after each render) ---------------- */
+window.ExpertHubUser.registerModule('learning', renderUserLearning, {
+  init() {
+    const rerender = debounce(() => {
+      const host = document.getElementById('eschool-panel');
+      if (host) host.innerHTML = renderESchoolPanel(_eschoolFilters());
+    }, 250);
+
+    const search = $('#eschool-search');
+    if (search) search.oninput = () => { _setESchoolFilter('q', search.value); rerender(); };
+
+    const level = $('#eschool-level');
+    if (level) level.onchange = () => { _setESchoolFilter('level', level.value); rerender(); };
+
+    const sort = $('#eschool-sort');
+    if (sort) sort.onchange = () => { _setESchoolFilter('sort', sort.value); rerender(); };
+  },
+});
+
+/* Tab clicks handled by a single delegated listener, but tolerant of rerenders */
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-eschool-tab]');
   if (!t) return;
-  _activeESchoolTab = t.dataset.eschoolTab;
-  const host = document.getElementById('eschool-panel');
-  if (host) host.innerHTML = renderESchoolPanel(
-    ($('#eschool-search')?.value || '').toLowerCase(),
-    $('#eschool-level')?.value || ''
-  );
-  document.querySelectorAll('[data-eschool-tab]').forEach(x => x.classList.remove('tab-btn-active'));
-  t.classList.add('tab-btn-active');
+  _setESchoolFilter('tab', t.dataset.eschoolTab);
+  rerenderRoleContent();
 }, true);
 
-document.addEventListener('input', debounce((e) => {
-  if (!e.target.matches('#eschool-search, #eschool-level')) return;
-  const host = document.getElementById('eschool-panel');
-  if (host) host.innerHTML = renderESchoolPanel(
-    ($('#eschool-search')?.value || '').toLowerCase(),
-    $('#eschool-level')?.value || ''
-  );
-}, 250));
+window.ExpertHubUser.registerAction('clear-eschool-filters', () => {
+  UserFilters.clear('eschool');
+  rerenderRoleContent();
+});
 
-/* ------------------------------------------------------------------ */
-/*  Actions                                                            */
-/* ------------------------------------------------------------------ */
+window.ExpertHubUser.registerAction('eschool-page', (id, el) => {
+  const p = Number(el?.dataset?.page || 1);
+  _setESchoolFilter('page', p);
+  rerenderRoleContent();
+});
+
+/* ---------------- Actions ---------------- */
 window.ExpertHubUser.registerAction('toggle-wishlist', async (courseId) => {
   try {
-    await apiCall('/api/user/wishlist/toggle', 'POST', { course_id: Number(courseId) });
-    const d = await apiCall('/api/user/wishlist').catch(() => ({ items: [] }));
-    S.wishlist = d.items || [];
+    const d = await apiCall('/api/user/wishlist/toggle', 'POST', { course_id: Number(courseId) });
+    if (Array.isArray(d?.items)) {
+      S.wishlist = d.items;
+    } else {
+      const list = await apiCall('/api/user/wishlist').catch(() => ({ items: [] }));
+      S.wishlist = list.items || [];
+    }
     S.wishlistIds = new Set(S.wishlist.map(w => String(w.course_id)));
     rerenderRoleContent();
     showToast('Wishlist updated', 'success');
   } catch (e) { showToast(e.message, 'error'); }
 });
 
-window.ExpertHubUser.registerAction('enroll-modal', (courseId) => {
-  const c = S.courses.find(x => String(x.id) === String(courseId));
-  if (!c) return showToast('Course not found', 'error');
-  openModal({
-    title: `Enroll in ${c.title}`,
-    body: `
-      <p>Price: <strong>${fmtCur(c.price || 0)}</strong></p>
-      <p>Your balance: <strong>${fmtCur(S.wallet.balance || 0)}</strong></p>
-      <label class="form-group"><span class="form-label">Coupon (optional)</span>
-        <input id="enCoupon" class="form-input" placeholder="WELCOME10" /></label>
-    `,
-    footer: `
-      <button class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button id="enSave" class="btn btn-primary">Confirm Enroll</button>
-    `,
-  });
-  $('#enSave').onclick = async () => {
-    try {
-      showLoading(true);
-      const d = await apiCall('/api/eschool/enroll', 'POST', {
-        course_id: Number(courseId),
-        coupon_code: $('#enCoupon').value || undefined,
-      });
-      closeModal();
-      await loadAllData();
-      await loadUserExtendedData();
-      rerenderRoleContent();
-      showToast(`Enrolled! Paid ${fmtCur(d.paid || 0)} (discount ${fmtCur(d.discount || 0)})`, 'success', 6000);
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { showLoading(false); }
-  };
+window.ExpertHubUser.registerAction('enroll-modal', async (courseId) => {
+  try {
+    // Verify pricing & availability server-side
+    const d = await apiCall(`/api/eschool/courses/${courseId}/enroll-info`).catch(() => null);
+    const c = d?.course || (S.courses || []).find(x => String(x.id) === String(courseId));
+    if (!c) return showToast('Course not found', 'error');
+    if (d && d.available === false) return showToast(d.reason || 'Not available for enrollment', 'warning');
+    if (S.enrolledCourseIds.has(String(courseId))) {
+      return showToast('You are already enrolled', 'info');
+    }
+    const price = d?.final_price ?? c.price ?? 0;
+    const balance = S.wallet?.balance || 0;
+
+    openModal({
+      title: `Enroll in ${c.title}`,
+      body: `
+        <p>Price: <strong>${fmtCur(price)}</strong></p>
+        <p>Your balance: <strong>${fmtCur(balance)}</strong></p>
+        ${balance < price ? '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> Insufficient wallet balance — you will be redirected to payment.</div>' : ''}
+        <label class="form-group"><span class="form-label">Coupon (optional)</span>
+          <input id="enCoupon" class="form-input" placeholder="WELCOME10" /></label>
+      `,
+      footer: `
+        <button class="btn btn-secondary" data-close-modal>Cancel</button>
+        <button id="enSave" class="btn btn-primary">Confirm Enroll</button>
+      `,
+    });
+
+    $('#enSave').onclick = async () => {
+      const btn = $('#enSave');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Enrolling…';
+      try {
+        showLoading(true);
+        const r = await apiCall('/api/eschool/enroll', 'POST', {
+          course_id: Number(courseId),
+          coupon_code: $('#enCoupon').value || undefined,
+        });
+        closeModal();
+        await loadAllData?.();
+        await loadUserExtendedData({ force: true });
+        rerenderRoleContent();
+        showToast(`Enrolled! Paid ${fmtCur(r?.paid || 0)} (discount ${fmtCur(r?.discount || 0)})`, 'success', 6000);
+        if (r?.payment_url) window.location.href = r.payment_url;
+      } catch (e) {
+        showToast(e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Confirm Enroll';
+      }
+      finally { showLoading(false); }
+    };
+  } catch (e) { showToast(e.message, 'error'); }
 });
 
 window.ExpertHubUser.registerAction('view-certificate', (courseId) => {

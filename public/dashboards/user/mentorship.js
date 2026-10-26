@@ -1,11 +1,11 @@
 /* ============================================================
    ExpertHub 2.0 — dashboards/user/mentorship.js
-   Mentor matching, goals, sessions, progress.
+   Mentor matching, goals, milestones, progress.
    ============================================================ */
 
 function renderUserMentorship() {
   const mentorships = S.mentorships || [];
-  const active = mentorships.filter(m => m.status === 'active');
+  const active    = mentorships.filter(m => m.status === 'active');
   const completed = mentorships.filter(m => m.status === 'completed');
 
   return UserUI.page({
@@ -69,8 +69,10 @@ function renderMentorshipCard(m) {
       <footer class="consultation-card-actions">
         <button class="btn btn-primary btn-sm" data-action="mentorship-goals" data-id="${m.id}">
           <i class="fas fa-flag"></i> Goals</button>
-        <button class="btn btn-info btn-sm" data-action="open-chat" data-id="${m.consultation_id}">
-          <i class="fas fa-comments"></i> Message</button>
+        ${m.consultation_id ? `
+          <button class="btn btn-info btn-sm" data-action="open-chat" data-id="${m.consultation_id}">
+            <i class="fas fa-comments"></i> Message</button>
+        ` : ''}
       </footer>
     </div>
   `;
@@ -83,7 +85,7 @@ window.ExpertHubUser.registerAction('find-mentor', () => {
     title: 'Find a Mentor',
     body: `
       <label class="form-group"><span class="form-label">What do you need guidance on?</span>
-        <textarea id="fmNeed" class="form-textarea" rows="3"></textarea></label>
+        <textarea id="fmNeed" class="form-textarea" rows="3" required></textarea></label>
       <label class="form-group">
         <span class="form-label">Commitment</span>
         <select id="fmCommit" class="form-select">
@@ -99,11 +101,12 @@ window.ExpertHubUser.registerAction('find-mentor', () => {
     `,
   });
   $('#fmFind').onclick = async () => {
+    const need = $('#fmNeed').value.trim();
+    if (!need) return showToast('Describe what you need', 'error');
     try {
       showLoading(true);
       const d = await apiCall('/api/user/mentorship/match', 'POST', {
-        need: $('#fmNeed').value,
-        sessions: Number($('#fmCommit').value),
+        need, sessions: Number($('#fmCommit').value),
       });
       closeModal();
       if (!(d.matches || []).length) return showToast('No mentors match yet', 'warning');
@@ -131,6 +134,8 @@ window.ExpertHubUser.registerAction('request-mentor', async (id) => {
   try {
     await apiCall('/api/user/mentorship/request', 'POST', { mentor_id: Number(id) });
     closeModal();
+    await loadUserExtendedData({ force: true });
+    rerenderRoleContent();
     showToast('Mentorship request sent', 'success');
   } catch (e) { showToast(e.message, 'error'); }
 });
@@ -149,7 +154,7 @@ window.ExpertHubUser.registerAction('mentorship-goals', async (id) => {
             <span class="list-row-title">${esc(g.title)}</span>
             <span class="list-row-sub">${esc(g.description || '')}</span>
           </div>
-          <span class="${statusClass(g.status || 'pending')}">${esc(g.status || 'pending')}</span>
+          <span class="${statusClass(g.status || 'pending')}">${esc((g.status || 'pending').replace(/_/g,' '))}</span>
         </div>
       `).join('') || '<p class="empty-row">No goals set yet</p>',
       footer: `<button class="btn btn-secondary" data-close-modal>Close</button>`,

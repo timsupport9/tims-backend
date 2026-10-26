@@ -1,9 +1,9 @@
 /* ============================================================
    ExpertHub 2.0 — dashboards/user/academic.js
-   Subjects, timetable, assignments, revision materials.
+   Subjects, timetable, assignments, revision, study planner.
    ============================================================ */
 
-let _academicTab = 'subjects';
+let _academicTab = UserFilters.get('academic', 'tab', 'subjects') || 'subjects';
 
 function renderUserAcademic() {
   const subjects     = S.academicSubjects    || [];
@@ -70,8 +70,10 @@ function renderAcademicTimetable(entries) {
               <tr>
                 <td><strong>${slot}</strong></td>
                 ${days.map(d => {
-                  const e = entries.find(x => x.day === d && x.slot === slot);
-                  return `<td>${e ? esc(e.subject) : '—'}</td>`;
+                  const matches = entries.filter(x => x.day === d && x.slot === slot);
+                  return `<td>${matches.length
+                    ? matches.map(e => esc(e.subject)).join('<br/>')
+                    : '—'}</td>`;
                 }).join('')}
               </tr>
             `).join('')}
@@ -90,18 +92,29 @@ function renderAcademicAssignments(list) {
   return `
     <section class="panel">
       <h3 class="panel-title">Assignments</h3>
-      ${UserUI.table(
-        ['Title', 'Subject', 'Due', 'Status'],
-        list.map(a => `
-          <tr>
-            <td>${esc(a.title)}</td>
-            <td>${esc(a.subject || '')}</td>
-            <td>${fmtDate(a.due_date)}</td>
-            <td>${UserUI.statusPill(a.status || 'pending')}</td>
-          </tr>
-        `),
+      ${list.length ? UserUI.table(
+        ['Title', 'Subject', 'Due', 'Status', ''],
+        list.map(a => {
+          const overdue = a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed';
+          return `
+            <tr>
+              <td>${esc(a.title)}</td>
+              <td>${esc(a.subject || '')}</td>
+              <td>${overdue ? '<span style="color:var(--danger)">' + fmtDate(a.due_date) + ' (overdue)</span>' : fmtDate(a.due_date)}</td>
+              <td>${UserUI.statusPill(a.status || 'pending')}</td>
+              <td>${a.status !== 'completed'
+                ? `<button class="btn btn-success btn-xs" data-action="complete-assignment" data-id="${a.id}">
+                    <i class="fas fa-check"></i></button>`
+                : ''}</td>
+            </tr>
+          `;
+        }),
         'No assignments yet'
-      )}
+      ) : '<p class="empty-row">No assignments yet</p>'}
+      <div class="panel-actions" style="margin-top:12px">
+        <button class="btn btn-primary" data-action="add-assignment">
+          <i class="fas fa-plus"></i> Add Assignment</button>
+      </div>
     </section>
   `;
 }
@@ -130,6 +143,7 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-academic-tab]');
   if (!t) return;
   _academicTab = t.dataset.academicTab;
+  UserFilters.set('academic', 'tab', _academicTab);
   rerenderRoleContent();
 }, true);
 
@@ -161,11 +175,42 @@ window.ExpertHubUser.registerAction('add-timetable-entry', () => {
     onSubmit: async (v) => {
       await apiCall('/api/user/academic/timetable', 'POST', v);
       closeModal();
-      await loadUserExtendedData();
+      await loadUserExtendedData({ force: true });
       rerenderRoleContent();
       showToast('Entry added', 'success');
     },
   });
+});
+
+window.ExpertHubUser.registerAction('add-assignment', () => {
+  UserUI.formModal({
+    title: 'New Assignment',
+    fields: [
+      { name: 'title',    label: 'Title', required: true },
+      { name: 'subject',  label: 'Subject' },
+      { name: 'due_date', label: 'Due Date', type: 'date' },
+    ],
+    submitLabel: 'Add',
+    onSubmit: async (v) => {
+      await apiCall('/api/user/academic/assignments', 'POST', v);
+      closeModal();
+      await loadUserExtendedData({ force: true });
+      rerenderRoleContent();
+      showToast('Assignment added', 'success');
+    },
+  });
+});
+
+window.ExpertHubUser.registerAction('complete-assignment', async (id) => {
+  try {
+    await apiCall(`/api/user/academic/assignments/${id}/complete`, 'POST');
+    if (S.academicAssignments) {
+      const a = S.academicAssignments.find(x => String(x.id) === String(id));
+      if (a) a.status = 'completed';
+    }
+    rerenderRoleContent();
+    showToast('Assignment completed', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
 });
 
 window.ExpertHubUser.registerAction('study-planner', async () => {

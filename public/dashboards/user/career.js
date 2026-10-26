@@ -3,9 +3,10 @@
    Career pathways, CV builder, interview prep, skill gaps.
    ============================================================ */
 
-let _careerTab = 'pathways';
+let _careerTab = UserFilters.get('career', 'tab', 'pathways') || 'pathways';
 S.userCv = S.userCv || null;
 S.interviewPrep = S.interviewPrep || [];
+let __careerLoaded = false;
 
 async function _loadCareer() {
   const [a, b, c] = await Promise.allSettled([
@@ -16,10 +17,13 @@ async function _loadCareer() {
   if (a.status === 'rejected') S.careerPathways = S.careerPathways || [];
   if (b.status === 'rejected') S.userCv = S.userCv || null;
   if (c.status === 'rejected') S.interviewPrep = S.interviewPrep || [];
+  __careerLoaded = true;
 }
 
 function renderUserCareer() {
-  _loadCareer().then(() => rerenderRoleContent()).catch(() => {});
+  if (!__careerLoaded) {
+    _loadCareer().then(() => rerenderRoleContent()).catch(() => {});
+  }
 
   return UserUI.page({
     title: 'Career Center',
@@ -64,9 +68,14 @@ function renderCareerPathways() {
 
 function renderCareerCv() {
   const cv = S.userCv || {};
+  const completion = _cvCompletion(cv);
   return `
     <section class="panel">
       <h3 class="panel-title">My CV</h3>
+      <div class="progress-bar" style="margin-bottom:10px">
+        <span style="width:${completion}%"></span>
+      </div>
+      <p class="program-meta">${completion}% complete</p>
       ${cv.summary ? `
         <div class="alert alert-info">
           <strong>Summary:</strong> ${esc(cv.summary)}
@@ -80,6 +89,16 @@ function renderCareerCv() {
       </div>
     </section>
   `;
+}
+
+function _cvCompletion(cv) {
+  if (!cv) return 0;
+  let filled = 0;
+  if (cv.summary) filled++;
+  if ((cv.experience || []).length) filled++;
+  if ((cv.education || []).length) filled++;
+  if ((cv.skills || []).length) filled++;
+  return Math.round((filled / 4) * 100);
 }
 
 function renderCareerInterview() {
@@ -111,6 +130,7 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-career-tab]');
   if (!t) return;
   _careerTab = t.dataset.careerTab;
+  UserFilters.set('career', 'tab', _careerTab);
   rerenderRoleContent();
 }, true);
 
@@ -119,6 +139,7 @@ window.ExpertHubUser.registerAction('open-career-pathway', (id) => {
   if (!p) return;
   openModal({
     title: p.title,
+    className: 'modal-lg',
     body: `
       <p>${esc(p.description || '')}</p>
       <ul class="list-stack" style="margin-top:12px">
@@ -141,21 +162,23 @@ window.ExpertHubUser.registerAction('edit-cv', () => {
   UserUI.formModal({
     title: 'CV Builder',
     fields: [
-      { name: 'summary', label: 'Professional Summary', type: 'textarea', rows: 4, value: cv.summary || '' },
+      { name: 'summary',    label: 'Professional Summary', type: 'textarea', rows: 4, value: cv.summary || '' },
       { name: 'experience', label: 'Experience (one per line)', type: 'textarea', rows: 4, value: (cv.experience || []).join('\n') },
-      { name: 'education', label: 'Education (one per line)', type: 'textarea', rows: 3, value: (cv.education || []).join('\n') },
-      { name: 'skills', label: 'Skills (comma separated)', value: (cv.skills || []).join(', ') },
+      { name: 'education',  label: 'Education (one per line)', type: 'textarea', rows: 3, value: (cv.education || []).join('\n') },
+      { name: 'skills',     label: 'Skills (comma separated)', value: (cv.skills || []).join(', ') },
     ],
     submitLabel: 'Save CV',
     onSubmit: async (v) => {
-      await apiCall('/api/user/career/cv', 'PUT', {
+      const payload = {
         summary: v.summary,
-        experience: v.experience.split('\n').filter(Boolean),
-        education: v.education.split('\n').filter(Boolean),
-        skills: v.skills.split(',').map(s => s.trim()).filter(Boolean),
-      });
+        experience: v.experience.split('\n').map(s => s.trim()).filter(Boolean),
+        education:  v.education.split('\n').map(s => s.trim()).filter(Boolean),
+        skills:     v.skills.split(',').map(s => s.trim()).filter(Boolean),
+      };
+      const r = await apiCall('/api/user/career/cv', 'PUT', payload);
+      // Trust backend on success
+      S.userCv = r?.cv || payload;
       closeModal();
-      await _loadCareer();
       rerenderRoleContent();
       showToast('CV saved', 'success');
     },
@@ -167,7 +190,9 @@ window.ExpertHubUser.registerAction('export-cv', () => {
 });
 
 window.ExpertHubUser.registerAction('practice-interview', (id) => {
-  showToast('Practice session starting…', 'info');
+  const p = (S.interviewPrep || []).find(x => String(x.id) === String(id));
+  if (!p) return;
+  showToast(`Practice session starting for: ${p.title}`, 'info');
 });
 
 window.ExpertHubUser.registerAction('mock-interview', async () => {
@@ -193,12 +218,17 @@ window.ExpertHubUser.registerAction('career-skill-gaps', async () => {
             <li class="list-row">
               <div class="list-row-main">
                 <span class="list-row-title">${esc(g.skill)}</span>
-                <span class="list-row-sub">Target: ${g.target_level} · Current: ${g.current_level}</span>
+                <span class="list-row-sub">Target: ${esc(g.target_level)} · Current: ${esc(g.current_level)}</span>
               </div>
               <span class="chip chip-${g.priority === 'high' ? 'red' : g.priority === 'medium' ? 'yellow' : 'green'}">${esc(g.priority || '')}</span>
             </li>
           `).join('') || '<li class="empty-row">No gaps detected — nice work!</li>'}
         </ul>
+        <div class="panel-actions" style="margin-top:16px">
+          <button class="btn btn-primary" data-action="switch-tab" data-tab="eschool"
+                  onclick="closeModal()">
+            <i class="fas fa-book-open"></i> Find Courses to Close Gaps</button>
+        </div>
       `,
       footer: `<button class="btn btn-secondary" data-close-modal>Close</button>`,
     });

@@ -1,15 +1,23 @@
 /* ============================================================
    ExpertHub 2.0 — dashboards/user/productivity.js
-   Tasks, calendar, reminders, weekly plan.
+   Tasks, reminders, weekly plan. Duplicate prevention,
+   overdue handling, priority sorting.
    ============================================================ */
 
-let _prodTab = 'tasks';
+let _prodTab = UserFilters.get('productivity', 'tab', 'tasks') || 'tasks';
 
 function renderUserProductivity() {
   const tasks = S.tasks || [];
-  const open   = tasks.filter(t => t.status !== 'done');
+  const open   = tasks.filter(t => t.status !== 'done')
+    .sort((a, b) => {
+      const pa = { urgent:0, high:1, normal:2, low:3 }[a.priority] ?? 2;
+      const pb = { urgent:0, high:1, normal:2, low:3 }[b.priority] ?? 2;
+      return pa - pb || (new Date(a.due_date||0) - new Date(b.due_date||0));
+    });
   const done   = tasks.filter(t => t.status === 'done');
-  const dueSoon = open.filter(t => t.due_date && new Date(t.due_date) - Date.now() < 7 * 86400000);
+  const overdue = open.filter(t => t.due_date && new Date(t.due_date) < new Date());
+  const dueSoon = open.filter(t => t.due_date && new Date(t.due_date) - Date.now() < 7 * 86400000 &&
+                                  new Date(t.due_date) >= new Date());
 
   return UserUI.page({
     title: 'Productivity',
@@ -26,22 +34,33 @@ function renderUserProductivity() {
           ${UserUI.stats([
             { label: 'Open', value: open.length,    icon: 'fa-list', tone: 'blue' },
             { label: 'Done', value: done.length,    icon: 'fa-check', tone: 'green' },
+            { label: 'Overdue', value: overdue.length, icon: 'fa-exclamation-triangle', tone: 'red' },
             { label: 'Due Soon', value: dueSoon.length, icon: 'fa-clock', tone: 'yellow' },
           ])}
           <div class="page-actions" style="margin-bottom:12px">
             <button class="btn btn-primary" data-action="add-task">
               <i class="fas fa-plus"></i> New Task</button>
           </div>
-          ${open.length ? open.map(t => `
-            <div class="list-row">
-              <div class="list-row-main">
-                <span class="list-row-title">${esc(t.title)}</span>
-                <span class="list-row-sub">${t.due_date ? fmtDate(t.due_date) : 'No due date'} · ${esc(t.priority || 'normal')}</span>
+          ${open.length ? open.map(t => {
+            const isOverdue = t.due_date && new Date(t.due_date) < new Date();
+            return `
+              <div class="list-row">
+                <div class="list-row-main">
+                  <span class="list-row-title">${esc(t.title)}</span>
+                  <span class="list-row-sub">
+                    ${t.due_date ? (isOverdue ? '<span style="color:var(--danger)">' + fmtDate(t.due_date) + ' (overdue)</span>' : fmtDate(t.due_date)) : 'No due date'}
+                    · <span class="chip chip-${t.priority === 'urgent' ? 'red' : t.priority === 'high' ? 'yellow' : 'neutral'}">${esc(t.priority || 'normal')}</span>
+                  </span>
+                </div>
+                <div style="display:flex;gap:4px">
+                  <button class="btn btn-success btn-xs" data-action="complete-task" data-id="${t.id}">
+                    <i class="fas fa-check"></i></button>
+                  <button class="btn btn-secondary btn-xs" data-action="delete-task" data-id="${t.id}">
+                    <i class="fas fa-trash"></i></button>
+                </div>
               </div>
-              <button class="btn btn-success btn-xs" data-action="complete-task" data-id="${t.id}">
-                <i class="fas fa-check"></i></button>
-            </div>
-          `).join('') : '<p class="empty-row">No open tasks</p>'}
+            `;
+          }).join('') : '<p class="empty-row">No open tasks</p>'}
         </section>
       ` : ''}
 
@@ -53,19 +72,45 @@ function renderUserProductivity() {
 }
 
 function renderUserReminders() {
+  const reminders = S.reminders || [];
   return `
     <section class="panel">
       <h3 class="panel-title">Reminders</h3>
-      <p class="empty-row">Reminders will appear here — add some from your tasks.</p>
+      ${reminders.length ? reminders.map(r => `
+        <div class="list-row">
+          <div class="list-row-main">
+            <span class="list-row-title">${esc(r.title)}</span>
+            <span class="list-row-sub">${fmtDT(r.remind_at)}</span>
+          </div>
+          <span class="chip chip-neutral">${esc(r.channel || 'in-app')}</span>
+        </div>
+      `).join('') : '<p class="empty-row">No reminders scheduled. Add due dates to your tasks to receive reminders.</p>'}
     </section>
   `;
 }
 
 function renderUserWeeklyPlan() {
+  const tasks = (S.tasks || []).filter(t => t.due_date && t.status !== 'done');
+  const days = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    return d;
+  });
   return `
     <section class="panel">
       <h3 class="panel-title">This Week</h3>
-      <p class="empty-row">Weekly plan view coming with more data.</p>
+      <div class="weekly-grid">
+        ${days.map(d => {
+          const dayTasks = tasks.filter(t => new Date(t.due_date).toDateString() === d.toDateString());
+          return `
+            <div class="weekly-day">
+              <h4>${d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</h4>
+              ${dayTasks.length ? dayTasks.map(t => `<p class="weekly-task">${esc(t.title)}</p>`).join('')
+                : '<p class="form-hint">No tasks</p>'}
+            </div>
+          `;
+        }).join('')}
+      </div>
     </section>
   `;
 }
@@ -76,6 +121,7 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-prod-tab]');
   if (!t) return;
   _prodTab = t.dataset.prodTab;
+  UserFilters.set('productivity', 'tab', _prodTab);
   rerenderRoleContent();
 }, true);
 
@@ -92,7 +138,7 @@ window.ExpertHubUser.registerAction('add-task', () => {
     onSubmit: async (v) => {
       await apiCall('/api/user/tasks', 'POST', v);
       closeModal();
-      await loadUserExtendedData();
+      await loadUserExtendedData({ force: true });
       rerenderRoleContent();
       showToast('Task added', 'success');
     },
@@ -102,8 +148,21 @@ window.ExpertHubUser.registerAction('add-task', () => {
 window.ExpertHubUser.registerAction('complete-task', async (id) => {
   try {
     await apiCall(`/api/user/tasks/${id}/complete`, 'POST');
-    await loadUserExtendedData();
+    if (S.tasks) {
+      const t = S.tasks.find(x => String(x.id) === String(id));
+      if (t) t.status = 'done';
+    }
     rerenderRoleContent();
     showToast('Task completed', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+window.ExpertHubUser.registerAction('delete-task', async (id) => {
+  if (!await confirmDialog('Delete this task?')) return;
+  try {
+    await apiCall(`/api/user/tasks/${id}`, 'DELETE');
+    S.tasks = (S.tasks || []).filter(t => String(t.id) !== String(id));
+    rerenderRoleContent();
+    showToast('Task deleted', 'success');
   } catch (e) { showToast(e.message, 'error'); }
 });

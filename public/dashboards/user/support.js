@@ -1,9 +1,16 @@
 /* ============================================================
    ExpertHub 2.0 — dashboards/user/support.js
-   Support tickets: list, create, view + reply.
+   Support tickets with attachments, status updates,
+   conversation history, category/priority validation.
    ============================================================ */
 
+const TICKET_MAX_SIZE_MB = 10;
+
 function renderUserSupport() {
+  const tickets = S.tickets || [];
+  const open   = tickets.filter(t => ['open','pending','in_progress'].includes(t.status));
+  const closed = tickets.filter(t => ['resolved','closed'].includes(t.status));
+
   return UserUI.page({
     title: 'Support',
     breadcrumb: 'Support',
@@ -12,52 +19,121 @@ function renderUserSupport() {
         <i class="fas fa-plus"></i> New Ticket</button>
     `,
     content: `
-      <section class="panel">
-        ${(S.tickets || []).length ? (S.tickets || []).map(t => `
-          <article class="ticket-card">
-            <header class="ticket-header">
-              <span class="ticket-ref"><code class="code">${esc(t.reference || t.id)}</code></span>
-              ${UserUI.statusPill(t.status)}
-            </header>
-            <h4 class="ticket-subject">${esc(t.subject || '')}</h4>
-            <p class="ticket-desc">${esc(t.description || '')}</p>
-            <footer class="ticket-actions">
-              <button class="btn btn-secondary btn-sm" data-action="ticket-view" data-id="${t.id}">
-                <i class="fas fa-eye"></i> View and Reply</button>
-            </footer>
-          </article>
-        `).join('') : UserUI.empty({
+      ${open.length ? `
+        <section class="panel">
+          <h3 class="panel-title">Open Tickets</h3>
+          ${open.map(t => renderTicketCard(t)).join('')}
+        </section>
+      ` : ''}
+
+      ${closed.length ? `
+        <section class="panel">
+          <h3 class="panel-title">Closed Tickets</h3>
+          ${closed.map(t => renderTicketCard(t)).join('')}
+        </section>
+      ` : ''}
+
+      ${!tickets.length ? `
+        <section class="panel">${UserUI.empty({
           icon: 'fa-headset',
           title: 'No support tickets',
           desc: 'Need help? Create a ticket and our team will respond.',
-        })}
-      </section>
+        })}</section>
+      ` : ''}
     `,
   });
+}
+
+function renderTicketCard(t) {
+  return `
+    <article class="ticket-card">
+      <header class="ticket-header">
+        <span class="ticket-ref"><code class="code">${esc(t.reference || t.id)}</code></span>
+        ${UserUI.statusPill(t.status)}
+      </header>
+      <h4 class="ticket-subject">${esc(t.subject || '')}</h4>
+      <p class="ticket-desc">${esc(t.description || '')}</p>
+      <footer class="ticket-actions">
+        <button class="btn btn-secondary btn-sm" data-action="ticket-view" data-id="${t.id}">
+          <i class="fas fa-eye"></i> View &amp; Reply</button>
+      </footer>
+    </article>
+  `;
 }
 
 window.ExpertHubUser.registerModule('support', renderUserSupport);
 
 window.ExpertHubUser.registerAction('new-ticket', () => {
-  UserUI.formModal({
+  openModal({
     title: 'New Support Ticket',
-    fields: [
-      { name: 'subject',     label: 'Subject', required: true },
-      { name: 'priority',    label: 'Priority', type: 'select', value: 'normal',
-        options: ['low','normal','high','urgent'] },
-      { name: 'category',    label: 'Category', type: 'select', value: 'general',
-        options: ['general','billing','technical','account'] },
-      { name: 'description', label: 'Description', type: 'textarea', rows: 4, required: true },
-    ],
-    submitLabel: 'Create Ticket',
-    onSubmit: async (v) => {
-      const d = await apiCall('/api/user/tickets', 'POST', v);
-      closeModal();
-      await loadAllData();
-      rerenderRoleContent();
-      showToast(`Ticket created: ${d.reference || ''}`, 'success');
-    },
+    body: `
+      <label class="form-group"><span class="form-label">Subject</span>
+        <input id="tkSubject" class="form-input" required /></label>
+      <div class="form-grid">
+        <label class="form-group">
+          <span class="form-label">Priority</span>
+          <select id="tkPriority" class="form-select">
+            ${['low','normal','high','urgent'].map(p => `<option value="${p}">${p}</option>`).join('')}
+          </select>
+        </label>
+        <label class="form-group">
+          <span class="form-label">Category</span>
+          <select id="tkCategory" class="form-select">
+            <option value="general">General</option>
+            <option value="billing">Billing</option>
+            <option value="technical">Technical</option>
+            <option value="account">Account</option>
+          </select>
+        </label>
+      </div>
+      <label class="form-group"><span class="form-label">Description</span>
+        <textarea id="tkDesc" class="form-textarea" rows="4" required></textarea></label>
+      <label class="form-group"><span class="form-label">Attachment (optional)</span>
+        <input id="tkFile" type="file" class="form-input"
+               accept=".pdf,.png,.jpg,.jpeg,.txt,.log" />
+        <p class="form-hint">Max ${TICKET_MAX_SIZE_MB}MB.</p></label>
+    `,
+    footer: `
+      <button class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button id="tkSave" class="btn btn-primary">Create Ticket</button>
+    `,
   });
+
+  $('#tkSave').onclick = async () => {
+    const subject = $('#tkSubject').value.trim();
+    const description = $('#tkDesc').value.trim();
+    if (!subject || !description) return showToast('Subject and description required', 'error');
+    const file = $('#tkFile').files[0];
+    if (file && file.size > TICKET_MAX_SIZE_MB * 1024 * 1024) {
+      return showToast(`File too large (max ${TICKET_MAX_SIZE_MB}MB)`, 'error');
+    }
+    const btn = $('#tkSave');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const payload = {
+        subject, description,
+        priority: $('#tkPriority').value,
+        category: $('#tkCategory').value,
+      };
+      let d;
+      if (file) {
+        const fd = new FormData();
+        Object.entries(payload).forEach(([k, v]) => fd.append(k, v));
+        fd.append('attachment', file);
+        d = await apiCall('/api/user/tickets', 'POST', fd, true);
+      } else {
+        d = await apiCall('/api/user/tickets', 'POST', payload);
+      }
+      closeModal();
+      await loadAllData?.();
+      rerenderRoleContent();
+      showToast(`Ticket created: ${d?.reference || ''}`, 'success');
+    } catch (e) {
+      showToast(e.message, 'error');
+      btn.disabled = false;
+    }
+  };
 });
 
 window.ExpertHubUser.registerAction('ticket-view', async (id) => {
@@ -72,37 +148,52 @@ window.ExpertHubUser.registerAction('ticket-view', async (id) => {
       className: 'modal-lg',
       body: `
         <p><strong>Subject:</strong> ${esc(t.subject || '')}</p>
-        <p><strong>Status:</strong> ${UserUI.statusPill(t.status)}</p>
+        <p><strong>Status:</strong> ${UserUI.statusPill(t.status)} · <strong>Priority:</strong> ${esc(t.priority || '')}</p>
         <p><strong>Description:</strong></p>
         <p>${esc(t.description || '')}</p>
-        <h3 class="panel-title" style="margin-top:16px">Replies</h3>
+        <h3 class="panel-title" style="margin-top:16px">Conversation</h3>
         <ul class="list-stack">
           ${(d.replies || []).map(r => `
             <li class="list-row">
               <div class="list-row-main">
-                <span class="list-row-title">${esc(r.author_name || '')}</span>
+                <span class="list-row-title">
+                  ${esc(r.author_name || '')}
+                  ${r.is_staff ? '<span class="chip chip-blue">Staff</span>' : ''}
+                </span>
                 <span class="list-row-sub">${esc(r.message || '')}</span>
               </div>
               <span class="list-row-meta">${timeAgo(r.created_at)}</span>
             </li>
           `).join('') || '<li class="empty-row">No replies yet</li>'}
         </ul>
-        <label class="form-group" style="margin-top:12px">
-          <span class="form-label">Add reply</span>
-          <textarea id="tkReply" class="form-textarea" rows="3"></textarea>
-        </label>
+        ${['open','pending','in_progress'].includes(t.status) ? `
+          <label class="form-group" style="margin-top:12px">
+            <span class="form-label">Add reply</span>
+            <textarea id="tkReply" class="form-textarea" rows="3"></textarea>
+          </label>
+        ` : '<p class="form-hint">This ticket is closed. Create a new ticket for further help.</p>'}
       `,
       footer: `
         <button class="btn btn-secondary" data-close-modal>Close</button>
-        <button id="tkReplySave" class="btn btn-primary">Send Reply</button>
+        ${['open','pending','in_progress'].includes(t.status)
+          ? `<button id="tkReplySave" class="btn btn-primary">Send Reply</button>`
+          : ''}
       `,
     });
-    $('#tkReplySave').onclick = async () => {
+
+    const replyBtn = $('#tkReplySave');
+    if (replyBtn) replyBtn.onclick = async () => {
       const message = $('#tkReply').value.trim();
       if (!message) return;
-      await apiCall(`/api/user/tickets/${id}/replies`, 'POST', { message });
-      closeModal();
-      showToast('Reply sent', 'success');
+      replyBtn.disabled = true;
+      try {
+        await apiCall(`/api/user/tickets/${id}/replies`, 'POST', { message });
+        closeModal();
+        showToast('Reply sent', 'success');
+      } catch (e) {
+        showToast(e.message, 'error');
+        replyBtn.disabled = false;
+      }
     };
   } catch (e) { showToast(e.message, 'error'); }
   finally { showLoading(false); }

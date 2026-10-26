@@ -1,10 +1,17 @@
 /* ============================================================
    ExpertHub 2.0 — dashboards/user/lesson-notes.js
-   My Notes page + note helpers.
+   My Notes with autosave, search, export, edit/delete.
    ============================================================ */
 
 function renderUserLessonNotes() {
   const notes = S.lessonNotes || [];
+  const q = UserFilters.get('notes', 'q', '') || '';
+  const filtered = q
+    ? notes.filter(n =>
+        (n.content || '').toLowerCase().includes(q.toLowerCase()) ||
+        (n.lesson_title || '').toLowerCase().includes(q.toLowerCase()))
+    : notes;
+
   return UserUI.page({
     title: 'My Course Notes',
     breadcrumb: 'My Notes',
@@ -12,12 +19,13 @@ function renderUserLessonNotes() {
       <section class="panel">
         <div class="page-actions" style="margin-bottom:12px">
           <input type="search" id="notes-search" class="form-input"
-                 placeholder="Search notes..." style="max-width:260px" />
+                 placeholder="Search notes..." style="max-width:260px"
+                 value="${esc(q)}" aria-label="Search notes" />
           <button class="btn btn-secondary" data-action="export-notes">
             <i class="fas fa-download"></i> Export</button>
         </div>
         <ul class="notes-list" id="notes-list-host">
-          ${notes.map(n => `
+          ${filtered.length ? filtered.map(n => `
             <li class="note-item">
               <div class="note-header">
                 <strong>${esc(n.lesson_title || 'Lesson')}</strong>
@@ -25,13 +33,13 @@ function renderUserLessonNotes() {
               </div>
               <p class="note-content">${esc(n.content)}</p>
               <div class="note-actions">
-                <button class="btn btn-ghost btn-xs" data-action="edit-note" data-id="${n.id}">
-                  <i class="fas fa-pen"></i></button>
-                <button class="btn btn-ghost btn-xs" data-action="delete-note" data-id="${n.id}">
-                  <i class="fas fa-trash"></i></button>
+                <button class="btn btn-ghost btn-xs" data-action="edit-note" data-id="${n.id}"
+                        aria-label="Edit note"><i class="fas fa-pen"></i></button>
+                <button class="btn btn-ghost btn-xs" data-action="delete-note" data-id="${n.id}"
+                        aria-label="Delete note"><i class="fas fa-trash"></i></button>
               </div>
             </li>
-          `).join('')}
+          `).join('') : '<li class="empty-row">No matching notes</li>'}
         </ul>
       </section>
     ` : `
@@ -49,52 +57,66 @@ function renderUserLessonNotes() {
 window.ExpertHubUser.registerModule('lesson-notes', renderUserLessonNotes);
 window.ExpertHubUser.registerModule('course-notes', renderUserLessonNotes);
 
-/* ------------------------------------------------------------------ */
-/*  Notes search                                                       */
-/* ------------------------------------------------------------------ */
-document.addEventListener('input', debounce((e) => {
-  if (!e.target.matches('#notes-search')) return;
-  const q = e.target.value.toLowerCase();
-  const host = document.getElementById('notes-list-host');
-  if (!host) return;
-  const filtered = (S.lessonNotes || []).filter(n =>
-    (n.content || '').toLowerCase().includes(q) ||
-    (n.lesson_title || '').toLowerCase().includes(q)
-  );
-  host.innerHTML = filtered.length ? filtered.map(n => `
-    <li class="note-item">
-      <div class="note-header">
-        <strong>${esc(n.lesson_title || 'Lesson')}</strong>
-        <span class="note-time">${timeAgo(n.created_at)}</span>
-      </div>
-      <p class="note-content">${esc(n.content)}</p>
-    </li>
-  `).join('') : '<li class="empty-row">No matching notes</li>';
-}, 250));
+window.ExpertHubUser.registerModule('lesson-notes', renderUserLessonNotes, {
+  init() {
+    const search = $('#notes-search');
+    if (!search) return;
+    search.oninput = debounce(() => {
+      UserFilters.set('notes', 'q', search.value);
+      const q = search.value.toLowerCase();
+      const host = document.getElementById('notes-list-host');
+      if (!host) return;
+      const filtered = (S.lessonNotes || []).filter(n =>
+        (n.content || '').toLowerCase().includes(q) ||
+        (n.lesson_title || '').toLowerCase().includes(q));
+      host.innerHTML = filtered.length ? filtered.map(n => `
+        <li class="note-item">
+          <div class="note-header">
+            <strong>${esc(n.lesson_title || 'Lesson')}</strong>
+            <span class="note-time">${timeAgo(n.created_at)}</span>
+          </div>
+          <p class="note-content">${esc(n.content)}</p>
+        </li>
+      `).join('') : '<li class="empty-row">No matching notes</li>';
+    }, 250);
+  },
+});
 
-/* ------------------------------------------------------------------ */
-/*  Actions                                                            */
-/* ------------------------------------------------------------------ */
+/* ---------------- Actions ---------------- */
 window.ExpertHubUser.registerAction('edit-note', (id) => {
   const note = (S.lessonNotes || []).find(n => String(n.id) === String(id));
   if (!note) return;
+
+  let dirty = false;
   openModal({
     title: 'Edit Note',
-    body: `<textarea id="enText" class="form-textarea" rows="6">${esc(note.content)}</textarea>`,
+    body: `<textarea id="enText" class="form-textarea" rows="6">${esc(note.content)}</textarea>
+           <p class="form-hint" id="enStatus"></p>`,
     footer: `
       <button class="btn btn-secondary" data-close-modal>Cancel</button>
       <button id="enSave" class="btn btn-primary">Save</button>
     `,
   });
+  const ta = $('#enText');
+  if (ta) ta.oninput = () => { dirty = true; const s = $('#enStatus'); if (s) s.textContent = 'Unsaved changes'; };
+
   $('#enSave').onclick = async () => {
+    const btn = $('#enSave');
+    if (btn.disabled) return;
+    btn.disabled = true;
     try {
-      await apiCall(`/api/eschool/notes/${id}`, 'PUT', { content: $('#enText').value });
+      const newContent = $('#enText').value;
+      await apiCall(`/api/eschool/notes/${id}`, 'PUT', { content: newContent });
+      // Update local state immediately
+      const idx = (S.lessonNotes || []).findIndex(n => String(n.id) === String(id));
+      if (idx >= 0) S.lessonNotes[idx] = { ...S.lessonNotes[idx], content: newContent };
       closeModal();
-      const d = await apiCall('/api/user/notes').catch(() => ({ notes: S.lessonNotes }));
-      S.lessonNotes = d.notes || S.lessonNotes;
       rerenderRoleContent();
       showToast('Note updated', 'success');
-    } catch (e) { showToast(e.message, 'error'); }
+    } catch (e) {
+      showToast(e.message, 'error');
+      btn.disabled = false;
+    }
   };
 });
 

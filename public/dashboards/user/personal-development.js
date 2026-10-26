@@ -3,7 +3,7 @@
    SMART goals, habits, journal, milestones.
    ============================================================ */
 
-let _pdTab = 'goals';
+let _pdTab = UserFilters.get('personal-development', 'tab', 'goals') || 'goals';
 
 function renderUserPersonalDevelopment() {
   const goals     = S.personalGoals     || [];
@@ -37,20 +37,26 @@ function renderPDGoals(goals) {
         <button class="btn btn-primary" data-action="add-goal">
           <i class="fas fa-plus"></i> New Goal</button>
       </div>
-      ${goals.length ? goals.map(g => `
-        <div class="enrollment-card">
-          <h3 class="enrollment-title">${esc(g.title)}</h3>
-          <p class="enrollment-type">${esc(g.category || 'Personal')} · Due ${fmtDate(g.target_date)}</p>
-          <div class="progress-bar"><span style="width:${g.progress || 0}%"></span></div>
-          <p class="enrollment-progress">${g.progress || 0}% complete</p>
-          <div class="panel-actions" style="display:flex;gap:6px;margin-top:10px">
-            <button class="btn btn-primary btn-sm" data-action="update-goal-progress" data-id="${g.id}">
-              <i class="fas fa-check"></i> Update</button>
-            <button class="btn btn-danger btn-sm" data-action="delete-goal" data-id="${g.id}">
-              <i class="fas fa-trash"></i></button>
+      ${goals.length ? goals.map(g => {
+        const overdue = g.target_date && new Date(g.target_date) < new Date() && (g.progress || 0) < 100;
+        return `
+          <div class="enrollment-card">
+            <h3 class="enrollment-title">${esc(g.title)}</h3>
+            <p class="enrollment-type">
+              ${esc(g.category || 'Personal')} · Due ${fmtDate(g.target_date)}
+              ${overdue ? '<span style="color:var(--danger)"> · Overdue</span>' : ''}
+            </p>
+            <div class="progress-bar"><span style="width:${g.progress || 0}%"></span></div>
+            <p class="enrollment-progress">${g.progress || 0}% complete</p>
+            <div class="panel-actions" style="display:flex;gap:6px;margin-top:10px">
+              <button class="btn btn-primary btn-sm" data-action="update-goal-progress" data-id="${g.id}">
+                <i class="fas fa-check"></i> Update</button>
+              <button class="btn btn-danger btn-sm" data-action="delete-goal" data-id="${g.id}">
+                <i class="fas fa-trash"></i></button>
+            </div>
           </div>
-        </div>
-      `).join('') : '<p class="empty-row">No goals yet — set your first SMART goal.</p>'}
+        `;
+      }).join('') : '<p class="empty-row">No goals yet — set your first SMART goal.</p>'}
     </section>
   `;
 }
@@ -62,16 +68,21 @@ function renderPDHabits(habits) {
         <button class="btn btn-primary" data-action="add-habit">
           <i class="fas fa-plus"></i> New Habit</button>
       </div>
-      ${habits.length ? habits.map(h => `
-        <div class="list-row">
-          <div class="list-row-main">
-            <span class="list-row-title">${esc(h.name)}</span>
-            <span class="list-row-sub">Current streak: ${h.streak || 0} days</span>
+      ${habits.length ? habits.map(h => {
+        const checkedToday = h.last_checked && new Date(h.last_checked).toDateString() === new Date().toDateString();
+        return `
+          <div class="list-row">
+            <div class="list-row-main">
+              <span class="list-row-title">${esc(h.name)}</span>
+              <span class="list-row-sub">Current streak: ${h.streak || 0} days</span>
+            </div>
+            <button class="btn ${checkedToday ? 'btn-secondary' : 'btn-success'} btn-xs"
+                    data-action="check-habit" data-id="${h.id}"
+                    ${checkedToday ? 'disabled' : ''}>
+              <i class="fas fa-check"></i> ${checkedToday ? 'Done today' : 'Done Today'}</button>
           </div>
-          <button class="btn btn-success btn-xs" data-action="check-habit" data-id="${h.id}">
-            <i class="fas fa-check"></i> Done Today</button>
-        </div>
-      `).join('') : '<p class="empty-row">No habits yet</p>'}
+        `;
+      }).join('') : '<p class="empty-row">No habits yet</p>'}
     </section>
   `;
 }
@@ -118,6 +129,7 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-pd-tab]');
   if (!t) return;
   _pdTab = t.dataset.pdTab;
+  UserFilters.set('personal-development', 'tab', _pdTab);
   rerenderRoleContent();
 }, true);
 
@@ -133,7 +145,7 @@ window.ExpertHubUser.registerAction('add-goal', () => {
     onSubmit: async (v) => {
       await apiCall('/api/user/goals', 'POST', v);
       closeModal();
-      await loadUserExtendedData();
+      await loadUserExtendedData({ force: true });
       rerenderRoleContent();
       showToast('Goal created', 'success');
     },
@@ -149,7 +161,7 @@ window.ExpertHubUser.registerAction('update-goal-progress', (id) => {
     onSubmit: async (v) => {
       await apiCall(`/api/user/goals/${id}`, 'PUT', { progress: Number(v.progress) });
       closeModal();
-      await loadUserExtendedData();
+      await loadUserExtendedData({ force: true });
       rerenderRoleContent();
       showToast('Progress updated', 'success');
     },
@@ -158,10 +170,12 @@ window.ExpertHubUser.registerAction('update-goal-progress', (id) => {
 
 window.ExpertHubUser.registerAction('delete-goal', async (id) => {
   if (!await confirmDialog('Delete this goal?')) return;
-  await apiCall(`/api/user/goals/${id}`, 'DELETE').catch(() => {});
-  S.personalGoals = (S.personalGoals || []).filter(g => String(g.id) !== String(id));
-  rerenderRoleContent();
-  showToast('Goal deleted', 'success');
+  try {
+    await apiCall(`/api/user/goals/${id}`, 'DELETE');
+    S.personalGoals = (S.personalGoals || []).filter(g => String(g.id) !== String(id));
+    rerenderRoleContent();
+    showToast('Goal deleted', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
 });
 
 window.ExpertHubUser.registerAction('add-habit', () => {
@@ -172,7 +186,7 @@ window.ExpertHubUser.registerAction('add-habit', () => {
     onSubmit: async (v) => {
       await apiCall('/api/user/habits', 'POST', v);
       closeModal();
-      await loadUserExtendedData();
+      await loadUserExtendedData({ force: true });
       rerenderRoleContent();
       showToast('Habit added', 'success');
     },
@@ -182,7 +196,7 @@ window.ExpertHubUser.registerAction('add-habit', () => {
 window.ExpertHubUser.registerAction('check-habit', async (id) => {
   try {
     await apiCall(`/api/user/habits/${id}/check`, 'POST');
-    await loadUserExtendedData();
+    await loadUserExtendedData({ force: true });
     rerenderRoleContent();
     showToast('Habit checked', 'success');
   } catch (e) { showToast(e.message, 'error'); }
@@ -199,7 +213,7 @@ window.ExpertHubUser.registerAction('add-journal', () => {
     onSubmit: async (v) => {
       await apiCall('/api/user/journal', 'POST', v);
       closeModal();
-      await loadUserExtendedData();
+      await loadUserExtendedData({ force: true });
       rerenderRoleContent();
       showToast('Entry saved', 'success');
     },

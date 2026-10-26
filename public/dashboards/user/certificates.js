@@ -1,6 +1,7 @@
 /* ============================================================
    ExpertHub 2.0 — dashboards/user/certificates.js
    Certificates list, print, verify, LinkedIn share.
+   Server-verified serials, download via signed endpoint.
    ============================================================ */
 
 function renderUserCertificates() {
@@ -14,9 +15,7 @@ function renderUserCertificates() {
     `,
     content: certs.length ? UserUI.cardGrid(certs.map(c => `
       <article class="program-card certificate-card">
-        <div class="certificate-badge">
-          <i class="fas fa-certificate"></i>
-        </div>
+        <div class="certificate-badge"><i class="fas fa-certificate"></i></div>
         <h4 class="program-title">${esc(c.course_title || '')}</h4>
         <p class="program-desc">Serial: <code class="code">${esc(c.serial || '')}</code></p>
         <div class="certificate-meta">
@@ -27,6 +26,11 @@ function renderUserCertificates() {
           ${c.final_score ? `<div><span class="form-label">Final Score</span><strong>${c.final_score}%</strong></div>` : ''}
           ${c.grade ? `<div><span class="form-label">Grade</span><strong>${esc(c.grade)}</strong></div>` : ''}
         </div>
+        ${c.revoked ? `
+          <div class="alert alert-danger" style="margin-top:10px">
+            <i class="fas fa-ban"></i> This certificate has been revoked.
+          </div>
+        ` : ''}
         ${c.blockchain_hash ? `
           <div class="certificate-blockchain">
             <i class="fas fa-cube"></i>
@@ -35,7 +39,8 @@ function renderUserCertificates() {
           </div>
         ` : ''}
         <div class="panel-actions" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" data-action="print-certificate" data-id="${c.id}">
+          <button class="btn btn-secondary btn-sm" data-action="print-certificate" data-id="${c.id}"
+                  ${c.revoked ? 'disabled' : ''}>
             <i class="fas fa-print"></i> Print</button>
           <a class="btn btn-info btn-sm" href="/verify/${esc(c.serial)}" target="_blank" rel="noopener">
             <i class="fas fa-external-link-alt"></i> Verify</a>
@@ -43,6 +48,8 @@ function renderUserCertificates() {
             <a class="btn btn-primary btn-sm" href="${esc(c.linkedin_share_url)}" target="_blank" rel="noopener">
               <i class="fab fa-linkedin"></i> Share</a>
           ` : ''}
+          <button class="btn btn-secondary btn-sm" data-action="download-certificate" data-id="${c.id}">
+            <i class="fas fa-file-pdf"></i> PDF</button>
         </div>
       </article>
     `)) : `<section class="panel">${UserUI.empty({
@@ -60,6 +67,7 @@ window.ExpertHubUser.registerModule('certificates', renderUserCertificates);
 window.ExpertHubUser.registerAction('print-certificate', (id) => {
   const c = (S.certificates || []).find(x => String(x.id) === String(id));
   if (!c) return;
+  if (c.revoked) return showToast('This certificate has been revoked', 'warning');
   openModal({
     title: 'Certificate',
     body: `
@@ -82,10 +90,19 @@ window.ExpertHubUser.registerAction('print-certificate', (id) => {
   });
 });
 
+window.ExpertHubUser.registerAction('download-certificate', async (id) => {
+  try {
+    const d = await apiCall(`/api/user/certificates/${id}/download`).catch(() => null);
+    if (d?.url) window.open(d.url, '_blank', 'noopener,noreferrer');
+    else showToast('Certificate PDF not available yet', 'warning');
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
 window.ExpertHubUser.registerAction('export-user-certificates', () => {
   const rows = (S.certificates || []).map(c => ({
     serial: c.serial || '', course: c.course_title || '',
     issued: c.issued_at || '', final_score: c.final_score || '', grade: c.grade || '',
+    status: c.revoked ? 'Revoked' : 'Active',
   }));
   if (!rows.length) return showToast('No certificates to export', 'warning');
   downloadCsv('my-certificates.csv', rows);
