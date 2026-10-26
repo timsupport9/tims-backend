@@ -1,62 +1,55 @@
 /* ============================================================
-   dashboards/admin/analytics.js
+   admin/analytics.js — Platform analytics
    ============================================================ */
-(function (global) {
-  'use strict';
+(function () {
+  AdminDash.reg('analytics', {
+    nav: { label: 'Analytics', icon: 'fa-chart-bar' },
+    render() {
+      const t = S.analytics?.totals || {};
+      const top = S.analytics?.topExperts || [];
+      return `
+        <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Analytics</span></div>
+        <section class="page-header">
+          <h1 class="page-title">Platform Analytics</h1>
+          <div class="page-actions">
+            <button class="btn btn-secondary" data-action="analytics-export"><i class="fas fa-download"></i> Export</button>
+          </div>
+        </section>
 
-  const EH = (global.EH = global.EH || {});
-  const S = EH.state;
+        <section class="stat-grid">
+          <div class="stat-card dashboard-card"><div class="stat-info"><p class="stat-label">Total Users</p><p class="stat-value">${t.total_users||0}</p></div><div class="stat-icon stat-icon-blue"><i class="fas fa-users"></i></div></div>
+          <div class="stat-card dashboard-card"><div class="stat-info"><p class="stat-label">Total Revenue</p><p class="stat-value">${fmtCur(t.total_revenue||0)}</p></div><div class="stat-icon stat-icon-green"><i class="fas fa-dollar-sign"></i></div></div>
+          <div class="stat-card dashboard-card"><div class="stat-info"><p class="stat-label">Published Courses</p><p class="stat-value">${t.published_courses||0}</p></div><div class="stat-icon stat-icon-purple"><i class="fas fa-book"></i></div></div>
+          <div class="stat-card dashboard-card"><div class="stat-info"><p class="stat-label">Published Events</p><p class="stat-value">${t.published_events||0}</p></div><div class="stat-icon stat-icon-yellow"><i class="fas fa-calendar"></i></div></div>
+        </section>
 
-  function render() {
-    const t = S.analytics?.totals || {};
-    const top = S.analytics?.topExperts || [];
+        <section class="panel-charts">
+          <div class="chart-card"><h3 class="panel-title">User Growth</h3><canvas id="userGrowthChart" height="200"></canvas></div>
+          <div class="chart-card"><h3 class="panel-title">Revenue</h3><canvas id="revenueChart" height="200"></canvas></div>
+        </section>
 
-    return `
-      ${EH.Layout.breadcrumbs([{ label: 'Home', href: '#/dashboard' }, { label: 'Analytics' }])}
-      ${EH.Layout.pageHeader('Platform Analytics')}
-
-      ${EH.Layout.statGrid([
-        EH.Layout.statCard({ label: 'Total Users', value: t.total_users || 0,
-          icon: 'fa-users', tone: 'blue' }),
-        EH.Layout.statCard({ label: 'Total Revenue', value: EH.Fmt.cur(t.total_revenue || 0),
-          icon: 'fa-dollar-sign', tone: 'green' }),
-        EH.Layout.statCard({ label: 'Published Courses', value: t.published_courses || 0,
-          icon: 'fa-book', tone: 'purple' }),
-        EH.Layout.statCard({ label: 'Published Events', value: t.published_events || 0,
-          icon: 'fa-calendar', tone: 'yellow' }),
-      ])}
-
-      <section class="panel-charts">
-        <div class="chart-card">
-          <h3 class="panel-title">User Growth</h3>
-          <canvas id="userGrowthChart" height="200"></canvas>
-        </div>
-        <div class="chart-card">
-          <h3 class="panel-title">Revenue</h3>
-          <canvas id="revenueChart" height="200"></canvas>
-        </div>
-      </section>
-
-      <section class="panel-charts">
-        <div class="chart-card">
-          <h3 class="panel-title">Users by Role</h3>
-          <canvas id="roleChart" height="200"></canvas>
-        </div>
-        <div class="chart-card">
-          <h3 class="panel-title">Top Experts</h3>
-          <ul class="list-stack" style="margin-top:10px">
-            ${top.map(e => `
-              <li class="list-row">
-                <div class="list-row-main">
-                  <span class="list-row-title">${EH.Fmt.esc(e.name)}</span>
-                  <span class="list-row-sub">${e.average_rating || 0} / 5</span>
-                </div>
-                <span class="list-row-price">${EH.Fmt.cur(e.total_earnings)}</span>
-              </li>`).join('') || '<li class="empty-row">No data</li>'}
-          </ul>
-        </div>
-      </section>`;
-  }
-
-  EH.AdminAnalytics = { render };
-})(window);
+        <section class="panel-charts">
+          <div class="chart-card"><h3 class="panel-title">Users by Role</h3><canvas id="roleChart" height="200"></canvas></div>
+          <div class="chart-card">
+            <h3 class="panel-title">Top Experts</h3>
+            <ul class="list-stack" style="margin-top:10px">
+              ${top.map(e => `
+                <li class="list-row">
+                  <div class="list-row-main"><span class="list-row-title">${esc(e.name)}</span><span class="list-row-sub">${e.average_rating||0} / 5</span></div>
+                  <span class="list-row-price">${fmtCur(e.total_earnings)}</span>
+                </li>
+              `).join('') || '<li class="empty-row">No data</li>'}
+            </ul>
+          </div>
+        </section>`;
+    },
+    actions: {
+      'analytics-export': () => downloadCsv('analytics.csv', [{
+        users: S.analytics?.totals?.total_users || 0,
+        revenue: S.analytics?.totals?.total_revenue || 0,
+        courses: S.analytics?.totals?.published_courses || 0,
+        events: S.analytics?.totals?.published_events || 0,
+      }]),
+    },
+  });
+})();
