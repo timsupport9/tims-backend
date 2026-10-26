@@ -42,7 +42,24 @@ async function loadAllData() {
     tasks.push(apiCall('/api/experts/me/tiers').then(d => { S.consultationTiers = d.tiers || []; }).catch(() => {}));
     tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics = d; }).catch(() => {}));
   } else if (currentUserRole === 'institution') {
-    /* Base institution data */
+    tasks.push(apiCall('/api/expert/clients').then(d => { S.expertClients = d.clients || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/notes').then(d => { S.expertNotes = d.notes || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/reminders').then(d => { S.expertReminders = d.reminders || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/tasks').then(d => { S.expertTasks = d.tasks || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/projects').then(d => { S.expertProjects = d.projects || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/milestones').then(d => { S.expertMilestones = d.milestones || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/mentorships').then(d => { S.expertMentorships = d.mentorships || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/mentorship-sessions').then(d => { S.expertMentorshipSessions = d.sessions || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/proposals').then(d => { S.expertProposals = d.proposals || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/credentials').then(d => { S.expertCredentials = d.credentials || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/cpd').then(d => { S.expertCPD = d.cpd || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/skills').then(d => { S.expertSkills = d.skills || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/team').then(d => { S.expertTeam = d.team || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/questions').then(d => { S.expertQuestions = d.questions || []; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/analytics').then(d => { S.expertAnalytics = d.analytics; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/availability-settings').then(d => { S.availabilitySettings = d.settings || S.availabilitySettings; }).catch(() => {}));
+tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics = d; }).catch(() => {}));
+/* Base institution data */
     tasks.push(apiCall('/api/institution/me').then(d => { S.myInstitution = d.institution; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/stats').then(d => { S.institutionStats = d.stats; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/branding').then(d => { S.institutionBranding = d.branding; }).catch(() => {}));
@@ -165,4 +182,29 @@ function updateNotificationBadge() {
   const unread = S.notifications.filter(n => !n.is_read).length;
   b.textContent = unread;
   b.classList.toggle('hidden', unread === 0);
+}
+if (currentUserRole === 'institution') {
+  /* Existing loads */
+  // ...
+
+  /* New loads (resilient — ignore failures) */
+  tasks.push(apiCall('/api/institution/analytics').then(d => { S.institutionAnalytics = d || {}; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/campuses').then(d => { S.campuses = d.campuses || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/proctor-sessions').then(d => { S.examProctorSessions = d.sessions || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/proctor-flags').then(d => { S.examProctorFlags = d.flags || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/wellness/scores').then(d => { S.wellnessScores = d.scores || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/wellness/alerts').then(d => { S.wellnessAlerts = d.alerts || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/skills-gap').then(d => { S.skillsGapAnalysis = d || {}; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/succession').then(d => { S.successionMatrix = d || S.successionMatrix; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/marketplace').then(d => { S.instructorMarketplace = d.instructors || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/contracts').then(d => { S.instructorContracts = d.contracts || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/budgets').then(d => { S.budgetAllocations = d.budgets || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/budget-transactions').then(d => { S.budgetTransactions = d.transactions || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/certificates/blockchain').then(d => { S.blockchainCerts = d.certs || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/report-definitions').then(d => { S.savedReportDefinitions = d.definitions || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/announcements').then(d => { S.announcements = d.announcements || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/api-keys').then(d => { S.apiKeys = d.keys || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/webhooks').then(d => { S.webhooks = d.webhooks || []; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/sso').then(d => { S.ssoConfiguration = d || {}; }).catch(() => {}));
+  tasks.push(apiCall('/api/institution/compliance/runs').then(d => { S.complianceRuns = d.runs || []; }).catch(() => {}));
 }

@@ -195,3 +195,22 @@ const S = {
   institutionAnalytics: null, skillsGapAnalysis: null, complianceRuns: [],
   blockchainCerts: [], announcementReads: [], apiCallLogs: [],
 };
+
+/* Expert additions — safely ignored if not populated */
+S.expertClients = [];
+S.expertNotes = [];
+S.expertReminders = [];
+S.expertTasks = [];
+S.expertProjects = [];
+S.expertMilestones = [];
+S.expertMentorships = [];
+S.expertMentorshipSessions = [];
+S.expertProposals = [];
+S.expertCredentials = [];
+S.expertCPD = [];
+S.expertSkills = [];
+S.expertTeam = [];
+S.expertAnalytics = null;
+S.expertQuestions = [];
+S.availabilitySettings = { buffer_minutes: 15, advance_hours: 24 };
+S.courseAnalytics = { courses: [], totalEnrollments: 0, avgCompletion: 0, avgRating: 0, revenue30d: 0 };
