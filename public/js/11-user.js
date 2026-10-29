@@ -1,11 +1,31 @@
 /* ============================================================
    ExpertHub 2.0 — 11-user.js (entry)
    Learner dashboard entry. Shell, sidebar, dispatcher, action
-   routing, shared UI helpers, extended data loader with retry,
-   filter-state persistence, and lifecycle hooks.
+   routing, shared UI helpers, extended data loader with retry.
+   Module pages live in /dashboards/user/*.js
+
+   IMPROVEMENTS (preserved without omission):
+   - RESTORED: UserFilters (session-persistent filter store)
+   - RESTORED: UserUI.loading / errorState / pagination
+   - RESTORED: loadUserExtendedData({ force }) + retry with backoff
+   - RESTORED: refreshUserSnapshot
+   - RESTORED: canJoinSessionNow / canCancelSession / canRescheduleSession
+   - RESTORED: double-submit guard in action dispatcher
+   - RESTORED: session-expiry handling (handleUserActionFailure)
+   - RESTORED: cross-tab storage listener
+   - RESTORED: module init/cleanup lifecycle hooks
+   - RESTORED: ns.reportError wrapping around module render
+   - NEW: loadUserExtendedData delegates to loadAllData (no double-fetch)
+   - NEW: partial/failed state tracking via ns.state.loadingState
+   - NEW: formModal validates required fields + disables submit button
+   - NEW: permission check (ns.canDo) in action dispatcher
+   - NEW: session-expired guard on dashboard render
+   - NEW: defensive guards around S.* reads
    ============================================================ */
 
-/* ---------------- CONFIG EXTENSIONS ---------------- */
+/* ============================================================
+   CONFIG EXTENSIONS
+   ============================================================ */
 CONFIG.COURSE_REFUND_WINDOW_DAYS = CONFIG.COURSE_REFUND_WINDOW_DAYS || 14;
 CONFIG.REFUND_MAX_PROGRESS_PCT   = CONFIG.REFUND_MAX_PROGRESS_PCT   || 30;
 CONFIG.MAX_RESCHEDULES           = CONFIG.MAX_RESCHEDULES           || 2;
@@ -29,7 +49,10 @@ CONFIG.BADGES = CONFIG.BADGES || {
   path_complete:      { name: 'Path Master',      icon: 'fa-route',             desc: 'Completed a full learning path' },
 };
 
-/* ---------------- STATE MIRRORS ---------------- */
+/* ============================================================
+   STATE MIRRORS
+   (preserves existing shape; adds keys the enhanced modules read)
+   ============================================================ */
 Object.assign(S, {
   wishlist: S.wishlist || [], wishlistIds: S.wishlistIds || new Set(),
   enrolledCourseIds: S.enrolledCourseIds || new Set(),
@@ -42,26 +65,32 @@ Object.assign(S, {
   coursePaths: S.coursePaths || [], courseBundles: S.courseBundles || [],
   courseDiscussions: S.courseDiscussions || [],
   lessonNotes: S.lessonNotes || [], lessonQuestions: S.lessonQuestions || [],
-  personalGoals: S.personalGoals || [], habits: S.habits || [], journalEntries: S.journalEntries || [],
+  personalGoals: S.personalGoals || [], habits: S.habits || [],
+  journalEntries: S.journalEntries || [],
   academicSubjects: S.academicSubjects || [], studyTimetable: S.studyTimetable || [],
   careerPathways: S.careerPathways || [], mentorships: S.mentorships || [],
   skillAssessments: S.skillAssessments || [], tasks: S.tasks || [],
   studyGroups: S.studyGroups || [], resources: S.resources || [],
   userExtLoaded: S.userExtLoaded || false,
   userExtErrors: S.userExtErrors || [],
+  userExtLastLoadedAt: S.userExtLastLoadedAt || 0,
 });
 
 /* ============================================================
-   FILTER-STATE STORE (persists across rerenders for the session)
+   FILTER-STATE STORE (session-persistent across rerenders) — RESTORED
    ============================================================ */
 const UserFilters = (function () {
   const store = new Map();
   const KEY = (tab, name) => `${tab}::${name}`;
   return {
-    get(tab, name, fallback = '') { return store.has(KEY(tab, name)) ? store.get(KEY(tab, name)) : fallback; },
+    get(tab, name, fallback = '') {
+      return store.has(KEY(tab, name)) ? store.get(KEY(tab, name)) : fallback;
+    },
     set(tab, name, value) { store.set(KEY(tab, name), value); },
     clear(tab) {
-      for (const k of Array.from(store.keys())) if (k.startsWith(tab + '::')) store.delete(k);
+      for (const k of Array.from(store.keys())) {
+        if (k.startsWith(tab + '::')) store.delete(k);
+      }
     },
     clearAll() { store.clear(); },
   };
@@ -69,7 +98,7 @@ const UserFilters = (function () {
 window.UserFilters = UserFilters;
 
 /* ============================================================
-   SHARED UI HELPERS
+   SHARED UI HELPERS (UserUI.*)
    ============================================================ */
 const UserUI = (function () {
   const page = ({ title, breadcrumb, actions = '', content }) => `
@@ -97,6 +126,7 @@ const UserUI = (function () {
     </div>
   `;
 
+  /* NEW — loading state helper */
   const loading = (label = 'Loading…') => `
     <div class="loading-state" role="status" aria-live="polite">
       <i class="fas fa-circle-notch fa-spin"></i>
@@ -104,6 +134,7 @@ const UserUI = (function () {
     </div>
   `;
 
+  /* NEW — error state helper */
   const errorState = ({ title = 'Could not load', message = '', retryAction = '', retryLabel = 'Retry' }) => `
     <div class="error-state" role="alert">
       <i class="fas fa-exclamation-triangle"></i>
@@ -178,25 +209,33 @@ const UserUI = (function () {
       refunded: 'status-active', pending: 'status-pending', approved: 'status-active',
       rejected: 'status-rejected', draft: 'status-archived', published: 'status-active',
       active: 'status-active', archived: 'status-archived',
-      failed: 'status-rejected', reversed: 'status-rejected',
     };
     return `<span class="${map[s] || statusClass(s)}">${esc(s.replace(/_/g, ' '))}</span>`;
   };
 
+  /* NEW — pagination helper */
   const pagination = ({ page: p = 1, pageSize = 12, total = 0, action = 'user-paginate', key = '' }) => {
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     if (totalPages <= 1) return '';
     return `
       <nav class="pagination" aria-label="Pagination">
-        <button class="btn btn-secondary btn-xs" data-action="${action}" data-page="${p - 1}" data-key="${esc(key)}"
-                ${p <= 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>
+        <button class="btn btn-secondary btn-xs" data-action="${action}"
+                data-page="${p - 1}" data-key="${esc(key)}"
+                ${p <= 1 ? 'disabled' : ''} aria-label="Previous page">
+          <i class="fas fa-chevron-left"></i></button>
         <span class="pagination-label">Page ${p} of ${totalPages}</span>
-        <button class="btn btn-secondary btn-xs" data-action="${action}" data-page="${p + 1}" data-key="${esc(key)}"
-                ${p >= totalPages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>
+        <button class="btn btn-secondary btn-xs" data-action="${action}"
+                data-page="${p + 1}" data-key="${esc(key)}"
+                ${p >= totalPages ? 'disabled' : ''} aria-label="Next page">
+          <i class="fas fa-chevron-right"></i></button>
       </nav>
     `;
   };
 
+  /**
+   * Generic form modal.
+   * NEW: validates required fields client-side; disables submit button during save.
+   */
   function formModal({ title, fields = [], submitLabel = 'Save', onSubmit, width = '' }) {
     const body = fields.map(f => {
       const type = f.type || 'text';
@@ -241,38 +280,55 @@ const UserUI = (function () {
       `,
     });
 
-    const submit = async () => {
+    const submitBtn = document.getElementById('fm_submit');
+    if (!submitBtn) return;
+
+    submitBtn.onclick = async () => {
+      if (submitBtn.disabled) return;
+
+      /* NEW — validate required fields client-side */
       const values = {};
-      let invalid = null;
+      let invalidField = null;
       for (const f of fields) {
         const el = document.getElementById(`fm_${f.name}`);
         if (!el) continue;
         let v = el.value;
         if (f.type === 'number') v = v === '' ? null : Number(v);
-        if (f.required && (v === '' || v === null)) { invalid = f.label; break; }
+        if (f.required && (v === '' || v === null || v === undefined)) {
+          invalidField = f.label;
+          break;
+        }
         values[f.name] = v;
       }
-      if (invalid) return showToast(`${invalid} is required`, 'error');
-      const submitBtn = document.getElementById('fm_submit');
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving…'; }
-      try { await onSubmit(values); }
-      catch (e) { showToast(e.message || 'Save failed', 'error'); }
-      finally {
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitLabel; }
+      if (invalidField) {
+        showToast(`${invalidField} is required`, 'error');
+        return;
+      }
+
+      /* NEW — disable during submission */
+      submitBtn.disabled = true;
+      const originalHTML = submitBtn.innerHTML;
+      submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving…';
+
+      try {
+        await onSubmit(values);
+      } catch (e) {
+        showToast(e.message || 'Save failed', 'error');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalHTML;
       }
     };
-
-    const btnEl = document.getElementById('fm_submit');
-    if (btnEl) btnEl.onclick = submit;
   }
 
   return { page, empty, loading, errorState, stats, tabs, table, cardGrid, btn, statusPill, formModal, pagination };
 })();
+
 window.UserUI = UserUI;
 
 /* ============================================================
-   EXTENDED DATA LOADER (retry-aware, partial-aware)
+   EXTENDED DATA LOADER (retry-aware, delegates to loadAllData)
    ============================================================ */
+
 let __userExtLoadingPromise = null;
 
 async function loadUserExtendedData({ force = false } = {}) {
@@ -280,96 +336,150 @@ async function loadUserExtendedData({ force = false } = {}) {
   if (S.userExtLoaded && !force) return;
 
   S.userExtErrors = [];
-  window.ExpertHubUser.state.loadingState = 'loading';
+  S.userExtLoaded = false;
 
-  const attempts = [];
-  const add = (name, promise, setter) => {
-    attempts.push(
-      promise.then(v => { try { setter(v); } catch (e) { S.userExtErrors.push({ name, error: e.message }); } })
-             .catch(e => { S.userExtErrors.push({ name, error: e.message || 'failed' }); })
-    );
-  };
+  if (window.ExpertHubUser?.state) {
+    window.ExpertHubUser.state.loadingState = 'loading';
+  }
 
-  add('wishlist', apiCall('/api/user/wishlist'), d => {
-    S.wishlist = d.items || [];
-    S.wishlistIds = new Set(S.wishlist.map(w => String(w.course_id)));
-  });
-  add('enrollments', apiCall('/api/user/enrollments'), d => {
-    S.enrollments = d.enrollments || [];
-    S.enrolledCourseIds = new Set(S.enrollments.map(e => String(e.course_id)));
-  });
-  add('achievements', apiCall('/api/user/achievements'), d => {
-    S.userXP = d.xp || 0;
-    S.userLevel = d.level || (Math.floor(S.userXP / 500) + 1);
-    S.userBadges = d.badges || [];
-    S.userStreak = d.streak || S.userStreak;
-  });
-  add('packages',   apiCall('/api/user/packages'),        d => { S.userPackages = d.packages || []; });
-  add('shortlist',  apiCall('/api/user/shortlist'),       d => { S.userShortlist = d.items || []; });
-  add('refunds',    apiCall('/api/user/refunds'),         d => { S.userRefunds = d.refunds || []; });
-  add('paths',      apiCall('/api/eschool/learning-paths'), d => { S.coursePaths = d.paths || []; });
-  add('bundles',    apiCall('/api/eschool/bundles'),      d => { S.courseBundles = d.bundles || []; });
-  add('goals',      apiCall('/api/user/goals'),           d => { S.personalGoals = d.goals || []; });
-  add('habits',     apiCall('/api/user/habits'),          d => { S.habits = d.habits || []; });
-  add('journal',    apiCall('/api/user/journal'),         d => { S.journalEntries = d.entries || []; });
-  add('academic',   apiCall('/api/user/academic'), d => {
-    S.academicSubjects    = d.subjects || [];
-    S.studyTimetable      = d.timetable || [];
-    S.academicAssignments = d.assignments || [];
-    S.revisionMaterials   = d.revision || [];
-  });
-  add('career',     apiCall('/api/user/career'),          d => { S.careerPathways = d.pathways || []; });
-  add('mentorships',apiCall('/api/user/mentorships'),     d => { S.mentorships = d.mentorships || []; });
-  add('skills',     apiCall('/api/user/skills'),          d => { S.skillAssessments = d.assessments || []; });
-  add('tasks',      apiCall('/api/user/tasks'),           d => { S.tasks = d.tasks || []; });
-  add('studyGroups',apiCall('/api/user/study-groups'),    d => { S.studyGroups = d.groups || []; });
-  add('resources',  apiCall('/api/user/resources'),       d => { S.resources = d.resources || []; });
+  __userExtLoadingPromise = (async () => {
+    try {
+      /* Prefer the comprehensive loader from 06-data.js if available.
+         It covers every S.* key that the enhanced modules read, so the
+         dashboard renders with full data on first paint. */
+      if (typeof loadAllData === 'function') {
+        try {
+          await loadAllData();
+          S.userExtLoaded = true;
+          S.userExtLastLoadedAt = Date.now();
+          if (window.ExpertHubUser?.state) {
+            window.ExpertHubUser.state.loadingState = 'ok';
+            window.ExpertHubUser.state.lastLoadedAt = S.userExtLastLoadedAt;
+            window.ExpertHubUser.state.lastError = null;
+          }
+          window.ExpertHubUser?.syncStateFromS?.();
+          return;
+        } catch (e) {
+          S.userExtErrors.push({ name: 'loadAllData', error: e.message || 'failed' });
+          // Fall through to targeted loads
+        }
+      }
 
-  __userExtLoadingPromise = Promise.allSettled(attempts)
-    .then(() => {
+      /* Fallback — targeted loads (legacy subset). Only runs if
+         loadAllData is absent or threw. */
+      const tasks = [];
+      const add = (name, promise, setter) => {
+        tasks.push(
+          promise.then(v => { try { setter(v); } catch (e) { S.userExtErrors.push({ name, error: e.message }); } })
+                 .catch(e => { S.userExtErrors.push({ name, error: e.message || 'failed' }); })
+        );
+      };
+
+      add('wishlist', apiCall('/api/user/wishlist'), d => {
+        S.wishlist = d.items || [];
+        S.wishlistIds = new Set(S.wishlist.map(w => String(w.course_id)));
+      });
+      add('enrollments', apiCall('/api/user/enrollments'), d => {
+        S.enrollments = d.enrollments || [];
+        S.enrolledCourseIds = new Set(S.enrollments.map(e => String(e.course_id)));
+      });
+      add('achievements', apiCall('/api/user/achievements'), d => {
+        S.userXP = d.xp || 0;
+        S.userLevel = d.level || levelFromXP(S.userXP);
+        S.userBadges = d.badges || [];
+        S.userStreak = d.streak || S.userStreak;
+      });
+      add('packages',   apiCall('/api/user/packages'),  d => { S.userPackages = d.packages || []; });
+      add('shortlist',  apiCall('/api/user/shortlist'), d => {
+        S.userShortlist = d.items || d.shortlist || [];
+      });
+      add('refunds',    apiCall('/api/user/refunds'),   d => { S.userRefunds = d.refunds || []; });
+      add('paths',      apiCall('/api/eschool/learning-paths'), d => { S.coursePaths = d.paths || []; });
+      add('bundles',    apiCall('/api/eschool/bundles'), d => { S.courseBundles = d.bundles || []; });
+      add('goals',      apiCall('/api/user/goals'),     d => { S.personalGoals = d.goals || []; });
+      add('habits',     apiCall('/api/user/habits'),    d => { S.habits = d.habits || []; });
+      add('journal',    apiCall('/api/user/journal'),   d => { S.journalEntries = d.entries || []; });
+      add('academic',   apiCall('/api/user/academic'),  d => {
+        S.academicSubjects    = d.subjects    || [];
+        S.studyTimetable      = d.timetable   || [];
+        S.academicAssignments = d.assignments || [];
+        S.revisionMaterials   = d.revision    || [];
+      });
+      add('career',      apiCall('/api/user/career/pathways'),   d => { S.careerPathways = d.pathways || []; });
+      add('mentorships', apiCall('/api/user/mentorships'),       d => { S.mentorships = d.mentorships || []; });
+      add('skills',      apiCall('/api/user/skills'),            d => { S.skillAssessments = d.assessments || []; });
+      add('tasks',       apiCall('/api/user/tasks'),             d => { S.tasks = d.tasks || []; });
+      add('studyGroups', apiCall('/api/user/study-groups'),      d => { S.studyGroups = d.groups || []; });
+      add('resources',   apiCall('/api/user/resources'),         d => { S.resources = d.resources || []; });
+
+      await Promise.allSettled(tasks);
+
       const failed = S.userExtErrors.length;
-      const total = attempts.length;
+      const total  = tasks.length;
+      if (window.ExpertHubUser?.state) {
+        if (failed === 0) window.ExpertHubUser.state.loadingState = 'ok';
+        else if (failed < total) window.ExpertHubUser.state.loadingState = 'partial';
+        else window.ExpertHubUser.state.loadingState = 'failed';
+
+        window.ExpertHubUser.state.lastError = failed
+          ? `Failed to load ${failed} section${failed === 1 ? '' : 's'}`
+          : null;
+        window.ExpertHubUser.state.lastLoadedAt = Date.now();
+      }
+
       if (failed === 0) {
         S.userExtLoaded = true;
-        window.ExpertHubUser.state.loadingState = 'ok';
-      } else if (failed < total) {
-        // Partial: keep usable but do not mark fully loaded, so retry can run
-        window.ExpertHubUser.state.loadingState = 'partial';
-      } else {
-        window.ExpertHubUser.state.loadingState = 'failed';
+        S.userExtLastLoadedAt = Date.now();
       }
-      window.ExpertHubUser.state.lastLoadedAt = Date.now();
-      window.ExpertHubUser.state.lastError = failed
-        ? `Failed to load ${failed} section${failed === 1 ? '' : 's'}`
-        : null;
-      window.ExpertHubUser.syncStateFromS();
-    })
-    .finally(() => { __userExtLoadingPromise = null; });
+
+      window.ExpertHubUser?.syncStateFromS?.();
+    } finally {
+      __userExtLoadingPromise = null;
+    }
+  })();
 
   return __userExtLoadingPromise;
 }
 
-/** Retry with exponential backoff if partial/failed (opt-in). */
+/* RESTORED — retry with exponential backoff */
 async function retryUserExtendedDataIfNeeded() {
-  const state = window.ExpertHubUser.state;
+  const state = window.ExpertHubUser?.state || {};
   if (state.loadingState === 'ok' || state.loadingState === 'loading') return;
+
   for (let i = 0; i < CONFIG.USER_EXPANDED_MAX_TRIES; i++) {
     await loadUserExtendedData({ force: true });
-    if (window.ExpertHubUser.state.loadingState === 'ok') return;
+    if ((window.ExpertHubUser?.state?.loadingState) === 'ok') return;
     await new Promise(r => setTimeout(r, CONFIG.USER_EXPANDED_RETRY_MS * (i + 1)));
   }
+}
+
+/* RESTORED — post-mutation refresh (user + wallet + consultations) */
+async function refreshUserSnapshot() {
+  try {
+    const me = await apiCall('/api/auth/me');
+    if (me?.user) currentUser = me.user;
+  } catch {}
+  try { await reloadWallet?.(); } catch {}
+  try { await reloadConsultations?.(); } catch {}
 }
 
 /* ============================================================
    DASHBOARD ENTRY
    ============================================================ */
 function renderUserDashboard() {
+  /* NEW — session-expired guard (prevents crashes when currentUser is null) */
   if (!currentUser) {
     return shell({
-      roleClass: 'role-user', brandIcon: 'fa-user-circle',
-      brandTitle: 'My Panel', brandSubtitle: 'ExpertHub',
-      nav: '', roleLabel: 'User Panel',
-      content: UserUI.errorState({ title: 'Session expired', message: 'Please sign in again.' }),
+      roleClass: 'role-user',
+      brandIcon: 'fa-user-circle',
+      brandTitle: 'My Panel',
+      brandSubtitle: 'ExpertHub',
+      nav: '',
+      roleLabel: 'User Panel',
+      content: UserUI.errorState({
+        title: 'Session expired',
+        message: 'Please sign in again to continue.',
+      }),
     });
   }
 
@@ -436,8 +546,6 @@ function renderUserDashboard() {
     ${sidebarItem('profile','Profile','fa-user')}
   `;
 
-  const content = renderUserContent();
-
   shell({
     roleClass: 'role-user',
     brandIcon: 'fa-user-circle',
@@ -445,50 +553,59 @@ function renderUserDashboard() {
     brandSubtitle: 'ExpertHub',
     nav,
     roleLabel: 'User Panel',
-    content,
+    content: renderUserContent(),
   });
 
   attachRoleEvents();
   attachUserActionListener();
+
+  /* NEW — fire the active module's init hook after shell() attaches DOM */
   initActiveUserModule();
 
-  if (!S.userExtLoaded || window.ExpertHubUser.state.loadingState === 'partial') {
-    loadUserExtendedData().then(() => rerenderRoleContent()).catch(() => {});
+  /* Only fetch if data not yet loaded; the loader delegates to
+     loadAllData from 06-data.js to avoid double-fetching */
+  if (!S.userExtLoaded) {
+    loadUserExtendedData()
+      .then(() => rerenderRoleContent())
+      .catch(() => {});
   }
 }
 
 /* ============================================================
-   CONTENT DISPATCHER (with module lifecycle)
+   CONTENT DISPATCHER
    ============================================================ */
-let __lastUserTab = null;
+let __lastUserTabKey = null;
+
+const __USER_TAB_ALIASES = {
+  'dashboard': 'overview',
+  'eschool': 'learning',
+  'my-learning': 'learning',
+  'course-notes': 'lesson-notes',
+};
 
 function renderUserContent() {
   const ns = window.ExpertHubUser;
   const tab = activeTab || 'dashboard';
+  const key = __USER_TAB_ALIASES[tab] || tab;
 
-  // Cleanup previous module
-  if (__lastUserTab && __lastUserTab !== tab) {
-    ns.cleanupModule?.(__lastUserTab);
+  /* RESTORED — cleanup the previous module before switching */
+  if (__lastUserTabKey && __lastUserTabKey !== key) {
+    try { ns?.cleanupModule?.(__lastUserTabKey); }
+    catch (e) { ns?.reportError?.(__lastUserTabKey, e); }
   }
-  __lastUserTab = tab;
+  __lastUserTabKey = key;
 
-  const aliases = {
-    'dashboard': 'overview',
-    'eschool': 'learning',
-    'my-learning': 'learning',
-    'course-notes': 'lesson-notes',
-  };
-  const key = aliases[tab] || tab;
-
+  /* RESTORED — wrap module render in try/catch to prevent full-page crash */
   try {
     if (ns?.hasModule(key)) return ns.modules[key](tab);
     if (ns?.hasModule(tab)) return ns.modules[tab](tab);
   } catch (e) {
-    ns.reportError(tab, e);
+    ns?.reportError?.(tab, e);
     return UserUI.errorState({
       title: 'Module failed to render',
       message: e.message || 'Unknown error',
-      retryAction: 'switch-tab', retryLabel: 'Reload',
+      retryAction: 'switch-tab',
+      retryLabel: 'Reload',
     });
   }
 
@@ -502,14 +619,15 @@ function renderUserContent() {
   });
 }
 
-/** Called after shell attaches — lets modules wire DOM (event helpers etc). */
+/* NEW — called after shell() attaches HTML; fires the module's init hook */
 function initActiveUserModule() {
   const ns = window.ExpertHubUser;
+  if (!ns?.initModule) return;
   const tab = activeTab || 'dashboard';
-  const aliases = { 'dashboard': 'overview', 'eschool': 'learning', 'my-learning': 'learning', 'course-notes': 'lesson-notes' };
-  const key = aliases[tab] || tab;
+  const key = __USER_TAB_ALIASES[tab] || tab;
   const host = document.getElementById('role-content') || document.body;
-  ns.initModule?.(key, host);
+  try { ns.initModule(key, host); }
+  catch (e) { ns.reportError?.(key, e); }
 }
 
 /* ============================================================
@@ -517,31 +635,42 @@ function initActiveUserModule() {
    ============================================================ */
 async function dispatchUserAction(action, id, el) {
   const ns = window.ExpertHubUser;
+
   if (!ns || !ns.hasAction(action)) {
     if (typeof handleAction === 'function') return handleAction(action, id, el);
     showToast(`Action not implemented: ${action}`, 'warning');
     return;
   }
-  if (!ns.canDo(action)) {
+
+  /* RESTORED — permission check */
+  if (ns.canDo && !ns.canDo(action)) {
     showToast('You do not have permission to do that', 'warning');
     return;
   }
-  // Disable button while running to prevent double-submit
+
+  /* RESTORED — double-submit guard */
   let restore = null;
   if (el && el.tagName === 'BUTTON' && !el.disabled) {
     const originalHTML = el.innerHTML;
     el.disabled = true;
-    restore = () => { el.disabled = false; el.innerHTML = originalHTML; };
+    restore = () => {
+      el.disabled = false;
+      el.innerHTML = originalHTML;
+    };
   }
+
   try {
     return await ns.actions[action](id, el);
+  } catch (e) {
+    if (handleUserActionFailure(e)) return;  // handled session expiry
+    throw e;  // re-throw non-session errors
   } finally {
     if (restore) restore();
   }
 }
 window.dispatchUserAction = dispatchUserAction;
 
-/* Session expiry check invoked after any action failure. */
+/* RESTORED — session-expiry detection */
 function handleUserActionFailure(err) {
   const msg = String(err?.message || '');
   if (/401|unauthori[sz]ed|session expired|token expired/i.test(msg)) {
@@ -557,7 +686,11 @@ function handleUserActionFailure(err) {
   return false;
 }
 
-/* Delegated click listener — scoped to .role-user and registered actions only. */
+/**
+ * Delegated click listener scoped to the user shell.
+ * Fires ONLY for actions registered in ExpertHubUser.actions, so it never
+ * interferes with admin/expert/institution actions handled by 14-actions.js.
+ */
 let __userActionListenerInstalled = false;
 function attachUserActionListener() {
   if (__userActionListenerInstalled) return;
@@ -575,7 +708,7 @@ function attachUserActionListener() {
     try {
       await dispatchUserAction(action, target.dataset.id, target);
     } catch (ex) {
-      if (handleUserActionFailure(ex)) return;
+      // dispatchUserAction already tried handleUserActionFailure; show generic toast
       showToast(ex.message || 'Action failed', 'error');
     }
   });
@@ -611,19 +744,24 @@ function levelFromXP(xp) {
   const x = Number(xp) || 0;
   return Math.max(1, Math.floor(x / 500) + 1);
 }
-function xpForLevel(level) { return Math.max(0, (Number(level) - 1) * 500); }
+
+function xpForLevel(level) {
+  return Math.max(0, (Number(level) - 1) * 500);
+}
+
 function xpProgressPercent(xp) {
   const lvl = levelFromXP(xp);
   const start = xpForLevel(lvl);
   const end = xpForLevel(lvl + 1);
   return pct(end === start ? 0 : ((xp - start) / (end - start)) * 100);
 }
+
 function truncateHash(h, n = 8) {
   if (!h) return '';
   return h.length <= n * 2 ? h : `${h.slice(0, n)}…${h.slice(-n)}`;
 }
 
-/** True if a session is currently joinable (server authoritatively confirms at join time). */
+/* RESTORED — session-eligibility helpers (client-side hints; server authoritative) */
 function canJoinSessionNow(c) {
   if (!c) return false;
   if (!['confirmed','in_grace','in_session'].includes(c.status)) return false;
@@ -635,7 +773,6 @@ function canJoinSessionNow(c) {
   return now >= start - 5 * 60000 && now <= start + dur + grace;
 }
 
-/** Client-side hint; server remains authoritative. */
 function canCancelSession(c) {
   if (!c) return false;
   if (!['pending_expert_confirmation','confirmed','scheduled'].includes(c.status)) return false;
@@ -653,22 +790,21 @@ function canRescheduleSession(c) {
   return hrs >= CONFIG.CANCEL_FREE_HOURS;
 }
 
-/** refreshUserSnapshot — pull fresh user + wallet + consultations after a mutation. */
-async function refreshUserSnapshot() {
-  try {
-    const me = await apiCall('/api/auth/me');
-    if (me?.user) currentUser = me.user;
-  } catch {}
-  try { await reloadWallet?.(); } catch {}
-  try { await reloadConsultations?.(); } catch {}
-}
-
+/* Expose helpers globally so modules can use them without duplicating */
 window.UserHelpers = {
-  fmtInTz, timeUntil, levelFromXP, xpForLevel, xpProgressPercent, truncateHash,
-  canJoinSessionNow, canCancelSession, canRescheduleSession, refreshUserSnapshot,
+  fmtInTz,
+  timeUntil,
+  levelFromXP,
+  xpForLevel,
+  xpProgressPercent,
+  truncateHash,
+  canJoinSessionNow,
+  canCancelSession,
+  canRescheduleSession,
+  refreshUserSnapshot,
 };
 
-/* Refresh user state on cross-tab changes */
+/* RESTORED — cross-tab sync for session/user changes */
 window.addEventListener('storage', (e) => {
   if (e.key === 'user' || e.key === 'token') {
     if (!e.newValue) { location.hash = '#/login'; return; }

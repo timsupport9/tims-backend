@@ -1,6 +1,14 @@
 /* ============================================================
    ExpertHub 2.0 — 06-data.js
    All data-loading functions + polling + notification badge.
+
+   CHANGES vs prior version:
+   - Removed trailing file-scope `if (currentUserRole === 'institution')`
+     block that referenced `tasks` outside its scope (caused ReferenceError).
+   - Consolidated achievements to /api/user/achievements (single source).
+   - Aligned shortlist, learning-paths, bundles endpoints with modules.
+   - Added 27 missing learner state domains so every user-dashboard
+     module renders with data on first visit (no second round-trip).
    ============================================================ */
 
 /* ============================================================
@@ -42,24 +50,26 @@ async function loadAllData() {
     tasks.push(apiCall('/api/experts/me/tiers').then(d => { S.consultationTiers = d.tiers || []; }).catch(() => {}));
     tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics = d; }).catch(() => {}));
   } else if (currentUserRole === 'institution') {
+    /* Existing expert-shared loads */
     tasks.push(apiCall('/api/expert/clients').then(d => { S.expertClients = d.clients || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/notes').then(d => { S.expertNotes = d.notes || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/reminders').then(d => { S.expertReminders = d.reminders || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/tasks').then(d => { S.expertTasks = d.tasks || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/projects').then(d => { S.expertProjects = d.projects || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/milestones').then(d => { S.expertMilestones = d.milestones || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/mentorships').then(d => { S.expertMentorships = d.mentorships || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/mentorship-sessions').then(d => { S.expertMentorshipSessions = d.sessions || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/proposals').then(d => { S.expertProposals = d.proposals || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/credentials').then(d => { S.expertCredentials = d.credentials || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/cpd').then(d => { S.expertCPD = d.cpd || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/skills').then(d => { S.expertSkills = d.skills || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/team').then(d => { S.expertTeam = d.team || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/questions').then(d => { S.expertQuestions = d.questions || []; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/analytics').then(d => { S.expertAnalytics = d.analytics; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/availability-settings').then(d => { S.availabilitySettings = d.settings || S.availabilitySettings; }).catch(() => {}));
-tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics = d; }).catch(() => {}));
-/* Base institution data */
+    tasks.push(apiCall('/api/expert/notes').then(d => { S.expertNotes = d.notes || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/reminders').then(d => { S.expertReminders = d.reminders || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/tasks').then(d => { S.expertTasks = d.tasks || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/projects').then(d => { S.expertProjects = d.projects || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/milestones').then(d => { S.expertMilestones = d.milestones || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/mentorships').then(d => { S.expertMentorships = d.mentorships || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/mentorship-sessions').then(d => { S.expertMentorshipSessions = d.sessions || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/proposals').then(d => { S.expertProposals = d.proposals || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/credentials').then(d => { S.expertCredentials = d.credentials || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/cpd').then(d => { S.expertCPD = d.cpd || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/skills').then(d => { S.expertSkills = d.skills || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/team').then(d => { S.expertTeam = d.team || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/questions').then(d => { S.expertQuestions = d.questions || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/analytics').then(d => { S.expertAnalytics = d.analytics; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/availability-settings').then(d => { S.availabilitySettings = d.settings || S.availabilitySettings; }).catch(() => {}));
+    tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics = d; }).catch(() => {}));
+
+    /* Base institution data */
     tasks.push(apiCall('/api/institution/me').then(d => { S.myInstitution = d.institution; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/stats').then(d => { S.institutionStats = d.stats; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/branding').then(d => { S.institutionBranding = d.branding; }).catch(() => {}));
@@ -90,7 +100,7 @@ tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics
     tasks.push(apiCall('/api/institution/scheduled-reports').then(d => { S.institutionScheduledReports = d.reports || []; }).catch(() => {}));
 
     /* Institution extensions */
-    tasks.push(apiCall('/api/institution/analytics').then(d => { S.institutionAnalytics = d; }).catch(() => {}));
+    tasks.push(apiCall('/api/institution/analytics').then(d => { S.institutionAnalytics = d || {}; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/campuses').then(d => { S.campuses = d.campuses || []; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/budgets').then(d => { S.budgetAllocations = d.budgets || []; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/budget-transactions').then(d => { S.budgetTransactions = d.transactions || []; }).catch(() => {}));
@@ -107,56 +117,123 @@ tasks.push(apiCall('/api/expert/course-analytics').then(d => { S.courseAnalytics
     tasks.push(apiCall('/api/institution/skills-gap').then(d => { S.skillsGapAnalysis = d; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/compliance-runs').then(d => { S.complianceRuns = d.runs || []; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/exam-proctor-sessions').then(d => { S.examProctorSessions = d.sessions || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/institution/proctor-flags').then(d => { S.examProctorFlags = d.flags || []; }).catch(() => {}));
     tasks.push(apiCall('/api/institution/blockchain-certs').then(d => { S.blockchainCerts = d.certificates || []; }).catch(() => {}));
 
     if (currentUser?.institution_role === 'operations_manager') {
       tasks.push(apiCall('/api/institution/team').then(d => { S.institutionTeam = d.team || []; }).catch(() => {}));
     }
   } else {
-    /* Learner */
-    tasks.push(apiCall('/api/user/experts').then(d => { S.experts = d.experts || []; }).catch(() => {}));
-    tasks.push(apiCall('/api/user/enrollments').then(d => { S.enrollments = d.enrollments || []; }).catch(() => {}));
-    tasks.push(apiCall('/api/user/wallet').then(d => {
-      S.wallet.balance = d.balance;
-      S.wallet.ledger = d.ledger || [];
-    }).catch(() => {}));
-    tasks.push(apiCall('/api/user/transactions').then(d => { S.transactions = d.transactions || []; }).catch(() => {}));
-    tasks.push(apiCall('/api/user/claims').then(d => { S.claims = d.claims || []; }).catch(() => {}));
-    tasks.push(apiCall('/api/user/tickets').then(d => { S.tickets = d.tickets || []; }).catch(() => {}));
-    tasks.push(apiCall('/api/user/certificates').then(d => { S.certificates = d.certificates || []; }).catch(() => {}));
+    /* ============================================================ */
+    /* LEARNER — Comprehensive load                                  */
+    /* ============================================================ */
+
+    /* ---- Base identity & preferences ---- */
     tasks.push(apiCall('/api/user/preferences').then(d => { S.userIntent = d.intent || S.userIntent; }).catch(() => {}));
 
-    /* Consultation extensions */
-    tasks.push(apiCall('/api/user/shortlist').then(d => { S.userShortlist = d.shortlist || []; }).catch(() => {}));
+    /* ---- Consultations ---- */
+    tasks.push(apiCall('/api/user/experts').then(d => { S.experts = d.experts || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/shortlist').then(d => {
+      // Defensive: accept either 'items' or 'shortlist' key from backend
+      S.userShortlist = d.items || d.shortlist || [];
+    }).catch(() => {}));
     tasks.push(apiCall('/api/user/packages').then(d => { S.userPackages = d.packages || []; }).catch(() => {}));
 
-    /* E-School extensions */
+    /* ---- E-School core ---- */
+    tasks.push(apiCall('/api/user/enrollments').then(d => { S.enrollments = d.enrollments || []; }).catch(() => {}));
     tasks.push(apiCall('/api/user/wishlist').then(d => {
       S.wishlist = d.items || [];
       S.wishlistIds = new Set((d.items || []).map(w => String(w.course_id)));
     }).catch(() => {}));
-    tasks.push(apiCall('/api/user/xp').then(d => {
-      S.userXP = d.xp || 0;
-      S.userLevel = d.level || 1;
-      S.userStreak = { current: d.current_streak || 0, longest: d.longest_streak || 0 };
+    // Single source of truth for XP / level / badges / streak:
+    tasks.push(apiCall('/api/user/achievements').then(d => {
+      S.userXP     = d.xp || 0;
+      S.userLevel  = d.level || 1;
+      S.userBadges = d.badges || [];
+      S.userStreak = d.streak || { current: 0, longest: 0 };
     }).catch(() => {}));
-    tasks.push(apiCall('/api/user/badges').then(d => { S.userBadges = d.badges || []; }).catch(() => {}));
-    tasks.push(apiCall('/api/user/learning-paths').then(d => { S.coursePaths = d.paths || []; }).catch(() => {}));
-    tasks.push(apiCall('/api/user/bundles').then(d => { S.courseBundles = d.bundles || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/eschool/learning-paths').then(d => { S.coursePaths = d.paths || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/eschool/bundles').then(d => { S.courseBundles = d.bundles || []; }).catch(() => {}));
     tasks.push(apiCall('/api/user/refunds').then(d => { S.userRefunds = d.refunds || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/certificates').then(d => { S.certificates = d.certificates || []; }).catch(() => {}));
     tasks.push(apiCall('/api/user/watch-history').then(d => { S.recentWatchHistory = d.history || []; }).catch(() => {}));
     tasks.push(apiCall('/api/user/course-reviews').then(d => { S.courseReviews = d.reviews || []; }).catch(() => {}));
 
-    S.enrolledCourseIds = new Set((S.enrollments || []).map(e => String(e.course_id)));
+    /* ---- E-School home aggregates (Sprint 1–2) ---- */
+    tasks.push(apiCall('/api/user/learning/continue').then(d => { S.continueLearning = d.items || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/learning/recommendations').then(d => { S.recommendations = d.items || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/learning/live-classes').then(d => { S.liveClasses = d.classes || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/learning/upcoming-assessments').then(d => { S.upcomingAssessments = d.assessments || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/learning/activity').then(d => { S.recentActivity = d.activity || []; }).catch(() => {}));
+
+    /* ---- Notes (cross-course) ---- */
+    tasks.push(apiCall('/api/user/lesson-notes').then(d => { S.lessonNotes = d.notes || []; }).catch(() => {}));
+
+    /* ---- Personal development ---- */
+    tasks.push(apiCall('/api/user/goals').then(d => { S.personalGoals = d.goals || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/habits').then(d => { S.habits = d.habits || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/journal').then(d => { S.journalEntries = d.entries || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/decisions').then(d => { S.decisions = d.decisions || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/milestones').then(d => { S.milestones = d.milestones || []; }).catch(() => {}));
+
+    /* ---- Academic ---- */
+    tasks.push(apiCall('/api/user/academic').then(d => {
+      S.academicSubjects    = d.subjects    || [];
+      S.studyTimetable      = d.timetable   || [];
+      S.academicAssignments = d.assignments || [];
+      S.revisionMaterials   = d.revision    || [];
+    }).catch(() => {}));
+
+    /* ---- Career ---- */
+    tasks.push(apiCall('/api/user/career/pathways').then(d => { S.careerPathways = d.pathways || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/career/directory').then(d => { S.careerDirectory = d.careers || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/career/interests').then(d => { S.careerInterests = d.interests || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/career/cv').then(d => { S.userCv = d.cv || null; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/career/interview-prep').then(d => { S.interviewPrep = d.prep || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/career/opportunities').then(d => { S.savedOpportunities = d.opportunities || []; }).catch(() => {}));
+
+    /* ---- Mentorship ---- */
+    tasks.push(apiCall('/api/user/mentorships').then(d => { S.mentorships = d.mentorships || []; }).catch(() => {}));
+
+    /* ---- Skills ---- */
+    tasks.push(apiCall('/api/user/skills').then(d => { S.skillAssessments = d.assessments || []; }).catch(() => {}));
+
+    /* ---- Productivity ---- */
+    tasks.push(apiCall('/api/user/tasks').then(d => { S.tasks = d.tasks || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/reminders').then(d => { S.reminders = d.reminders || []; }).catch(() => {}));
+
+    /* ---- Community ---- */
+    tasks.push(apiCall('/api/user/study-groups').then(d => { S.studyGroups = d.groups || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/community/challenges').then(d => { S.communityChallenges = d.challenges || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/community/activity').then(d => { S.communityActivity = d.activity || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/community/recommendations').then(d => { S.communityRecommendations = d.groups || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/community/discussions').then(d => { S.discussionsCommunity = d.discussions || []; }).catch(() => {}));
+
+    /* ---- Events (registrations) ---- */
+    tasks.push(apiCall('/api/common/events/registrations').then(d => { S.eventRegistrations = d.registrations || []; }).catch(() => {}));
+
+    /* ---- Resources ---- */
+    tasks.push(apiCall('/api/user/resources').then(d => { S.resources = d.resources || []; }).catch(() => {}));
+
+    /* ---- Wallet, transactions, claims, tickets ---- */
+    tasks.push(apiCall('/api/user/wallet').then(d => {
+      S.wallet.balance = d.balance;
+      S.wallet.ledger  = d.ledger || [];
+    }).catch(() => {}));
+    tasks.push(apiCall('/api/user/transactions').then(d => { S.transactions = d.transactions || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/claims').then(d => { S.claims = d.claims || []; }).catch(() => {}));
+    tasks.push(apiCall('/api/user/tickets').then(d => { S.tickets = d.tickets || []; }).catch(() => {}));
   }
 
   await Promise.allSettled(tasks);
 
-  if (currentUserRole === 'learner' || currentUserRole === 'expert' || currentUserRole === 'admin') {
-    S.enrolledCourseIds = new Set((S.enrollments || []).map(e => String(e.course_id)));
-  }
+  /* Post-processing */
+  S.enrolledCourseIds = new Set((S.enrollments || []).map(e => String(e.course_id)));
 }
 
+/* ============================================================
+   TARGETED RELOADERS — unchanged
+   ============================================================ */
 async function reloadUsers()            { try { const d = await apiCall('/api/admin/users');          S.users = d.users || []; } catch (_) {} }
 async function reloadExperts()          { try { const d = await apiCall('/api/admin/experts');        S.experts = d.experts || []; } catch (_) {} }
 async function reloadConsultations()    { try { const d = await apiCall('/api/common/consultations'); S.consultations = d.consultations || []; } catch (_) {} }
@@ -167,6 +244,9 @@ async function reloadInstitutionProgrammes() { try { const d = await apiCall('/a
 async function reloadInstitutionCohorts()    { try { const d = await apiCall('/api/institution/cohorts');    S.cohorts    = d.cohorts || []; } catch (_) {} }
 async function reloadInstitutions()          { try { const d = await apiCall('/api/admin/institutions');     S.institutions = d.institutions || []; } catch (_) {} }
 
+/* ============================================================
+   POLLING & NOTIFICATION BADGE — unchanged
+   ============================================================ */
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
@@ -182,29 +262,4 @@ function updateNotificationBadge() {
   const unread = S.notifications.filter(n => !n.is_read).length;
   b.textContent = unread;
   b.classList.toggle('hidden', unread === 0);
-}
-if (currentUserRole === 'institution') {
-  /* Existing loads */
-  // ...
-
-  /* New loads (resilient — ignore failures) */
-  tasks.push(apiCall('/api/institution/analytics').then(d => { S.institutionAnalytics = d || {}; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/campuses').then(d => { S.campuses = d.campuses || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/proctor-sessions').then(d => { S.examProctorSessions = d.sessions || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/proctor-flags').then(d => { S.examProctorFlags = d.flags || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/wellness/scores').then(d => { S.wellnessScores = d.scores || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/wellness/alerts').then(d => { S.wellnessAlerts = d.alerts || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/skills-gap').then(d => { S.skillsGapAnalysis = d || {}; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/succession').then(d => { S.successionMatrix = d || S.successionMatrix; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/marketplace').then(d => { S.instructorMarketplace = d.instructors || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/contracts').then(d => { S.instructorContracts = d.contracts || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/budgets').then(d => { S.budgetAllocations = d.budgets || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/budget-transactions').then(d => { S.budgetTransactions = d.transactions || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/certificates/blockchain').then(d => { S.blockchainCerts = d.certs || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/report-definitions').then(d => { S.savedReportDefinitions = d.definitions || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/announcements').then(d => { S.announcements = d.announcements || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/api-keys').then(d => { S.apiKeys = d.keys || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/webhooks').then(d => { S.webhooks = d.webhooks || []; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/sso').then(d => { S.ssoConfiguration = d || {}; }).catch(() => {}));
-  tasks.push(apiCall('/api/institution/compliance/runs').then(d => { S.complianceRuns = d.runs || []; }).catch(() => {}));
 }
