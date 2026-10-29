@@ -1,7 +1,8 @@
-/* ============================================================
-   ExpertHub 2.0 — dashboards/user/mentorship.js
-   Mentor matching, goals, milestones, progress.
-   ============================================================ */
+/* ============================================================ */
+/* ExpertHub 2.0 — dashboards/user/mentorship.js */
+/* Mentor matching, goals, milestones, session feedback, */
+/* career-pathway integration. */
+/* ============================================================ */
 
 function renderUserMentorship() {
   const mentorships = S.mentorships || [];
@@ -51,7 +52,12 @@ function renderMentorshipCard(m) {
       <header class="consultation-card-header">
         <div>
           <h4 class="consultation-card-title">${esc(m.mentor_name || 'Mentor')}</h4>
-          <p class="consultation-card-meta">${UserUI.statusPill(m.status || 'active')}</p>
+          <p class="consultation-card-meta">
+            ${UserUI.statusPill(m.status || 'active')}
+            ${m.career_pathway_id
+              ? `<span class="chip chip-blue">Linked to career pathway</span>` : ''}
+          </p>
+          ${m.focus ? `<p class="form-hint"><strong>Focus:</strong> ${esc(m.focus)}</p>` : ''}
         </div>
         <div class="consultation-card-price">
           ${m.sessions_done || 0}/${m.sessions_total || 0}
@@ -59,8 +65,7 @@ function renderMentorshipCard(m) {
         </div>
       </header>
       <div class="consultation-card-body">
-        <p><strong>Focus:</strong> ${esc(m.focus || '')}</p>
-        ${m.next_session_at ? `<p><strong>Next session:</strong> ${fmtDT(m.next_session_at)}</p>` : ''}
+        ${m.next_session_at ? `<p><strong>Next session:</strong> ${UserDT?.fmtDT(m.next_session_at) || fmtDT(m.next_session_at)}</p>` : ''}
         <div class="progress-bar" style="margin-top:8px">
           <span style="width:${m.progress || 0}%"></span>
         </div>
@@ -69,6 +74,15 @@ function renderMentorshipCard(m) {
       <footer class="consultation-card-actions">
         <button class="btn btn-primary btn-sm" data-action="mentorship-goals" data-id="${m.id}">
           <i class="fas fa-flag"></i> Goals</button>
+        ${m.status === 'active' ? `
+          <button class="btn btn-secondary btn-sm" data-action="mentorship-add-goal" data-id="${m.id}">
+            <i class="fas fa-plus"></i> Add Goal</button>
+        ` : ''}
+        ${m.last_session_id && !m.last_session_reviewed ? `
+          <button class="btn btn-success btn-sm" data-action="mentorship-review-session"
+                  data-mentorship="${m.id}" data-session="${m.last_session_id}">
+            <i class="fas fa-star"></i> Rate session</button>
+        ` : ''}
         ${m.consultation_id ? `
           <button class="btn btn-info btn-sm" data-action="open-chat" data-id="${m.consultation_id}">
             <i class="fas fa-comments"></i> Message</button>
@@ -79,6 +93,10 @@ function renderMentorshipCard(m) {
 }
 
 window.ExpertHubUser.registerModule('mentorship', renderUserMentorship);
+
+/* ============================================================ */
+/* Actions */
+/* ============================================================ */
 
 window.ExpertHubUser.registerAction('find-mentor', () => {
   openModal({
@@ -94,6 +112,17 @@ window.ExpertHubUser.registerAction('find-mentor', () => {
           <option value="12">12 sessions (weekly)</option>
         </select>
       </label>
+      ${(S.careerPathways || []).length ? `
+        <label class="form-group">
+          <span class="form-label">Link to a career pathway (optional)</span>
+          <select id="fmPathway" class="form-select">
+            <option value="">None</option>
+            ${(S.careerPathways || []).map(p => `
+              <option value="${p.id}">${esc(p.title)}</option>
+            `).join('')}
+          </select>
+        </label>
+      ` : ''}
     `,
     footer: `
       <button class="btn btn-secondary" data-close-modal>Cancel</button>
@@ -106,7 +135,9 @@ window.ExpertHubUser.registerAction('find-mentor', () => {
     try {
       showLoading(true);
       const d = await apiCall('/api/user/mentorship/match', 'POST', {
-        need, sessions: Number($('#fmCommit').value),
+        need,
+        sessions: Number($('#fmCommit').value),
+        career_pathway_id: $('#fmPathway')?.value || null,
       });
       closeModal();
       if (!(d.matches || []).length) return showToast('No mentors match yet', 'warning');
@@ -119,6 +150,7 @@ window.ExpertHubUser.registerAction('find-mentor', () => {
             <h4 class="expert-name">${esc(m.name)}</h4>
             <p class="expert-expertise">${esc(m.specialization || '')}</p>
             <p class="expert-rate">${m.match_score || 0}% match</p>
+            ${m.reason ? `<p class="form-hint"><i class="fas fa-lightbulb"></i> ${esc(m.reason)}</p>` : ''}
             <button class="btn btn-primary btn-sm" data-action="request-mentor" data-id="${m.id}">
               <i class="fas fa-check"></i> Request</button>
           </div>
@@ -154,11 +186,72 @@ window.ExpertHubUser.registerAction('mentorship-goals', async (id) => {
             <span class="list-row-title">${esc(g.title)}</span>
             <span class="list-row-sub">${esc(g.description || '')}</span>
           </div>
-          <span class="${statusClass(g.status || 'pending')}">${esc((g.status || 'pending').replace(/_/g,' '))}</span>
+          <span class="${statusClass(g.status || 'pending')}">
+            ${esc((g.status || 'pending').replace(/_/g,' '))}</span>
         </div>
       `).join('') || '<p class="empty-row">No goals set yet</p>',
-      footer: `<button class="btn btn-secondary" data-close-modal>Close</button>`,
+      footer: `
+        <button class="btn btn-secondary" data-close-modal>Close</button>
+        <button class="btn btn-primary" data-action="mentorship-add-goal" data-id="${id}"
+                onclick="closeModal()">
+          <i class="fas fa-plus"></i> Add Goal</button>
+      `,
     });
   } catch (e) { showToast(e.message, 'error'); }
   finally { showLoading(false); }
+});
+
+window.ExpertHubUser.registerAction('mentorship-add-goal', (id) => {
+  UserUI.formModal({
+    title: 'Add Mentorship Goal',
+    fields: [
+      { name: 'title',       label: 'Goal', required: true },
+      { name: 'description', label: 'Description', type: 'textarea', rows: 2 },
+      { name: 'target_date', label: 'Target date', type: 'date' },
+    ],
+    submitLabel: 'Add',
+    onSubmit: async (v) => {
+      await apiCall(`/api/user/mentorship/${id}/goals`, 'POST', v);
+      closeModal();
+      await loadUserExtendedData({ force: true });
+      rerenderRoleContent();
+      showToast('Goal added', 'success');
+    },
+  });
+});
+
+window.ExpertHubUser.registerAction('mentorship-review-session', (_, el) => {
+  const mentorshipId = el?.dataset?.mentorship;
+  const sessionId    = el?.dataset?.session;
+  openModal({
+    title: 'Rate Session',
+    body: `
+      <label class="form-group">
+        <span class="form-label">Rating</span>
+        <select id="msRating" class="form-select">
+          ${[5,4,3,2,1].map(n => `<option value="${n}">${n} of 5</option>`).join('')}
+        </select>
+      </label>
+      <label class="form-group">
+        <span class="form-label">Feedback</span>
+        <textarea id="msFeedback" class="form-textarea" rows="4"></textarea>
+      </label>
+    `,
+    footer: `
+      <button class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button id="msSave" class="btn btn-primary">Submit</button>
+    `,
+  });
+  $('#msSave').onclick = async () => {
+    try {
+      await apiCall(`/api/user/mentorship/${mentorshipId}/sessions/${sessionId}/review`, 'POST', {
+        rating: Number($('#msRating').value),
+        feedback: $('#msFeedback').value,
+      });
+      closeModal();
+      await loadUserExtendedData({ force: true });
+      rerenderRoleContent();
+      showToast('Session rated', 'success');
+    } catch (e) { showToast(e.message, 'error'); }
+  };
 });

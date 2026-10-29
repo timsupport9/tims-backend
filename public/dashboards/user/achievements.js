@@ -1,7 +1,8 @@
-/* ============================================================
-   ExpertHub 2.0 — dashboards/user/achievements.js
-   XP, level, streak, badges. All values server-authoritative.
-   ============================================================ */
+/* ============================================================ */
+/* ExpertHub 2.0 — dashboards/user/achievements.js */
+/* Achievements: server-validated XP/badges/streaks. */
+/* No client-triggerable awards. */
+/* ============================================================ */
 
 let __achievementsRefreshing = false;
 
@@ -11,8 +12,8 @@ async function _refreshAchievements() {
   try {
     const d = await apiCall('/api/user/achievements');
     if (d) {
-      S.userXP = d.xp || 0;
-      S.userLevel = d.level || UserHelpers.levelFromXP(S.userXP);
+      S.userXP     = d.xp || 0;
+      S.userLevel  = d.level || UserHelpers.levelFromXP(S.userXP);
       S.userBadges = d.badges || [];
       S.userStreak = d.streak || S.userStreak;
     }
@@ -25,9 +26,8 @@ function renderUserAchievements() {
   const level  = S.userLevel || UserHelpers.levelFromXP(xp);
   const streak = S.userStreak || { current: 0, longest: 0 };
   const badges = S.userBadges || [];
-  const allBadges = Object.entries(CONFIG.BADGES).map(([code, b]) => ({ code, ...b }));
+  const allBadges = Object.entries(CONFIG.BADGES || {}).map(([code, b]) => ({ code, ...b }));
 
-  // Sort: earned first, then locked
   const sortedBadges = allBadges.slice().sort((a, b) => {
     const ea = badges.some(x => x.badge_code === a.code) ? 0 : 1;
     const eb = badges.some(x => x.badge_code === b.code) ? 0 : 1;

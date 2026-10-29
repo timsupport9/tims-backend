@@ -1,12 +1,14 @@
-/* ============================================================
-   ExpertHub 2.0 — dashboards/user/events.js
-   Event list + registration with capacity verification,
-   free vs paid, cancel registration, timezone handling.
-   ============================================================ */
+/* ============================================================ */
+/* ExpertHub 2.0 — dashboards/user/events.js */
+/* Events: registration-info pre-flight, timezone display, */
+/* capacity re-verification, registration status. */
+/* Reuses existing event backend — no duplicate registration. */
+/* ============================================================ */
 
 function renderUserEvents() {
   const registered = new Set((S.eventRegistrations || []).map(r => String(r.event_id)));
   const now = Date.now();
+  const tz  = currentUser?.timezone || 'UTC';
 
   const upcoming = (S.events || [])
     .filter(ev => !ev.date || new Date(ev.date).getTime() >= now - 86400000)
@@ -20,6 +22,7 @@ function renderUserEvents() {
     const full = ev.capacity && (ev.registered_count || 0) >= ev.capacity;
     const isPaid = Number(ev.price || 0) > 0;
     const eventDate = new Date(ev.date || ev.created_at);
+
     return `
       <article class="event-card">
         <div class="event-date">
@@ -30,18 +33,17 @@ function renderUserEvents() {
           <h4 class="event-title">${esc(ev.title || '')}</h4>
           <p class="event-desc">${esc(ev.description || '')}</p>
           <p class="event-meta">
-            ${ev.registered_count || 0} of ${ev.capacity || 0} registered ·
+            ${ev.date ? UserHelpers.fmtInTz(ev.date, tz) : ''} (${esc(tz)})<br/>
+            ${ev.registered_count || 0} of ${ev.capacity || '∞'} registered ·
             ${isPaid ? fmtCur(ev.price) : 'Free'}
-            ${ev.mode ? `· ${esc(ev.mode)}` : ''}
-            ${ev.location ? `· ${esc(ev.location)}` : ''}
+            ${ev.mode ? '· ' + esc(ev.mode) : ''}
+            ${ev.location ? '· ' + esc(ev.location) : ''}
           </p>
         </div>
         <div class="event-actions">
           ${isRegistered
-            ? `
-              <button class="btn btn-secondary btn-sm" data-action="cancel-event-registration" data-id="${ev.id}">
-                <i class="fas fa-check"></i> Registered</button>
-            `
+            ? `<button class="btn btn-secondary btn-sm" data-action="cancel-event-registration" data-id="${ev.id}">
+                <i class="fas fa-check"></i> Registered</button>`
             : full
               ? `<button class="btn btn-secondary btn-sm" disabled>Full</button>`
               : `<button class="btn btn-primary btn-sm" data-action="register-event" data-id="${ev.id}">
@@ -73,14 +75,20 @@ window.ExpertHubUser.registerModule('events', renderUserEvents);
 
 window.ExpertHubUser.registerAction('register-event', async (id) => {
   try {
-    // Verify capacity & price server-side before asking for payment
+    // Server-authoritative pre-flight
     const info = await apiCall(`/api/common/events/${id}/register-info`).catch(() => null);
     if (info?.capacity_reached) return showToast('This event is full', 'warning');
     if (info?.already_registered) return showToast('You are already registered', 'info');
+    if (info?.registration_closed) return showToast('Registration is closed', 'warning');
     const price = Number(info?.price ?? 0);
 
     if (price > 0) {
-      const ok = await confirmDialog(`Register for ${fmtCur(price)}? Payment will be deducted from your wallet.`);
+      const balance = S.wallet?.balance || 0;
+      const ok = await confirmDialog(
+        balance >= price
+          ? `Register for ${fmtCur(price)}? Payment will be deducted from your wallet.`
+          : `Insufficient balance (${fmtCur(balance)}). You will be redirected to payment. Continue?`
+      );
       if (!ok) return;
     }
 
@@ -90,7 +98,12 @@ window.ExpertHubUser.registerAction('register-event', async (id) => {
     rerenderRoleContent();
     showToast(d?.message || 'Registered for event', 'success');
     if (d?.payment_url) window.location.href = d.payment_url;
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) {
+    const msg = String(e?.message || '');
+    if (/capacity|full/i.test(msg)) showToast('This event is now full', 'warning');
+    else if (/duplicate|already/i.test(msg)) showToast('You are already registered', 'info');
+    else showToast(msg || 'Registration failed', 'error');
+  }
 });
 
 window.ExpertHubUser.registerAction('cancel-event-registration', async (id) => {

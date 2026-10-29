@@ -1,14 +1,14 @@
-/* ============================================================
-   ExpertHub 2.0 — dashboards/user/skills.js
-   Skill assessments, competency profile, recommendations.
-   Distinguishes verified vs self-reported.
-   ============================================================ */
+/* ============================================================ */
+/* ExpertHub 2.0 — dashboards/user/skills.js */
+/* Skills: verified vs self-reported competency, evidence, */
+/* progress evidence-based, cross-module recommendations. */
+/* ============================================================ */
 
 function renderUserSkills() {
   const assessments = S.skillAssessments || [];
-  const completed  = assessments.filter(a => a.completed || a.verified);
-  const pending    = assessments.filter(a => !(a.completed || a.verified));
-  const verified   = completed.filter(a => a.verified);
+  const completed   = assessments.filter(a => a.completed || a.verified);
+  const pending     = assessments.filter(a => !(a.completed || a.verified));
+  const verified    = completed.filter(a => a.verified);
   const avg = completed.length
     ? Math.round(completed.reduce((s, a) => s + Number(a.score || 0), 0) / completed.length)
     : 0;
@@ -39,7 +39,12 @@ function renderUserSkills() {
                   ? '<span class="chip chip-green" title="Verified by assessment"><i class="fas fa-check-shield"></i> Verified</span>'
                   : '<span class="chip chip-neutral">Self-reported</span>'}
               </span>
-              <span class="list-row-sub">${esc(a.category || '')} · Level ${esc(a.level || 'beginner')}</span>
+              <span class="list-row-sub">
+                ${esc(a.category || '')} · Level ${esc(a.level || 'beginner')}
+                ${a.last_assessed_at ? ` · Last assessed ${fmtDate(a.last_assessed_at)}` : ''}
+              </span>
+              ${a.evidence_url ? `<a class="form-hint" href="${esc(a.evidence_url)}" target="_blank" rel="noopener">
+                <i class="fas fa-link"></i> View evidence</a>` : ''}
             </div>
             <div class="progress-bar" style="width:120px">
               <span style="width:${a.score || 0}%"></span>
@@ -109,9 +114,7 @@ window.ExpertHubUser.registerAction('resume-skill-assessment', async (id) => {
     showLoading(true);
     const d = await apiCall(`/api/user/skills/assessments/${id}`).catch(() => null);
     closeModal();
-    if (!d?.questions?.length) {
-      return showToast('Assessment not available', 'warning');
-    }
+    if (!d?.questions?.length) return showToast('Assessment not available', 'warning');
     openModal({
       title: d.assessment?.skill_name || 'Skill Assessment',
       className: 'modal-lg',
@@ -139,7 +142,7 @@ window.ExpertHubUser.registerAction('resume-skill-assessment', async (id) => {
       try {
         const r = await apiCall(`/api/user/skills/assessments/${id}/submit`, 'POST', { answers });
         closeModal();
-        showToast(`Score: ${r.score}%`, 'success');
+        showToast(`Score: ${r.score}%${r.verified ? ' — Verified' : ''}`, 'success');
         await loadUserExtendedData({ force: true });
         rerenderRoleContent();
       } catch (e) { showToast(e.message, 'error'); }

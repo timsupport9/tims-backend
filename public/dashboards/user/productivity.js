@@ -1,8 +1,9 @@
-/* ============================================================
-   ExpertHub 2.0 — dashboards/user/productivity.js
-   Tasks, reminders, weekly plan. Duplicate prevention,
-   overdue handling, priority sorting.
-   ============================================================ */
+/* ============================================================ */
+/* ExpertHub 2.0 — dashboards/user/productivity.js */
+/* Study planner: tasks linked to courses/lessons/assessments, */
+/* recurring activities, priorities, weekly plan, intelligent */
+/* auto-suggest plan. */
+/* ============================================================ */
 
 let _prodTab = UserFilters.get('productivity', 'tab', 'tasks') || 'tasks';
 
@@ -32,21 +33,28 @@ function renderUserProductivity() {
       ${_prodTab === 'tasks' ? `
         <section class="panel">
           ${UserUI.stats([
-            { label: 'Open', value: open.length,    icon: 'fa-list', tone: 'blue' },
-            { label: 'Done', value: done.length,    icon: 'fa-check', tone: 'green' },
-            { label: 'Overdue', value: overdue.length, icon: 'fa-exclamation-triangle', tone: 'red' },
+            { label: 'Open', value: open.length,        icon: 'fa-list', tone: 'blue' },
+            { label: 'Done', value: done.length,        icon: 'fa-check', tone: 'green' },
+            { label: 'Overdue', value: overdue.length,  icon: 'fa-exclamation-triangle', tone: 'red' },
             { label: 'Due Soon', value: dueSoon.length, icon: 'fa-clock', tone: 'yellow' },
           ])}
           <div class="page-actions" style="margin-bottom:12px">
             <button class="btn btn-primary" data-action="add-task">
               <i class="fas fa-plus"></i> New Task</button>
+            <button class="btn btn-secondary" data-action="auto-study-plan">
+              <i class="fas fa-magic"></i> Auto Study Plan</button>
           </div>
           ${open.length ? open.map(t => {
             const isOverdue = t.due_date && new Date(t.due_date) < new Date();
             return `
               <div class="list-row">
                 <div class="list-row-main">
-                  <span class="list-row-title">${esc(t.title)}</span>
+                  <span class="list-row-title">
+                    ${esc(t.title)}
+                    ${t.linked_lesson_id ? '<span class="chip chip-blue">Lesson</span>' : ''}
+                    ${t.linked_assessment_id ? '<span class="chip chip-purple">Assessment</span>' : ''}
+                    ${t.recurring ? '<span class="chip chip-neutral"><i class="fas fa-repeat"></i> Recurring</span>' : ''}
+                  </span>
                   <span class="list-row-sub">
                     ${t.due_date ? (isOverdue ? '<span style="color:var(--danger)">' + fmtDate(t.due_date) + ' (overdue)</span>' : fmtDate(t.due_date)) : 'No due date'}
                     · <span class="chip chip-${t.priority === 'urgent' ? 'red' : t.priority === 'high' ? 'yellow' : 'neutral'}">${esc(t.priority || 'normal')}</span>
@@ -65,7 +73,6 @@ function renderUserProductivity() {
       ` : ''}
 
       ${_prodTab === 'reminders' ? renderUserReminders() : ''}
-
       ${_prodTab === 'weekly' ? renderUserWeeklyPlan() : ''}
     `,
   });
@@ -84,7 +91,7 @@ function renderUserReminders() {
           </div>
           <span class="chip chip-neutral">${esc(r.channel || 'in-app')}</span>
         </div>
-      `).join('') : '<p class="empty-row">No reminders scheduled. Add due dates to your tasks to receive reminders.</p>'}
+      `).join('') : '<p class="empty-row">No reminders scheduled. Add due dates to tasks to receive reminders.</p>'}
     </section>
   `;
 }
@@ -105,7 +112,8 @@ function renderUserWeeklyPlan() {
           return `
             <div class="weekly-day">
               <h4>${d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</h4>
-              ${dayTasks.length ? dayTasks.map(t => `<p class="weekly-task">${esc(t.title)}</p>`).join('')
+              ${dayTasks.length
+                ? dayTasks.map(t => `<p class="weekly-task">${esc(t.title)}</p>`).join('')
                 : '<p class="form-hint">No tasks</p>'}
             </div>
           `;
@@ -133,6 +141,12 @@ window.ExpertHubUser.registerAction('add-task', () => {
       { name: 'due_date', label: 'Due Date', type: 'date' },
       { name: 'priority', label: 'Priority', type: 'select', value: 'normal',
         options: ['low','normal','high','urgent'] },
+      { name: 'recurring', label: 'Recurring', type: 'select', value: '',
+        options: [
+          { value: '', label: 'One-off' },
+          { value: 'daily', label: 'Daily' },
+          { value: 'weekly', label: 'Weekly' },
+        ]},
     ],
     submitLabel: 'Add',
     onSubmit: async (v) => {
@@ -143,6 +157,23 @@ window.ExpertHubUser.registerAction('add-task', () => {
       showToast('Task added', 'success');
     },
   });
+});
+
+window.ExpertHubUser.registerAction('auto-study-plan', async () => {
+  try {
+    showLoading(true);
+    const d = await apiCall('/api/user/study-plan/generate', 'POST').catch(() => null);
+    closeModal();
+    if (!d?.tasks?.length) return showToast('No suggestions available right now', 'info');
+    const ok = await confirmDialog(
+      `Generate ${d.tasks.length} study task${d.tasks.length === 1 ? '' : 's'} based on your courses and deadlines?`);
+    if (!ok) return;
+    await apiCall('/api/user/study-plan/confirm', 'POST', { task_ids: d.tasks.map(t => t.id) });
+    await loadUserExtendedData({ force: true });
+    rerenderRoleContent();
+    showToast('Study plan added', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+  finally { showLoading(false); }
 });
 
 window.ExpertHubUser.registerAction('complete-task', async (id) => {

@@ -1,8 +1,10 @@
-/* ============================================================
-   ExpertHub 2.0 — dashboards/user/packages.js
-   Session packages with backend-verified validity,
-   atomic credit deduction, purchase & usage history.
-   ============================================================ */
+/* ============================================================ */
+/* ExpertHub 2.0 — dashboards/user/packages.js */
+/* Session packages: expiry warnings, atomic-verified redemption, */
+/* idempotent credit use, usage history. */
+/* ============================================================ */
+
+const PACKAGE_EXPIRY_WARN_DAYS = 7;
 
 function _isPackageUsable(p) {
   if (!p) return false;
@@ -12,10 +14,16 @@ function _isPackageUsable(p) {
   return true;
 }
 
+function _expiresSoon(p) {
+  if (!p.expires_at) return false;
+  const days = (new Date(p.expires_at).getTime() - Date.now()) / 86400000;
+  return days > 0 && days <= PACKAGE_EXPIRY_WARN_DAYS;
+}
+
 function renderUserPackages() {
-  const pkgs = S.userPackages || [];
-  const usable  = pkgs.filter(_isPackageUsable);
-  const expired = pkgs.filter(p => !_isPackageUsable(p) && p.sessions_remaining > 0);
+  const pkgs      = S.userPackages || [];
+  const usable    = pkgs.filter(_isPackageUsable);
+  const expired   = pkgs.filter(p => !_isPackageUsable(p) && Number(p.sessions_remaining || 0) > 0);
   const exhausted = pkgs.filter(p => Number(p.sessions_remaining || 0) <= 0);
 
   return UserUI.page({
@@ -33,6 +41,9 @@ function renderUserPackages() {
             ${usable.map(p => `
               <article class="program-card">
                 <span class="chip chip-green">${p.sessions_remaining} of ${p.sessions_total || p.sessions_remaining} left</span>
+                ${_expiresSoon(p)
+                  ? `<span class="chip chip-yellow" style="margin-left:6px">
+                      <i class="fas fa-clock"></i> Expires soon</span>` : ''}
                 <h4 class="program-title">${esc(p.package_name)}</h4>
                 <p class="program-desc">with ${esc(p.expert_name || 'Expert')}</p>
                 <footer class="program-footer">
@@ -94,26 +105,33 @@ function renderUserPackages() {
 window.ExpertHubUser.registerModule('packages', renderUserPackages);
 
 /* ---------------- Actions ---------------- */
+
 window.ExpertHubUser.registerAction('use-package-credit', async (packageId) => {
-  // Refresh package before showing the form so we don't over-issue
   try {
+    // Atomic freshness check before showing the form
     const fresh = await apiCall(`/api/user/packages/${packageId}`).catch(() => null);
     const p = fresh?.package || (S.userPackages || []).find(x => String(x.package_id) === String(packageId));
     if (!p) return showToast('Package not found', 'error');
     if (!_isPackageUsable(p)) return showToast('This package has expired or been exhausted', 'warning');
+
+    let submitting = false;
+    const idempotencyKey = `pkg_${packageId}_${currentUser?.id}_${Date.now()}_${Math.random().toString(36).slice(2,10)}`;
 
     openModal({
       title: 'Book Next Session',
       body: `
         <div class="alert alert-info">
           <i class="fas fa-ticket-alt"></i>
-          <div>Booking with <strong>${esc(p.package_name)}</strong> — ${p.sessions_remaining} credit${p.sessions_remaining === 1 ? '' : 's'} remaining.</div>
+          <div>Booking with <strong>${esc(p.package_name)}</strong>
+            — ${p.sessions_remaining} credit${p.sessions_remaining === 1 ? '' : 's'} remaining.</div>
         </div>
-        <label class="form-group"><span class="form-label">Session Title</span>
-          <input id="pkTitle" class="form-input" required /></label>
-        <label class="form-group"><span class="form-label">Preferred Date &amp; Time</span>
+        <label class="form-group"><span class="form-label">Session Title *</span>
+          <input id="pkTitle" class="form-input" required maxlength="120" /></label>
+        <label class="form-group"><span class="form-label">Preferred Date &amp; Time *</span>
           <input id="pkWhen" type="datetime-local" class="form-input"
-                 min="${new Date().toISOString().slice(0,16)}" required /></label>
+                 min="${new Date(Date.now() + 3600000).toISOString().slice(0,16)}" required />
+          <p class="form-hint">All times shown in ${esc(currentUser?.timezone || 'UTC')}.</p>
+        </label>
         <label class="form-group"><span class="form-label">Notes</span>
           <textarea id="pkNotes" class="form-textarea" rows="3"></textarea></label>
       `,
@@ -122,24 +140,44 @@ window.ExpertHubUser.registerAction('use-package-credit', async (packageId) => {
         <button id="pkSave" class="btn btn-primary">Redeem Credit</button>
       `,
     });
-    $('#pkSave').onclick = async () => {
-      const title = $('#pkTitle').value.trim();
-      const when = $('#pkWhen').value;
+
+    const btn = document.getElementById('pkSave');
+    if (btn) btn.onclick = async () => {
+      if (submitting) return;
+      const title = document.getElementById('pkTitle').value.trim();
+      const when  = document.getElementById('pkWhen').value;
       if (!title) return showToast('Title is required', 'error');
-      if (!when) return showToast('Pick a date and time', 'error');
+      if (!when)  return showToast('Pick a date and time', 'error');
+
+      submitting = true;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Redeeming…';
       try {
         await apiCall('/api/user/packages/redeem', 'POST', {
-          package_id: Number(packageId),
+          package_id:      Number(packageId),
           title,
-          scheduled_at: new Date(when).toISOString(),
-          notes: $('#pkNotes').value || null,
+          scheduled_at:    new Date(when).toISOString(),
+          notes:           document.getElementById('pkNotes').value || null,
+          idempotency_key: idempotencyKey,
         });
         closeModal();
-        await reloadConsultations();
+        await reloadConsultations?.();
         await loadUserExtendedData({ force: true });
         rerenderRoleContent();
         showToast('Session booked using credit', 'success');
-      } catch (e) { showToast(e.message, 'error'); }
+      } catch (e) {
+        const msg = String(e?.message || '');
+        if (/insufficient|expired|exhaust/i.test(msg)) {
+          await loadUserExtendedData({ force: true });
+          rerenderRoleContent();
+          showToast('Credit no longer available — refreshed package state', 'warning', 6000);
+        } else {
+          showToast(msg || 'Redemption failed', 'error');
+        }
+        submitting = false;
+        btn.disabled = false;
+        btn.textContent = 'Redeem Credit';
+      }
     };
   } catch (e) { showToast(e.message, 'error'); }
 });

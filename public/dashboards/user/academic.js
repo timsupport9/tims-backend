@@ -1,7 +1,8 @@
-/* ============================================================
-   ExpertHub 2.0 — dashboards/user/academic.js
-   Subjects, timetable, assignments, revision, study planner.
-   ============================================================ */
+/* ============================================================ */
+/* ExpertHub 2.0 — dashboards/user/academic.js */
+/* Academic support: subjects, timetable, assignments, revision, */
+/* performance tracking (imported vs teacher vs practice). */
+/* ============================================================ */
 
 let _academicTab = UserFilters.get('academic', 'tab', 'subjects') || 'subjects';
 
@@ -44,12 +45,14 @@ function renderAcademicSubjects(subjects) {
     ${subjects.map(s => `
       <article class="program-card">
         <span class="chip chip-blue">${esc(s.level || 'Subject')}</span>
+        ${s.curriculum ? `<span class="chip chip-neutral" style="margin-left:6px">${esc(s.curriculum)}</span>` : ''}
         <h4 class="program-title">${esc(s.name)}</h4>
         <p class="program-desc">${esc(s.description || '')}</p>
         <div class="progress-bar" style="margin-top:8px">
           <span style="width:${s.progress || 0}%"></span>
         </div>
         <p class="program-meta">${s.progress || 0}% mastery</p>
+        ${s.teacher_name ? `<p class="form-hint"><i class="fas fa-user"></i> ${esc(s.teacher_name)}</p>` : ''}
         <button class="btn btn-primary btn-sm" data-action="academic-subject-detail" data-id="${s.id}">
           <i class="fas fa-eye"></i> Open</button>
       </article>
@@ -93,14 +96,21 @@ function renderAcademicAssignments(list) {
     <section class="panel">
       <h3 class="panel-title">Assignments</h3>
       ${list.length ? UserUI.table(
-        ['Title', 'Subject', 'Due', 'Status', ''],
+        ['Title', 'Subject', 'Due', 'Source', 'Status', ''],
         list.map(a => {
           const overdue = a.due_date && new Date(a.due_date) < new Date() && a.status !== 'completed';
           return `
             <tr>
               <td>${esc(a.title)}</td>
               <td>${esc(a.subject || '')}</td>
-              <td>${overdue ? '<span style="color:var(--danger)">' + fmtDate(a.due_date) + ' (overdue)</span>' : fmtDate(a.due_date)}</td>
+              <td>${overdue
+                ? '<span style="color:var(--danger)">' + fmtDate(a.due_date) + ' (overdue)</span>'
+                : fmtDate(a.due_date)}</td>
+              <td>
+                ${a.source === 'institution' ? '<span class="chip chip-blue">Institution</span>'
+                  : a.source === 'teacher' ? '<span class="chip chip-purple">Teacher</span>'
+                  : '<span class="chip chip-neutral">Personal</span>'}
+              </td>
               <td>${UserUI.statusPill(a.status || 'pending')}</td>
               <td>${a.status !== 'completed'
                 ? `<button class="btn btn-success btn-xs" data-action="complete-assignment" data-id="${a.id}">
@@ -127,7 +137,10 @@ function renderAcademicRevision(materials) {
         <div class="list-row">
           <div class="list-row-main">
             <span class="list-row-title">${esc(m.title)}</span>
-            <span class="list-row-sub">${esc(m.subject || '')}</span>
+            <span class="list-row-sub">
+              ${esc(m.subject || '')}
+              ${m.curriculum_mapping ? ' · ' + esc(m.curriculum_mapping) : ''}
+            </span>
           </div>
           <a class="btn btn-secondary btn-xs" href="${esc(m.url)}" target="_blank" rel="noopener">
             <i class="fas fa-download"></i> Open</a>
@@ -154,8 +167,25 @@ window.ExpertHubUser.registerAction('academic-subject-detail', (id) => {
     title: s.name,
     body: `
       <p><strong>Level:</strong> ${esc(s.level || '')}</p>
+      <p><strong>Curriculum:</strong> ${esc(s.curriculum || '—')}</p>
       <p><strong>Progress:</strong> ${s.progress || 0}%</p>
       <p>${esc(s.description || '')}</p>
+      ${s.teacher_name ? `<p><strong>Teacher:</strong> ${esc(s.teacher_name)}</p>` : ''}
+      ${s.marks ? `
+        <h4 style="margin-top:12px">Marks</h4>
+        <p class="form-hint">Imported and teacher-entered marks only. Practice scores do not count toward official records.</p>
+        <ul class="list-stack">
+          ${(s.marks || []).map(m => `
+            <li class="list-row">
+              <div class="list-row-main">
+                <span class="list-row-title">${esc(m.assessment_title)}</span>
+                <span class="list-row-sub">${esc(m.source || '')} · ${fmtDate(m.recorded_at)}</span>
+              </div>
+              <span class="chip chip-blue">${m.score}%</span>
+            </li>
+          `).join('')}
+        </ul>
+      ` : ''}
     `,
     footer: `<button class="btn btn-secondary" data-close-modal>Close</button>`,
   });
