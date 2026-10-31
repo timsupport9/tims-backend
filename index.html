@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#6366f1" />
+  <meta name="description" content="ExpertHub 2.0 — E-School, 1-on-1 expert consultations, and corporate training in one platform." />
+  <meta name="color-scheme" content="light dark" />
+  <title>ExpertHub 2.0 | E-School &amp; Consultation Platform</title>
+
+  <!-- Favicon (inline SVG) -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'></text></svg>" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <!-- Chart.js (used by renderCharts and renderInstitutionCharts) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+
+  <!--
+    Socket.IO client.
+    MUST load before /js/04-api.js runs initializeSocket().
+    Do NOT add `defer` — server.js serves this synchronously and
+    the split files below depend on `io` being defined globally.
+  -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="css/01-tokens.css">
+<link rel="stylesheet" href="css/02-base.css">
+<link rel="stylesheet" href="css/03-components.css">
+<link rel="stylesheet" href="css/04-surfaces.css">
+<link rel="stylesheet" href="css/05-overlays.css">
+<link rel="stylesheet" href="css/06-marketing.css">
+<link rel="stylesheet" href="css/07-shell.css">
+<link rel="stylesheet" href="css/08-final.css">
+<link rel="stylesheet" href="css/09-extras.css">
+
+  <!-- Avoid flash of unstyled theme: apply saved dark mode before paint -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {}
+    })();
+  </script>
+</head>
+
+<body>
+  <!-- SPA mount points -->
+  <div id="app-root"></div>
+  <div id="toast-container"></div>
+  <div id="modal-root"></div>
+
+<script src="js/01-state.js"></script>
+<script src="js/02-utils.js"></script>
+<script src="js/03-ui.js"></script>
+<script src="js/04-api.js"></script>
+<script src="js/05-auth.js"></script>
+<script src="js/06-data.js"></script>
+
+<!-- ============================================================
+     js/public/ — public front door
+     Replaces the original single js/07-landing.js.
+     Load order inside this block matters:
+       components/format.js   must be first (defines PublicUI.format)
+       landing/features.js    before pages/about.js & pages/institutions.js
+       landing/discover.js    before landing/index.js
+     ============================================================ -->
+<script src="js/public/components/format.js"></script>
+<script src="js/public/components/styles.js"></script>
+<script src="js/public/components/bind.js"></script>
+<script src="js/public/components/public-navbar.js"></script>
+<script src="js/public/components/public-footer.js"></script>
+<script src="js/public/components/hero.js"></script>
+<script src="js/public/components/public-search.js"></script>
+<script src="js/public/components/course-card.js"></script>
+<script src="js/public/components/expert-card.js"></script>
+<script src="js/public/components/event-card.js"></script>
+<script src="js/public/components/resource-card.js"></script>
+<script src="js/public/components/category-card.js"></script>
+<script src="js/public/components/public-cta.js"></script>
+
+<script src="js/public/landing/features.js"></script>
+<script src="js/public/landing/pricing.js"></script>
+<script src="js/public/landing/testimonials.js"></script>
+<script src="js/public/landing/faq.js"></script>
+<script src="js/public/landing/discover.js"></script>
+<script src="js/public/landing/index.js"></script>
+
+<script src="js/public/pages/courses.js"></script>
+<script src="js/public/pages/experts.js"></script>
+<script src="js/public/pages/events.js"></script>
+<script src="js/public/pages/resources.js"></script>
+<script src="js/public/pages/course-detail.js"></script>
+<script src="js/public/pages/expert-detail.js"></script>
+<script src="js/public/pages/event-detail.js"></script>
+<script src="js/public/pages/about.js"></script>
+<script src="js/public/pages/contact.js"></script>
+<script src="js/public/pages/institutions.js"></script>
+
+<script src="js/08-shell.js"></script>
+<!-- Expert dashboard modules -->
+<script src="dashboards/expert/index.js"></script>
+<script src="dashboards/expert/overview.js"></script>
+<script src="dashboards/expert/consultations.js"></script>
+<script src="dashboards/expert/consultation-room.js"></script>
+<script src="dashboards/expert/calendar.js"></script>
+<script src="dashboards/expert/availability.js"></script>
+<script src="dashboards/expert/services.js"></script>
+<script src="dashboards/expert/clients.js"></script>
+<script src="dashboards/expert/crm.js"></script>
+<script src="dashboards/expert/courses.js"></script>
+<script src="dashboards/expert/course-builder.js"></script>
+<script src="dashboards/expert/course-analytics.js"></script>
+<script src="dashboards/expert/events.js"></script>
+<script src="dashboards/expert/portfolio.js"></script>
+<script src="dashboards/expert/questions.js"></script>
+<script src="dashboards/expert/proposals.js"></script>
+<script src="dashboards/expert/projects.js"></script>
+<script src="dashboards/expert/mentorship.js"></script>
+<script src="dashboards/expert/development.js"></script>
+<script src="dashboards/expert/team.js"></script>
+<script src="dashboards/expert/earnings.js"></script>
+<script src="dashboards/expert/withdrawals.js"></script>
+<script src="dashboards/expert/reviews.js"></script>
+<script src="dashboards/expert/analytics.js"></script>
+<script src="dashboards/expert/profile.js"></script>
+
+<!-- ============ USER DASHBOARD — BOOTSTRAP + ENTRY ============ -->
+<script src="/dashboards/user/index.js"></script>
+<script src="/js/11-user.js"></script>
+
+<!-- ============ USER DASHBOARD — MODULES ============ -->
+<script src="/dashboards/user/overview.js"></script>
+<script src="/dashboards/user/experts.js"></script>
+<script src="/dashboards/user/consultations.js"></script>
+<script src="/dashboards/user/packages.js"></script>
+<script src="/dashboards/user/learning.js"></script>
+<script src="/dashboards/user/course-detail.js"></script>
+<script src="/dashboards/user/course-player.js"></script>
+<script src="/dashboards/user/lesson-notes.js"></script>
+<script src="/dashboards/user/learning-paths.js"></script>
+<script src="/dashboards/user/assessments.js"></script>
+<script src="/dashboards/user/academic.js"></script>
+<script src="/dashboards/user/career.js"></script>
+<script src="/dashboards/user/mentorship.js"></script>
+<script src="/dashboards/user/personal-development.js"></script>
+<script src="/dashboards/user/productivity.js"></script>
+<script src="/dashboards/user/skills.js"></script>
+<script src="/dashboards/user/community.js"></script>
+<script src="/dashboards/user/resources.js"></script>
+<script src="/dashboards/user/events.js"></script>
+<script src="/dashboards/user/wishlist.js"></script>
+<script src="/dashboards/user/certificates.js"></script>
+<script src="/dashboards/user/achievements.js"></script>
+<script src="/dashboards/user/wallet.js"></script>
+<script src="/dashboards/user/transactions.js"></script>
+<script src="/dashboards/user/refunds.js"></script>
+<script src="/dashboards/user/claims.js"></script>
+<script src="/dashboards/user/support.js"></script>
+<script src="/dashboards/user/profile.js"></script>
+<!-- Admin modules — index.js MUST be first -->
+<script src="js/dashboards/admin/index.js"></script>
+<script src="js/dashboards/admin/overview.js"></script>
+<script src="js/dashboards/admin/users.js"></script>
+<script src="js/dashboards/admin/experts.js"></script>
+<script src="js/dashboards/admin/institutions.js"></script>
+<script src="js/dashboards/admin/verification.js"></script>
+<script src="js/dashboards/admin/consultations.js"></script>
+<script src="js/dashboards/admin/events.js"></script>
+<script src="js/dashboards/admin/disputes.js"></script>
+<script src="js/dashboards/admin/claims.js"></script>
+<script src="js/dashboards/admin/support.js"></script>
+<script src="js/dashboards/admin/reviews.js"></script>
+<script src="js/dashboards/admin/finance.js"></script>
+<script src="js/dashboards/admin/transactions.js"></script>
+<script src="js/dashboards/admin/payouts.js"></script>
+<script src="js/dashboards/admin/refunds.js"></script>
+<script src="js/dashboards/admin/learning.js"></script>
+<script src="js/dashboards/admin/marketing.js"></script>
+<script src="js/dashboards/admin/broadcasts.js"></script>
+<script src="js/dashboards/admin/fraud.js"></script>
+<script src="js/dashboards/admin/monitoring.js"></script>
+<script src="js/dashboards/admin/staff.js"></script>
+<script src="js/dashboards/admin/workflows.js"></script>
+<script src="js/dashboards/admin/governance.js"></script>
+<script src="js/dashboards/admin/analytics.js"></script>
+<script src="js/dashboards/admin/security.js"></script>
+<script src="js/dashboards/admin/settings.js"></script>
+<script src="js/dashboards/admin/profile.js"></script>
+<script src="js/09-admin.js"></script> 
+<!-- Institution module bundle -->
+<script src="js/dashboards/institution/config.js"></script>
+<script src="js/dashboards/institution/state.js"></script>
+<script src="js/dashboards/institution/helpers.js"></script>
+<script src="js/dashboards/institution/overview.js"></script>
+<script src="js/dashboards/institution/analytics.js"></script>
+<script src="js/dashboards/institution/programmes.js"></script>
+<script src="js/dashboards/institution/learning-paths.js"></script>
+<script src="js/dashboards/institution/cohorts.js"></script>
+<script src="js/dashboards/institution/training.js"></script>
+<script src="js/dashboards/institution/assessments.js"></script>
+<script src="js/dashboards/institution/proctor.js"></script>
+<script src="js/dashboards/institution/question-bank.js"></script>
+<script src="js/dashboards/institution/projects.js"></script>
+<script src="js/dashboards/institution/trainees.js"></script>
+<script src="js/dashboards/institution/wellness.js"></script>
+<script src="js/dashboards/institution/certifications.js"></script>
+<script src="js/dashboards/institution/skills.js"></script>
+<script src="js/dashboards/institution/skills-gap.js"></script>
+<script src="js/dashboards/institution/compliance.js"></script>
+<script src="js/dashboards/institution/succession.js"></script>
+<script src="js/dashboards/institution/instructors.js"></script>
+<script src="js/dashboards/institution/marketplace.js"></script>
+<script src="js/dashboards/institution/budgets.js"></script>
+<script src="js/dashboards/institution/campuses.js"></script>
+<script src="js/dashboards/institution/reports.js"></script>
+<script src="js/dashboards/institution/report-builder.js"></script>
+<script src="js/dashboards/institution/announcements.js"></script>
+<script src="js/dashboards/institution/integrations.js"></script>
+<script src="js/dashboards/institution/security.js"></script>
+<script src="js/dashboards/institution/operations.js"></script>
+<script src="js/dashboards/institution/branding.js"></script>
+<script src="js/dashboards/institution/profile.js"></script>
+<script src="js/dashboards/institution/modals.js"></script>
+<script src="js/dashboards/institution/actions.js"></script>
+<script src="js/dashboards/institution/index.js"></script>
+
+<<!-- modals split from 13-modals.js -->
+<script src="13a-modals-helpers.js"></script>
+<script src="13b-modals-admin.js"></script>
+<script src="13c-modals-learner.js"></script>
+<script src="13d-modals-expert.js"></script>
+<script src="13e-modals-consultation.js"></script>
+<script src="13f-modals-institution-settings.js"></script>
+<script src="13g-modals-institution-academic.js"></script>
+<script src="13h-modals-profile.js"></script>
+
+<!-- NEW: missing pieces referenced by 14-actions.js -->
+<script src="13i-modals-admin-institution.js"></script>
+<script src="13j-expert-settings.js"></script>
+<script src="12a-eschool-course-detail.js"></script>
+<script src="12b-eschool-course-player.js"></script>
+<script src="15-chat.js"></script>
+
+<!-- dispatcher (load last so all handlers resolve) -->
+<script src="js/14-actions.js"></script>
+<script src="js/15-router.js"></script>
