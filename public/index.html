@@ -32,7 +32,15 @@
   <script src="/socket.io/socket.io.js"></script>
 
   <!-- App styles -->
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="css/01-tokens.css">
+<link rel="stylesheet" href="css/02-base.css">
+<link rel="stylesheet" href="css/03-components.css">
+<link rel="stylesheet" href="css/04-surfaces.css">
+<link rel="stylesheet" href="css/05-overlays.css">
+<link rel="stylesheet" href="css/06-marketing.css">
+<link rel="stylesheet" href="css/07-shell.css">
+<link rel="stylesheet" href="css/08-final.css">
+<link rel="stylesheet" href="css/09-extras.css">
 
   <!-- Avoid flash of unstyled theme: apply saved dark mode before paint -->
   <script>
@@ -159,9 +167,6 @@
 <script src="/dashboards/user/claims.js"></script>
 <script src="/dashboards/user/support.js"></script>
 <script src="/dashboards/user/profile.js"></script>
-<script src="/dashboards/user/ai-assistant.js"></script>
-<script src="/dashboards/user/opportunities.js"></script>
-
 <!-- Admin modules — index.js MUST be first -->
 <script src="js/dashboards/admin/index.js"></script>
 <script src="js/dashboards/admin/overview.js"></script>
@@ -229,6 +234,23 @@
 <script src="js/dashboards/institution/actions.js"></script>
 <script src="js/dashboards/institution/index.js"></script>
 
-<script src="js/13-modals.js"></script>
-<script src="js/14-actions.js"></script>
+<<!-- modals split from 13-modals.js -->
+<script src="13a-modals-helpers.js"></script>
+<script src="13b-modals-admin.js"></script>
+<script src="13c-modals-learner.js"></script>
+<script src="13d-modals-expert.js"></script>
+<script src="13e-modals-consultation.js"></script>
+<script src="13f-modals-institution-settings.js"></script>
+<script src="13g-modals-institution-academic.js"></script>
+<script src="13h-modals-profile.js"></script>
+
+<!-- NEW: missing pieces referenced by 14-actions.js -->
+<script src="13i-modals-admin-institution.js"></script>
+<script src="13j-expert-settings.js"></script>
+<script src="12a-eschool-course-detail.js"></script>
+<script src="12b-eschool-course-player.js"></script>
+<script src="15-chat.js"></script>
+
+<!-- dispatcher (load last so all handlers resolve) -->
+<script src="14-actions.js"></script>
 <script src="js/15-router.js"></script>
