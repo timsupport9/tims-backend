@@ -1,0 +1,335 @@
+/* ============================================================
+   ExpertHub 2.0 � 10. PROSE & ICONS
+   ------------------------------------------------------------
+   Loads after 09. Depends on 01-tokens.css. Uses logical
+   properties throughout � RTL-ready by default.
+   ============================================================ */
+
+/* ============================================================
+   10.01 � PROSE CONTAINER
+   ============================================================ */
+.prose {
+  max-width: 72ch;
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+}
+.prose > * + * { margin-block-start: 1.25em; }
+.prose > :first-child { margin-block-start: 0; }
+.prose > :last-child  { margin-block-end: 0; }
+
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  color: var(--heading);
+  margin-block: 1.6em .6em;
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tight);
+}
+.prose h1 { font-size: var(--fs-4xl); }
+.prose h2 { font-size: var(--fs-3xl); }
+.prose h3 { font-size: var(--fs-2xl); }
+.prose h4 { font-size: var(--fs-xl); }
+.prose h5 { font-size: var(--fs-lg); }
+.prose h6 { font-size: var(--fs-md); }
+
+.prose p { margin: 0; }
+.prose strong { font-weight: var(--fw-bold); color: var(--text); }
+.prose em     { font-style: italic; }
+.prose small  { font-size: var(--fs-sm); }
+
+.prose a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.prose a:hover { color: var(--brand-700); }
+
+.prose ul, .prose ol {
+  padding-inline-start: 1.5em;
+  margin-block: 1em;
+}
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li + li { margin-block-start: .4em; }
+.prose li > p   { margin: 0; }
+.prose li > ul, .prose li > ol { margin-block: .4em; }
+
+.prose blockquote {
+  border-inline-start: 3px solid var(--brand);
+  padding: .6em 1em;
+  margin-block: 1.5em;
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-3);
+  font-style: italic;
+}
+.prose blockquote > :first-child { margin-block-start: 0; }
+.prose blockquote > :last-child  { margin-block-end: 0; }
+
+.prose code {
+  background: var(--surface-2);
+  padding: .15em .4em;
+  border-radius: 4px;
+  font-size: .9em;
+  color: var(--brand-700);
+  font-family: 'Fira Code', ui-monospace, Menlo, monospace;
+}
+html.dark .prose code { color: var(--brand-200); }
+
+.prose pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+  overflow-x: auto;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.prose img {
+  border-radius: var(--radius);
+  margin-block: 1.5em;
+  max-width: 100%;
+  height: auto;
+}
+.prose figure { margin-block: 1.5em; }
+.prose figcaption {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+  margin-block-start: .5em;
+}
+
+.prose hr { margin-block: 2em; border: 0; height: 1px; background: var(--border); }
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-block: 1.5em;
+  font-size: var(--fs-sm);
+}
+.prose th, .prose td {
+  padding: .6em .8em;
+  border: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+.prose th { background: var(--surface-2); font-weight: var(--fw-semibold); }
+
+.prose mark { background: var(--warn-100); color: var(--warn-700); padding: 1px 4px; border-radius: 4px; }
+.prose kbd {
+  background: var(--surface-3);
+  border: 1px solid var(--border-2);
+  border-block-end-width: 2px;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: .78em;
+  font-weight: var(--fw-semibold);
+}
+
+.prose .lead { font-size: var(--fs-lg); color: var(--text-muted); }
+
+/* ============================================================
+   10.02 � CODE BLOCK (with header, copy, optional line numbers)
+   ============================================================ */
+.code-block {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--surface-3);
+  border-block-end: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  gap: 10px;
+}
+.code-block-lang { text-transform: uppercase; letter-spacing: .06em; }
+.code-block-copy {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-family: inherit;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all var(--t);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.code-block-copy:hover { background: var(--surface-4); color: var(--text); }
+.code-block-copy.copied { color: var(--accent); }
+
+.code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-4);
+  font-size: var(--fs-sm);
+  overflow-x: auto;
+}
+
+/* Line numbers */
+.code-block.with-lines pre > code {
+  counter-reset: line;
+}
+.code-block.with-lines pre > code > span {
+  display: block;
+  counter-increment: line;
+  position: relative;
+  padding-inline-start: 2.75em;
+}
+.code-block.with-lines pre > code > span::before {
+  content: counter(line);
+  position: absolute;
+  inset-inline-start: 0;
+  width: 2em;
+  text-align: end;
+  color: var(--text-faint);
+  user-select: none;
+}
+.code-block.with-lines pre > code > span.highlight {
+  background: rgba(99,102,241,.1);
+  border-inline-start: 3px solid var(--brand);
+}
+
+/* ============================================================
+   10.03 � SVG ICON SIZING
+   ============================================================ */
+.icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  stroke: none;
+  overflow: visible;
+}
+.icon-xs  { width: .75em;  height: .75em; }
+.icon-sm  { width: .875em; height: .875em; }
+.icon-md  { width: 1em;    height: 1em; }
+.icon-lg  { width: 1.25em; height: 1.25em; }
+.icon-xl  { width: 1.5em;  height: 1.5em; }
+.icon-2xl { width: 2em;    height: 2em; }
+.icon-3xl { width: 2.5em;  height: 2.5em; }
+
+.icon-fill   { fill: currentColor; stroke: none; }
+.icon-stroke {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-spin  { animation: spin 1s linear infinite; }
+.icon-flip-h { transform: scaleX(-1); }
+.icon-flip-v { transform: scaleY(-1); }
+.icon-flip-both { transform: scale(-1, -1); }
+[dir="rtl"] .icon-directional { transform: scaleX(-1); }
+
+/* Inline text icon alignment */
+.icon-baseline { vertical-align: -0.125em; }
+.icon-text-top { vertical-align: text-top; }
+
+/* ============================================================
+   10.04 � ICON WITH LABEL
+   ============================================================ */
+.icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon-label .icon { color: var(--text-muted); }
+.icon-label.is-active .icon { color: var(--brand); }
+
+.icon-label-stacked {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  text-align: center;
+}
+.icon-label-stacked .icon { font-size: 1.5rem; }
+
+/* ============================================================
+   10.05 � ICON WITH BADGE
+   ============================================================ */
+.icon-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-badge {
+  position: absolute;
+  inset-block-start: -6px;
+  inset-inline-end: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--surface);
+  line-height: 1;
+}
+.icon-badge-success { background: var(--accent); }
+.icon-badge-warn    { background: var(--warn); }
+.icon-badge-info    { background: var(--info); }
+
+/* ============================================================
+   10.06 � BUTTON WITH ICON POSITIONING
+   ============================================================ */
+.btn > .icon:first-child           { margin-inline-end: 6px; }
+.btn > .icon:last-child            { margin-inline-start: 6px; }
+.btn > .icon:only-child            { margin: 0; }
+.btn.btn-icon-left  { padding-inline-start: 16px; }
+.btn.btn-icon-right { padding-inline-end: 16px; }
+
+/* ============================================================
+   10.07 � ICON-ONLY BUTTON (square, minimal chrome)
+   ============================================================ */
+.btn-ghost-icon {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  padding: 8px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  transition: all var(--t);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.btn-ghost-icon:hover  { background: var(--surface-2); color: var(--text); }
+.btn-ghost-icon.active { background: var(--brand-50); color: var(--brand); }
+.btn-ghost-icon.sm     { padding: 6px; border-radius: 6px; }
+.btn-ghost-icon.lg     { padding: 12px; border-radius: 10px; font-size: 1.15rem; }
+
+/* ============================================================
+   END OF 10-prose-and-icons.css
+   ============================================================ */

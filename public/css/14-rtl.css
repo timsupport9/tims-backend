@@ -1,0 +1,393 @@
+/* ============================================================
+   ExpertHub 2.0 � 14. RTL OVERRIDES
+   ------------------------------------------------------------
+   Full flip of every physical-property rule in 02�13 for
+   [dir="rtl"]. Loads after 13.
+   ============================================================ */
+
+/* ============================================================
+   14.01 � BASE
+   ============================================================ */
+[dir="rtl"] body { text-align: start; }
+[dir="rtl"] .text-left  { text-align: right; }
+[dir="rtl"] .text-right { text-align: left; }
+[dir="rtl"] .float-left  { float: right; }
+[dir="rtl"] .float-right { float: left; }
+
+/* ============================================================
+   14.02 � APP SHELL / SIDEBAR
+   ============================================================ */
+[dir="rtl"] .sidebar {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+[dir="rtl"] .sidebar-item { text-align: right; }
+[dir="rtl"] .sidebar-item-active::before {
+  left: auto;
+  right: -14px;
+  border-radius: 3px 0 0 3px;
+}
+[dir="rtl"] .sidebar-subnav { padding-left: 0; padding-right: 32px; }
+[dir="rtl"] .sidebar-chevron { transform: scaleX(-1); }
+[dir="rtl"] .sidebar-item[aria-expanded="true"] .sidebar-chevron {
+  transform: scaleX(-1) rotate(90deg);
+}
+[dir="rtl"] .sidebar-subnav-l2 { padding-left: 0; padding-right: calc(32px + 16px); }
+[dir="rtl"] .sidebar-logo { margin-right: 0; margin-left: auto; }
+
+/* Mobile sidebar drawer in RTL slides from the right */
+@media (max-width: 900px) {
+  [dir="rtl"] .sidebar {
+    left: auto;
+    right: 0;
+    transform: translateX(100%);
+  }
+  [dir="rtl"] .sidebar.open { transform: translateX(0); }
+}
+
+/* ============================================================
+   14.03 � TOPBAR / DROPDOWN / NOTIFICATIONS
+   ============================================================ */
+[dir="rtl"] .notif-badge { right: auto; left: -4px; }
+[dir="rtl"] .dropdown { right: auto; left: 0; }
+[dir="rtl"] .notif-panel { right: auto; left: 20px; }
+[dir="rtl"] .topbar-search kbd { direction: ltr; unicode-bidi: embed; }
+[dir="rtl"] .topbar-user { direction: ltr; unicode-bidi: embed; }
+[dir="rtl"] .breadcrumbs span:not(:last-child)::after {
+  content: '�';
+  margin-left: 0;
+  margin-right: 8px;
+}
+[dir="rtl"] .topbar-actions { flex-direction: row-reverse; }
+[dir="rtl"] .topbar-search .icon { left: auto; right: 12px; }
+[dir="rtl"] .topbar-search .form-input { padding-left: 12px; padding-right: 38px; }
+
+/* ============================================================
+   14.04 � DRAWER
+   ============================================================ */
+[dir="rtl"] .drawer {
+  right: auto;
+  left: 0;
+  transform: translateX(-100%);
+  animation: slideInLeft .28s var(--ease-out);
+}
+[dir="rtl"] .drawer.left {
+  left: auto;
+  right: 0;
+  animation: slideInRight .28s var(--ease-out);
+}
+[dir="rtl"] .drawer.open { transform: translateX(0); }
+
+/* ============================================================
+   14.05 � TOAST
+   ============================================================ */
+[dir="rtl"] #toast-container { right: auto; left: 20px; }
+[dir="rtl"] #toast-container.bottom-right { left: 20px; right: auto; }
+[dir="rtl"] #toast-container.bottom-left { left: auto; right: 20px; }
+[dir="rtl"] .toast {
+  border-left: 0;
+  border-right: 4px solid var(--brand);
+}
+[dir="rtl"] .toast-success { border-right-color: var(--accent); border-left: 0; }
+[dir="rtl"] .toast-error   { border-right-color: var(--danger); border-left: 0; }
+[dir="rtl"] .toast-warning { border-right-color: var(--warn);   border-left: 0; }
+[dir="rtl"] .toast-info    { border-right-color: var(--info);   border-left: 0; }
+[dir="rtl"] .toast-close   { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .toast-icon    { margin-right: 0; margin-left: 10px; }
+
+/* ============================================================
+   14.06 � MODAL
+   ============================================================ */
+[dir="rtl"] .modal-header,
+[dir="rtl"] dialog.dialog .dialog-header { flex-direction: row-reverse; }
+[dir="rtl"] .modal-footer,
+[dir="rtl"] dialog.dialog .dialog-footer { justify-content: flex-start; }
+[dir="rtl"] .modal-close { margin-left: 0; margin-right: auto; }
+
+/* ============================================================
+   14.07 � BUTTONS
+   ============================================================ */
+[dir="rtl"] .btn > .icon:first-child { margin-right: 0; margin-left: 6px; }
+[dir="rtl"] .btn > .icon:last-child  { margin-left: 0;  margin-right: 6px; }
+[dir="rtl"] .btn > .icon:only-child  { margin: 0; }
+[dir="rtl"] .btn-group > .btn:first-child {
+  border-top-right-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+[dir="rtl"] .btn-group > .btn:last-child {
+  border-top-left-radius: var(--radius-sm);
+  border-bottom-left-radius: var(--radius-sm);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+[dir="rtl"] .btn-group > .btn + .btn { margin-left: 0; margin-right: -1px; }
+
+/* ============================================================
+   14.08 � FORMS
+   ============================================================ */
+[dir="rtl"] .form-input,
+[dir="rtl"] .form-select,
+[dir="rtl"] .form-textarea { text-align: right; }
+[dir="rtl"] .form-input-icon-left  { padding-left: 12px; padding-right: 38px; }
+[dir="rtl"] .form-input-icon-right { padding-right: 12px; padding-left: 38px; }
+[dir="rtl"] .form-input-icon-left  ~ .form-icon { left: auto; right: 12px; }
+[dir="rtl"] .form-input-icon-right ~ .form-icon { right: auto; left: 12px; }
+[dir="rtl"] .form-select {
+  background-position: left 12px center;
+  padding-left: 36px;
+  padding-right: 12px;
+}
+[dir="rtl"] .form-checkbox,
+[dir="rtl"] .form-radio { margin-right: 0; margin-left: 8px; }
+[dir="rtl"] .form-label  { text-align: right; }
+[dir="rtl"] .form-help   { text-align: right; }
+[dir="rtl"] .form-error  { text-align: right; }
+[dir="rtl"] .form-switch .form-switch-track { margin-right: 0; margin-left: 10px; }
+[dir="rtl"] .form-switch-thumb { left: auto; right: 2px; }
+[dir="rtl"] .form-switch input:checked + .form-switch-track .form-switch-thumb {
+  right: auto;
+  left: 2px;
+}
+
+/* ============================================================
+   14.09 � TABLES
+   ============================================================ */
+[dir="rtl"] .data-table th,
+[dir="rtl"] .data-table td { text-align: right; }
+[dir="rtl"] .data-table th:first-child,
+[dir="rtl"] .data-table td:first-child { padding-left: 0; padding-right: 16px; }
+[dir="rtl"] .data-table th:last-child,
+[dir="rtl"] .data-table td:last-child { padding-right: 0; padding-left: 16px; }
+[dir="rtl"] .sort-indicator { margin-left: 0; margin-right: 6px; }
+[dir="rtl"] .data-table .checkbox-cell { padding-left: 0; padding-right: 16px; }
+[dir="rtl"] .user-cell { flex-direction: row-reverse; }
+[dir="rtl"] .user-cell-text { text-align: right; }
+[dir="rtl"] .actions-cell { justify-content: flex-start; }
+[dir="rtl"] .table-pagination { flex-direction: row-reverse; }
+[dir="rtl"] .pagination-arrow-prev .icon,
+[dir="rtl"] .pagination-arrow-next .icon { transform: scaleX(-1); }
+
+/* ============================================================
+   14.10 � CARDS / BADGES / ALERTS
+   ============================================================ */
+[dir="rtl"] .card-header { flex-direction: row-reverse; }
+[dir="rtl"] .card-actions { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .badge-dot { margin-right: 0; margin-left: 6px; }
+[dir="rtl"] .badge > .icon:first-child { margin-right: 0; margin-left: 4px; }
+
+[dir="rtl"] .alert { border-left: 0; border-right: 4px solid var(--info); }
+[dir="rtl"] .alert-success { border-right-color: var(--accent); }
+[dir="rtl"] .alert-warning { border-right-color: var(--warn); }
+[dir="rtl"] .alert-danger  { border-right-color: var(--danger); }
+[dir="rtl"] .alert-info    { border-right-color: var(--info); }
+[dir="rtl"] .alert-close   { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .alert-icon    { margin-right: 0; margin-left: 10px; }
+
+/* ============================================================
+   14.11 � TABS / PAGINATION / AVATAR
+   ============================================================ */
+[dir="rtl"] .tabs-list { flex-direction: row-reverse; }
+[dir="rtl"] .tab-indicator {
+  transform-origin: right center;
+}
+[dir="rtl"] .avatar-group > .avatar + .avatar { margin-left: 0; margin-right: -8px; }
+[dir="rtl"] .avatar-status {
+  right: auto;
+  left: 0;
+  border-left: 0;
+  border-right: 2px solid var(--surface);
+}
+
+/* ============================================================
+   14.12 � ACCORDION / TOOLTIP / POPOVER / MENU
+   ============================================================ */
+[dir="rtl"] .accordion-header { flex-direction: row-reverse; }
+[dir="rtl"] .accordion-icon { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .accordion-icon .icon { transform: scaleX(-1); }
+
+[dir="rtl"] .tooltip::before {
+  left: auto;
+  right: 50%;
+  transform: translateX(50%);
+}
+[dir="rtl"] .tooltip-left::before  { right: auto; left: 100%; }
+[dir="rtl"] .tooltip-right::before { left: auto; right: 100%; }
+
+[dir="rtl"] .popover-arrow { left: auto; right: 16px; }
+
+[dir="rtl"] .menu-item .icon { margin-right: 0; margin-left: 10px; }
+[dir="rtl"] .menu-shortcut { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .menu-submenu-arrow { margin-left: 0; margin-right: auto; transform: scaleX(-1); }
+[dir="rtl"] .menu-group-label { text-align: right; }
+
+/* ============================================================
+   14.13 � PROSE / CODE (from 10)
+   ============================================================ */
+[dir="rtl"] .prose ul,
+[dir="rtl"] .prose ol { padding-inline-start: 1.5em; padding-inline-end: 0; }
+[dir="rtl"] .prose blockquote {
+  border-inline-start: 3px solid var(--brand);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+[dir="rtl"] .prose th,
+[dir="rtl"] .prose td { text-align: right; }
+[dir="rtl"] .prose pre,
+[dir="rtl"] .prose code,
+[dir="rtl"] .prose kbd,
+[dir="rtl"] .code-block pre,
+[dir="rtl"] .code-block code { direction: ltr; text-align: left; }
+[dir="rtl"] .code-block-header { flex-direction: row-reverse; }
+[dir="rtl"] .code-block-copy .icon { margin-right: 0; margin-left: 5px; }
+[dir="rtl"] .code-block.with-lines pre > code > span { padding-inline-start: 0; padding-inline-end: 2.75em; }
+[dir="rtl"] .code-block.with-lines pre > code > span::before {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  text-align: start;
+}
+[dir="rtl"] .code-block.with-lines pre > code > span.highlight {
+  border-inline-start: 0;
+  border-inline-end: 3px solid var(--brand);
+}
+
+/* ============================================================
+   14.14 � ICONS (from 10)
+   ============================================================ */
+[dir="rtl"] .icon-directional { transform: scaleX(-1); }
+[dir="rtl"] .icon-label .icon { margin-right: 0; }
+[dir="rtl"] .icon-badge {
+  inset-inline-end: auto;
+  inset-inline-start: -6px;
+}
+[dir="rtl"] .icon-label-stacked { align-items: center; }
+[dir="rtl"] .btn-ghost-icon .icon { transform: none; }
+
+/* ============================================================
+   14.15 � ADVANCED FORMS (from 11)
+   ============================================================ */
+[dir="rtl"] .combobox-input {
+  padding-left: 38px;
+  padding-right: 14px;
+  text-align: right;
+}
+[dir="rtl"] .combobox-clear {
+  inset-inline-end: auto;
+  inset-inline-start: 34px;
+}
+[dir="rtl"] .combobox-toggle {
+  inset-inline-end: auto;
+  inset-inline-start: 6px;
+}
+[dir="rtl"] .combobox-option[aria-selected="true"]::after {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+[dir="rtl"] .combobox-option-hint { margin-inline-start: 0; margin-inline-end: auto; }
+
+[dir="rtl"] .multiselect-control {
+  padding-left: 38px;
+  padding-right: 10px;
+}
+[dir="rtl"] .multiselect-toggle {
+  inset-inline-end: auto;
+  inset-inline-start: 8px;
+}
+[dir="rtl"] .multiselect-tag { padding-inline: 4px 10px; }
+[dir="rtl"] .multiselect-tag button { order: -1; }
+
+[dir="rtl"] .datalist-indicator {
+  inset-inline-end: auto;
+  inset-inline-start: 12px;
+}
+[dir="rtl"] .datalist-wrap .form-input {
+  padding-inline-end: 12px;
+  padding-inline-start: 36px;
+}
+
+[dir="rtl"] .datepicker-header { flex-direction: row-reverse; }
+[dir="rtl"] .datepicker-nav .icon { transform: scaleX(-1); }
+[dir="rtl"] .datepicker-footer { flex-direction: row-reverse; }
+
+[dir="rtl"] .colorpicker-trigger { padding-inline: 12px 6px; }
+[dir="rtl"] .colorpicker-panel {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
+/* ============================================================
+   14.16 � ADVANCED COMPONENTS (from 12)
+   ============================================================ */
+[dir="rtl"] .carousel-nav-prev .icon,
+[dir="rtl"] .carousel-nav-next .icon { transform: scaleX(-1); }
+[dir="rtl"] .carousel-caption { text-align: right; }
+[dir="rtl"] .carousel-dots { transform: translateX(50%); }
+
+[dir="rtl"] .sortable-item.dragging { transform: scale(1.02); }
+[dir="rtl"] .sortable-handle { transform: none; }
+
+[dir="rtl"] dialog.dialog .dialog-header { flex-direction: row-reverse; }
+[dir="rtl"] dialog.dialog .dialog-footer { justify-content: flex-start; }
+[dir="rtl"] dialog.dialog .dialog-close  { margin-left: 0; margin-right: auto; }
+
+[dir="rtl"] .details > summary::after {
+  margin-inline-start: 0;
+  margin-inline-end: 8px;
+}
+[dir="rtl"] .details > summary { flex-direction: row-reverse; }
+
+[dir="rtl"] .command-palette { direction: rtl; }
+[dir="rtl"] .command-input-wrap .icon { margin-right: 0; }
+[dir="rtl"] .command-item-label { text-align: right; }
+[dir="rtl"] .command-footer { flex-direction: row-reverse; }
+
+[dir="rtl"] .stepper-v-item { flex-direction: row-reverse; }
+[dir="rtl"] .stepper-v-line { inset-inline-start: auto; inset-inline-end: 16px; }
+[dir="rtl"] .stepper-v-body { text-align: right; }
+
+[dir="rtl"] .ring-progress-value { letter-spacing: 0; }
+
+/* ============================================================
+   14.17 � DATA DISPLAY (from 13)
+   ============================================================ */
+[dir="rtl"] .heatmap-label { padding-inline-end: 0; padding-inline-start: 6px; }
+[dir="rtl"] .chart-container .apexcharts-tooltip,
+[dir="rtl"] .chart-container .chartjs-tooltip { text-align: right; }
+
+[dir="rtl"] .sparkline { direction: ltr; }
+[dir="rtl"] .bar-chart-segment:first-child {
+  border-start-start-radius: 3px;
+  border-start-end-radius: 3px;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+[dir="rtl"] .bar-chart-segment:last-child {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  border-end-start-radius: 8px;
+  border-end-end-radius: 8px;
+}
+[dir="rtl"] .bar-chart-segment:only-child {
+  border-radius: 8px 8px 3px 3px;
+}
+
+[dir="rtl"] .data-table.respond td { text-align: start; }
+[dir="rtl"] .data-table.respond td::before { text-align: end; }
+[dir="rtl"] .data-table.respond td.actions-cell { justify-content: flex-start; }
+[dir="rtl"] .data-table.respond td .user-cell { justify-content: flex-start; }
+
+/* ============================================================
+   14.18 � KEYFRAMES (mirror animations that slide physically)
+   ============================================================ */
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ============================================================
+   END OF 14-rtl.css
+   ============================================================ */

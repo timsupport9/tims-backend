@@ -1,0 +1,553 @@
+/* ============================================================
+   ExpertHub 2.0 � 15. SYSTEM MODES & MODERN CSS
+   ------------------------------------------------------------
+   @property, forced-colors, reduced transparency, scroll-driven
+   animations, view transitions, snackbar, multi-level subnav,
+   container queries, :has() helpers, extra toast positions.
+   Loads after 14. Additive � no file edits required.
+   ============================================================ */
+
+/* ============================================================
+   15.01 � @PROPERTY REGISTRATIONS
+   ------------------------------------------------------------
+   Typed custom properties make ring progress and gradient
+   angles animatable. Falls back gracefully where unsupported.
+   ============================================================ */
+@property --value {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+@property --angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@property --ring-color {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: #6366f1;
+}
+@property --scale {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+@property --rise {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* ============================================================
+   15.02 � FORCED-COLORS MODE (Windows High Contrast)
+   ------------------------------------------------------------
+   Re-assert system colors on components whose backgrounds,
+   borders, or shadows are hidden by the high-contrast override.
+   ============================================================ */
+@media (forced-colors: active) {
+  /* Global focus must use the system highlight ring */
+  *:focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+
+  /* Buttons: keep their shape visible */
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger,
+  .btn-ghost-icon {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+    forced-color-adjust: auto;
+  }
+  .btn:disabled,
+  .btn[disabled] { color: GrayText; border-color: GrayText; }
+
+  /* Inputs, selects, textareas */
+  .form-input,
+  .form-select,
+  .form-textarea,
+  .combobox-input,
+  .multiselect-control,
+  .multiselect-native,
+  .colorpicker-trigger {
+    border: 1px solid CanvasText;
+    background: Field;
+    color: FieldText;
+  }
+
+  /* Cards / panels / dialogs must keep a visible frame */
+  .card,
+  .panel,
+  .modal,
+  dialog.dialog,
+  .command-palette,
+  .dropdown,
+  .popover,
+  .datepicker,
+  .colorpicker-panel,
+  .toast,
+  .alert {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+    forced-color-adjust: auto;
+  }
+
+  /* Tables */
+  .data-table th,
+  .data-table td { border: 1px solid CanvasText; }
+  .data-table thead th { background: Canvas; color: CanvasText; }
+
+  /* Badges / status */
+  .badge,
+  .status-dot,
+  .notif-badge { forced-color-adjust: auto; }
+
+  /* Progress rings keep visible ring */
+  .ring-progress { forced-color-adjust: none; }
+
+  /* Charts, sparklines, heatmaps stay system-colored */
+  .heatmap-cell { border: 1px solid CanvasText; }
+  .sparkline-line { stroke: CanvasText; }
+
+  /* Disabled affordances */
+  :disabled { color: GrayText; }
+
+  /* Selected states */
+  ::selection { background: Highlight; color: HighlightText; }
+}
+
+/* ============================================================
+   15.03 � PREFERS-REDUCED-TRANSPARENCY
+   ------------------------------------------------------------
+   Replace frosted glass with opaque surfaces.
+   ============================================================ */
+@media (prefers-reduced-transparency: reduce) {
+  dialog.dialog::backdrop,
+  .modal-backdrop,
+  .command-overlay,
+  .drawer-backdrop {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(0, 0, 0, .78) !important;
+  }
+  .glass,
+  .glass-panel,
+  .topbar.glass,
+  .sidebar.glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--surface) !important;
+    border-color: var(--border) !important;
+  }
+}
+
+/* ============================================================
+   15.04 � SCROLL-DRIVEN ANIMATIONS
+   ------------------------------------------------------------
+   Pure-CSS scroll progress + reveal. Zero JS. Guarded by
+   @supports so older engines stay static.
+   ============================================================ */
+@supports (animation-timeline: scroll()) {
+  /* Page-level reading progress bar */
+  .scroll-progress {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline: 0;
+    height: 3px;
+    background: var(--brand);
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+    z-index: 9000;
+    animation: scrollProgress auto linear both;
+    animation-timeline: scroll(root block);
+  }
+  [dir="rtl"] .scroll-progress { transform-origin: 100% 50%; }
+
+  @keyframes scrollProgress {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+
+  /* Reveal-on-scroll utility */
+  .reveal {
+    animation: revealUp both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 60%;
+  }
+  @keyframes revealUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Sticky-header shadow appears as the page scrolls */
+  .topbar.scroll-shadow {
+    animation: topbarShadow both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 120px;
+  }
+  @keyframes topbarShadow {
+    from { box-shadow: none; }
+    to   { box-shadow: var(--shadow-md); }
+  }
+
+  /* Named view-timeline for a specific hero (opt-in) */
+  .hero {
+    view-timeline: --hero block;
+  }
+  .hero-parallax {
+    animation: heroParallax both linear;
+    animation-timeline: --hero;
+    animation-range: entry 0% exit 100%;
+  }
+  @keyframes heroParallax {
+    from { transform: translateY(0); }
+    to   { transform: translateY(-40px); }
+  }
+}
+
+/* ============================================================
+   15.05 � VIEW TRANSITIONS
+   ------------------------------------------------------------
+   Cross-document navigation + JS-triggered element transitions.
+   ============================================================ */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: .25s;
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(root) { animation-name: vtFadeOut; }
+::view-transition-new(root) { animation-name: vtFadeIn;  }
+
+@keyframes vtFadeOut { to   { opacity: 0; } }
+@keyframes vtFadeIn  { from { opacity: 0; } }
+
+/* Give a component a stable name so it morphs across pages */
+.vt-card   { view-transition-name: card; }
+.vt-avatar { view-transition-name: avatar; }
+.vt-title  { view-transition-name: title; }
+
+/* Prevent morph on certain elements */
+.no-view-transition { view-transition-name: none; }
+
+/* Reduce-motion: cut transitions to an instant cut */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none !important; }
+  .scroll-progress,
+  .reveal,
+  .hero-parallax { animation: none !important; }
+}
+
+/* ============================================================
+   15.06 � SNACKBAR (single action, inline, auto-dismiss)
+   ------------------------------------------------------------
+   Lighter than a toast: always bottom-center by default,
+   single action, no icon. Pairs with aria-live="polite".
+   ============================================================ */
+.snackbar {
+  position: fixed;
+  inset-block-end: 24px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 12px 12px 12px 18px;
+  background: var(--surface-inverse, #111827);
+  color: #f9fafb;
+  border-radius: var(--radius-sm, 10px);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,.2));
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  z-index: 9600;
+  animation: snackbarIn .2s var(--ease-out);
+}
+.snackbar.is-leaving { animation: snackbarOut .18s var(--ease-in) forwards; }
+
+.snackbar-message { flex: 1; min-width: 0; }
+
+.snackbar-action {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  color: #c7d2fe;
+  font-weight: 600;
+  font-size: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--t, .2s), color var(--t, .2s);
+}
+.snackbar-action:hover {
+  background: rgba(255,255,255,.08);
+  color: #fff;
+}
+
+.snackbar-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  color: rgba(255,255,255,.65);
+  padding: 6px;
+  border-radius: 6px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+}
+.snackbar-close:hover { color: #fff; background: rgba(255,255,255,.08); }
+
+@keyframes snackbarIn {
+  from { opacity: 0; transform: translate(-50%, 16px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes snackbarOut {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to   { opacity: 0; transform: translate(-50%, 16px); }
+}
+
+[dir="rtl"] .snackbar { padding: 12px 18px 12px 12px; }
+[dir="rtl"] .snackbar-action { order: -1; }
+
+/* ============================================================
+   15.07 � MULTI-LEVEL SUB-NAVIGATION (3rd level + nested)
+   ------------------------------------------------------------
+   Extends .sidebar-subnav from 02 with L3+ nesting, and adds
+   flyout sub-menus for compact mode.
+   ============================================================ */
+.sidebar-subnav-l3 {
+  list-style: none;
+  margin: 0;
+  padding-inline-start: calc(32px + 16px + 14px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+[dir="rtl"] .sidebar-subnav-l3 { padding-inline-start: 0; padding-inline-end: calc(32px + 16px + 14px); }
+
+.sidebar-subnav-l3 .sidebar-item {
+  font-size: var(--fs-xs);
+  padding-block: 6px;
+  padding-inline: 10px;
+  color: var(--text-muted);
+  border-radius: 6px;
+}
+.sidebar-subnav-l3 .sidebar-item:hover { color: var(--text); background: var(--surface-2); }
+.sidebar-subnav-l3 .sidebar-item-active {
+  color: var(--brand);
+  font-weight: var(--fw-semibold);
+  background: var(--brand-50);
+}
+.sidebar-subnav-l3 .sidebar-item-active::before { display: none; }
+
+/* Vertical guide rail linking levels */
+.sidebar-subnav-l2,
+.sidebar-subnav-l3 {
+  position: relative;
+}
+.sidebar-subnav-l2::before,
+.sidebar-subnav-l3::before {
+  content: '';
+  position: absolute;
+  inset-block: 4px 4px;
+  inset-inline-start: 22px;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+[dir="rtl"] .sidebar-subnav-l2::before,
+[dir="rtl"] .sidebar-subnav-l3::before {
+  inset-inline-start: auto;
+  inset-inline-end: 22px;
+}
+
+/* Compact-mode flyout submenu */
+.sidebar.is-compact .sidebar-item[aria-expanded="true"] + .sidebar-subnav {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 100%;
+  min-width: 220px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown, 50);
+}
+[dir="rtl"] .sidebar.is-compact .sidebar-item[aria-expanded="true"] + .sidebar-subnav {
+  inset-inline-start: auto;
+  inset-inline-end: 100%;
+}
+
+/* ============================================================
+   15.08 � CONTAINER QUERIES
+   ------------------------------------------------------------
+   Components that adapt to their parent container, not the
+   viewport. Safe on older engines (rules simply don't apply).
+   ============================================================ */
+.card-grid,
+.data-card-list {
+  container-type: inline-size;
+  container-name: cardlist;
+}
+
+/* Card layout reflows by container width */
+@container cardlist (min-width: 640px) {
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4, 16px);
+  }
+}
+@container cardlist (min-width: 960px) {
+  .card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container cardlist (min-width: 1280px) {
+  .card-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Stat tiles: label on top once there is room */
+.stat-tile {
+  container-type: inline-size;
+  container-name: stat;
+}
+.stat-tile .stat-tile-head { display: flex; flex-direction: column; gap: 4px; }
+@container stat (min-width: 220px) {
+  .stat-tile .stat-tile-head {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+}
+
+/* Chart header stacks on narrow containers */
+.chart-container { container-type: inline-size; container-name: chart; }
+.chart-header { display: flex; flex-direction: column; gap: 8px; }
+@container chart (min-width: 420px) {
+  .chart-header { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+
+/* Data table in narrow container drops secondary columns */
+@container cardlist (max-width: 520px) {
+  .data-table .col-secondary { display: none; }
+}
+
+/* ============================================================
+   15.09 � :has() HELPERS
+   ------------------------------------------------------------
+   Parent-aware styling. Progressive enhancement.
+   ============================================================ */
+
+/* Card with a leading image: remove body top padding */
+.card:has(> .card-media:first-child) .card-body { padding-block-start: 0; }
+.card:has(> .card-media:first-child) { overflow: hidden; }
+
+/* Form field shows invalid styling at field level */
+.form-field:has(.form-input:user-invalid) .form-label { color: var(--danger); }
+.form-field:has(.form-input:user-invalid) .form-help  { color: var(--danger); }
+.form-field:has(.form-input:user-invalid) .form-input { border-color: var(--danger); box-shadow: var(--ring-danger); }
+
+/* Table row state driven by a checkbox inside it */
+.data-table tr:has(.row-select:checked) {
+  background: var(--brand-50);
+}
+.data-table tr:has(.row-select:checked) td { color: var(--brand-700); }
+
+/* Avatar group: only round the first avatar's leading edge */
+.avatar-group:has(> .avatar:nth-child(2)) > .avatar:first-child { z-index: 3; }
+
+/* Section without heading: drop the top gap */
+.section:not(:has(> h1, > h2, > h3)) { padding-block-start: 0; }
+
+/* Nav item with a child menu = show chevron */
+.sidebar-item:has(+ .sidebar-subnav) .sidebar-chevron { display: inline-block; }
+
+/* Command palette row that contains a kbd = monospace label */
+.command-item:has(> .command-shortcut) { font-family: inherit; }
+
+/* Toast container that has children is auto-visible */
+#toast-container:has(> .toast) { pointer-events: auto; }
+#toast-container:not(:has(> .toast)) { pointer-events: none; }
+
+/* Alert with action button gets a trailing slot */
+.alert:has(> .alert-action) { padding-inline-end: 8px; }
+
+/* Prose that begins with an image gets no top margin */
+.prose:has(> img:first-child) > img:first-child { margin-block-start: 0; }
+
+/* ============================================================
+   15.10 � EXTRA TOAST POSITIONS
+   ------------------------------------------------------------
+   Full 4-corner + 2-center grid. Base positions live in 05.
+   Only the new ones are declared here so 05 stays canonical.
+   ============================================================ */
+#toast-container.top-left {
+  inset-block-start: 20px;
+  inset-block-end: auto;
+  inset-inline-start: 20px;
+  inset-inline-end: auto;
+  align-items: flex-start;
+}
+#toast-container.top-right {
+  inset-block-start: 20px;
+  inset-block-end: auto;
+  inset-inline-end: 20px;
+  inset-inline-start: auto;
+  align-items: flex-end;
+}
+#toast-container.top-center {
+  inset-block-start: 20px;
+  inset-block-end: auto;
+  inset-inline-start: 50%;
+  inset-inline-end: auto;
+  transform: translateX(-50%);
+  align-items: center;
+}
+#toast-container.bottom-center {
+  inset-block-end: 20px;
+  inset-block-start: auto;
+  inset-inline-start: 50%;
+  inset-inline-end: auto;
+  transform: translateX(-50%);
+  align-items: center;
+}
+
+/* RTL-aware positioning */
+[dir="rtl"] #toast-container.top-left  { inset-inline-start: auto; inset-inline-end: 20px; }
+[dir="rtl"] #toast-container.top-right { inset-inline-end: auto;   inset-inline-start: 20px; }
+[dir="rtl"] #toast-container.top-center,
+[dir="rtl"] #toast-container.bottom-center {
+  transform: translateX(50%);
+}
+
+/* ============================================================
+   15.11 � MOTION SAFETY NET
+   ------------------------------------------------------------
+   Global reduced-motion fallback � beats every other rule.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   END OF 15-system-modes.css
+   ============================================================ */

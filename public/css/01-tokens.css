@@ -1,0 +1,230 @@
+/* ============================================================
+   ExpertHub 2.0 � 01. DESIGN TOKENS + KEYFRAMES
+   ------------------------------------------------------------
+   MUST load first. Single source of truth for:
+     � CSS custom properties (colors, spacing, type, z-index�)
+     � color-scheme (native form controls follow the theme)
+     � All @keyframes (used across 03�09 � defined here so no
+       file depends on another for keyframe resolution)
+   ============================================================ */
+
+:root {
+  /* Native form controls follow light mode */
+  color-scheme: light;
+
+  /* Brand */
+  --brand:#6366f1; --brand-600:#4f46e5; --brand-700:#4338ca; --brand-800:#3730a3;
+  --brand-50:#eef2ff; --brand-100:#e0e7ff; --brand-200:#c7d2fe;
+  --accent:#10b981; --accent-600:#059669; --accent-700:#047857;
+  --accent-50:#ecfdf5; --accent-100:#d1fae5;
+  --warn:#f59e0b; --warn-600:#d97706; --warn-700:#b45309;
+  --warn-50:#fffbeb; --warn-100:#fef3c7;
+  --danger:#ef4444; --danger-600:#dc2626; --danger-700:#b91c1c;
+  --danger-50:#fef2f2; --danger-100:#fee2e2;
+  --info:#0ea5e9; --info-600:#0284c7; --info-700:#0369a1;
+  --info-50:#f0f9ff; --info-100:#e0f2fe;
+  --purple:#8b5cf6; --purple-600:#7c3aed; --purple-700:#6d28d9;
+  --purple-50:#f5f3ff; --purple-100:#ede9fe;
+  --pink:#ec4899; --pink-600:#db2777;
+  --teal:#14b8a6; --teal-600:#0d9488;
+  --indigo:#4f46e5; --indigo-600:#4338ca;
+
+  /* Semantic colours */
+  --success:var(--accent);
+  --error:var(--danger);
+
+  /* Surfaces */
+  --bg:#f5f7fb; --surface:#ffffff; --surface-2:#f8fafc; --surface-3:#eef2f7;
+  --surface-4:#e2e8f0;
+  --overlay:rgba(15,23,42,.55);
+  --overlay-soft:rgba(15,23,42,.28);
+
+  /* Text */
+  --text:#0f172a; --text-2:#334155; --text-3:#475569; --text-muted:#64748b;
+  --text-faint:#94a3b8; --text-inverse:#ffffff;
+  --heading:var(--text);
+
+  /* Borders */
+  --border:#e2e8f0; --border-2:#cbd5e1; --border-strong:#94a3b8;
+  --divider:rgba(15,23,42,.06);
+
+  /* Shadows */
+  --shadow-xs:0 1px 2px rgba(15,23,42,.04);
+  --shadow-sm:0 1px 2px rgba(15,23,42,.05);
+  --shadow:0 4px 20px rgba(15,23,42,.08);
+  --shadow-md:0 8px 28px rgba(15,23,42,.10);
+  --shadow-lg:0 20px 50px rgba(15,23,42,.15);
+  --shadow-xl:0 32px 72px rgba(15,23,42,.20);
+  --shadow-inner:inset 0 1px 2px rgba(15,23,42,.06);
+  --ring:0 0 0 4px rgba(99,102,241,.15);
+  --ring-danger:0 0 0 4px rgba(239,68,68,.15);
+  --ring-success:0 0 0 4px rgba(16,185,129,.15);
+
+  /* Radii */
+  --radius-xs:6px; --radius-sm:10px; --radius:14px;
+  --radius-lg:22px; --radius-xl:28px; --radius-full:999px;
+
+  /* Spacing scale */
+  --space-0:0; --space-1:4px; --space-2:8px; --space-3:12px;
+  --space-4:16px; --space-5:20px; --space-6:24px; --space-7:28px;
+  --space-8:32px; --space-10:40px; --space-12:48px; --space-16:64px;
+  --space-20:80px; --space-24:96px;
+
+  /* Typography scale */
+  --fs-xs:.75rem; --fs-sm:.8125rem; --fs-base:.9375rem; --fs-md:1rem;
+  --fs-lg:1.125rem; --fs-xl:1.25rem; --fs-2xl:1.5rem; --fs-3xl:1.875rem;
+  --fs-4xl:2.25rem; --fs-5xl:3rem; --fs-6xl:3.75rem;
+  --fw-normal:400; --fw-medium:500; --fw-semibold:600;
+  --fw-bold:700; --fw-extrabold:800;
+  --lh-tight:1.15; --lh-snug:1.3; --lh-normal:1.5; --lh-relaxed:1.7;
+  --ls-tight:-.02em; --ls-normal:0; --ls-wide:.03em;
+
+  /* Layout */
+  --sidebar-w:260px; --sidebar-w-collapsed:76px;
+  --topbar-h:64px; --footer-h:56px;
+  --container-sm:640px; --container-md:820px; --container-lg:1080px;
+  --container-xl:1280px; --container-2xl:1440px;
+
+  /* Transitions */
+  --t:.25s ease;
+  --t-fast:.15s ease;
+  --t-slow:.4s cubic-bezier(.4,0,.2,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --ease-in-out:cubic-bezier(.4,0,.2,1);
+
+  /* Gradients */
+  --grad-brand:linear-gradient(135deg, var(--brand), var(--purple));
+  --grad-brand-deep:linear-gradient(135deg, var(--brand), var(--brand-700));
+  --grad-green:linear-gradient(135deg, #10b981, #059669);
+  --grad-yellow:linear-gradient(135deg, #f59e0b, #d97706);
+  --grad-red:linear-gradient(135deg, #ef4444, #dc2626);
+  --grad-blue:linear-gradient(135deg, #0ea5e9, #0284c7);
+  --grad-purple:linear-gradient(135deg, #8b5cf6, #6d28d9);
+  --grad-mesh:
+    radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,.20), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(16,185,129,.18), transparent 55%),
+    var(--bg);
+
+  /* Z-index scale */
+  --z-base:1; --z-dropdown:100; --z-sticky:200; --z-fixed:300;
+  --z-drawer:400; --z-modal:500; --z-popover:600; --z-tooltip:700;
+  --z-toast:900; --z-loader:1000;
+
+  /* Focus ring */
+  --focus-ring:0 0 0 3px rgba(99,102,241,.45);
+}
+
+html.dark {
+  /* Native form controls follow dark mode */
+  color-scheme: dark;
+
+  --bg:#0b1020; --surface:#111827; --surface-2:#1f2937; --surface-3:#374151;
+  --surface-4:#4b5563;
+  --text:#f1f5f9; --text-2:#e2e8f0; --text-3:#cbd5e1; --text-muted:#94a3b8;
+  --text-faint:#64748b; --heading:#f8fafc;
+  --border:#1f2937; --border-2:#334155; --border-strong:#475569;
+  --divider:rgba(255,255,255,.07);
+  --overlay:rgba(0,0,0,.65); --overlay-soft:rgba(0,0,0,.4);
+  --shadow-xs:0 1px 2px rgba(0,0,0,.3);
+  --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+  --shadow:0 4px 20px rgba(0,0,0,.4);
+  --shadow-md:0 8px 28px rgba(0,0,0,.45);
+  --shadow-lg:0 20px 50px rgba(0,0,0,.5);
+  --shadow-xl:0 32px 72px rgba(0,0,0,.55);
+  --shadow-inner:inset 0 1px 2px rgba(0,0,0,.4);
+  --brand-50:rgba(99,102,241,.12);
+  --brand-100:rgba(99,102,241,.18);
+  --accent-50:rgba(16,185,129,.12);
+  --warn-50:rgba(245,158,11,.12);
+  --danger-50:rgba(239,68,68,.12);
+  --info-50:rgba(14,165,233,.12);
+  --purple-50:rgba(139,92,246,.12);
+  --grad-mesh:
+    radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,.16), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(16,185,129,.12), transparent 55%),
+    var(--bg);
+}
+
+/* ============================================================
+   01b. ALL @KEYFRAMES
+   ------------------------------------------------------------
+   Single consolidated block. Every file (03�09) references
+   these by name. Do not duplicate them in other files.
+   ============================================================ */
+
+/* Loading spinner */
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Button ripple */
+@keyframes ripple { to { transform:scale(4); opacity:0; } }
+
+/* Overlay / panel entry */
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes fadeInUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeInDown { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+@keyframes popIn { from { transform:scale(.95); opacity:0; } to { transform:scale(1); opacity:1; } }
+@keyframes scaleIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
+@keyframes bounceIn {
+  0% { opacity:0; transform:scale(.85); }
+  60% { opacity:1; transform:scale(1.03); }
+  100% { transform:scale(1); }
+}
+
+/* Drawers */
+@keyframes slideInRight { from { transform:translateX(100%); } to { transform:translateX(0); } }
+@keyframes slideInLeft { from { transform:translateX(-100%); } to { transform:translateX(0); } }
+
+/* Toasts */
+@keyframes slideIn { from { transform:translateX(30px); opacity:0; } to { transform:translateX(0); opacity:1; } }
+@keyframes slideOut { to { transform:translateX(30px); opacity:0; } }
+@keyframes toastTimer { from { width:100%; } to { width:0; } }
+
+/* Chat typing */
+@keyframes typingDot {
+  0%,60%,100% { opacity:.3; transform:translateY(0); }
+  30% { opacity:1; transform:translateY(-3px); }
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% { background-position:200% 0; }
+  100% { background-position:-200% 0; }
+}
+
+/* Dropdown / popover entry */
+@keyframes dropdownIn {
+  from { opacity:0; transform:translateY(-6px); }
+  to { opacity:1; transform:translateY(0); }
+}
+
+/* Marketing floats + marquee */
+@keyframes floatY {
+  0%,100% { transform:translateY(0); }
+  50% { transform:translateY(-10px); }
+}
+@keyframes marquee {
+  from { transform:translateX(0); }
+  to { transform:translateX(-50%); }
+}
+
+/* Pulse (live indicator, hero badge dot) */
+@keyframes pulse {
+  0%,100% { opacity:1; }
+  50% { opacity:.5; }
+}
+
+/* Attention */
+@keyframes shake {
+  10%,90% { transform:translateX(-2px); }
+  20%,80% { transform:translateX(4px); }
+  30%,50%,70% { transform:translateX(-6px); }
+  40%,60% { transform:translateX(6px); }
+}
+@keyframes glow {
+  0%,100% { box-shadow:0 0 0 0 rgba(99,102,241,.4); }
+  50% { box-shadow:0 0 0 12px rgba(99,102,241,0); }
+}
+
+/* ============================================================
+   END OF 01-tokens.css
+   ============================================================ */

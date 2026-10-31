@@ -1,0 +1,193 @@
+/* ============================================================
+   ExpertHub 2.0 — 08. FINAL LAYER
+   ------------------------------------------------------------
+   MUST load last. Contains animations, accessibility,
+   print, and responsive overrides that must win on cascade.
+   Splits from: original styles.css sections 21, 22, 23, 24.
+   ============================================================ */
+
+/* ============================================================
+   21. ANIMATIONS & KEYFRAMES
+   ============================================================ */
+@keyframes floatY {
+  0%,100% { transform:translateY(0); }
+  50% { transform:translateY(-10px); }
+}
+@keyframes marquee {
+  from { transform:translateX(0); }
+  to { transform:translateX(-50%); }
+}
+@keyframes fadeInUp {
+  from { opacity:0; transform:translateY(10px); }
+  to { opacity:1; transform:translateY(0); }
+}
+@keyframes fadeInDown {
+  from { opacity:0; transform:translateY(-10px); }
+  to { opacity:1; transform:translateY(0); }
+}
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes scaleIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
+@keyframes bounceIn {
+  0% { opacity:0; transform:scale(.85); }
+  60% { opacity:1; transform:scale(1.03); }
+  100% { transform:scale(1); }
+}
+@keyframes shake {
+  10%,90% { transform:translateX(-2px); }
+  20%,80% { transform:translateX(4px); }
+  30%,50%,70% { transform:translateX(-6px); }
+  40%,60% { transform:translateX(6px); }
+}
+@keyframes glow {
+  0%,100% { box-shadow:0 0 0 0 rgba(99,102,241,.4); }
+  50% { box-shadow:0 0 0 12px rgba(99,102,241,0); }
+}
+
+.animate-fade-in { animation:fadeIn var(--t-slow) both; }
+.animate-fade-in-up { animation:fadeInUp var(--t-slow) both; }
+.animate-fade-in-down { animation:fadeInDown var(--t-slow) both; }
+.animate-scale-in { animation:scaleIn var(--t) both; }
+.animate-bounce-in { animation:bounceIn .45s ease both; }
+.animate-shake { animation:shake .5s ease; }
+.animate-glow { animation:glow 2s infinite; }
+.animate-spin { animation:spin 1s linear infinite; }
+.animate-pulse { animation:pulse 1.6s infinite; }
+.animate-float { animation:floatY 6s ease-in-out infinite; }
+
+.delay-1 { animation-delay:.06s; }
+.delay-2 { animation-delay:.12s; }
+.delay-3 { animation-delay:.18s; }
+.delay-4 { animation-delay:.24s; }
+.delay-5 { animation-delay:.3s; }
+.delay-6 { animation-delay:.36s; }
+
+/* ============================================================
+   22. ACCESSIBILITY
+   ============================================================ */
+:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+
+.skip-link {
+  position:absolute; top:-60px; left:16px; z-index:var(--z-toast);
+  padding:10px 16px; background:var(--brand); color:#fff;
+  border-radius:var(--radius-sm); font-weight:var(--fw-semibold);
+  transition:top var(--t);
+}
+.skip-link:focus { top:16px; color:#fff; }
+
+[aria-disabled="true"] { pointer-events:none; opacity:.6; }
+[hidden] { display:none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+    scroll-behavior:auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root { --border:#94a3b8; --text-muted:#475569; }
+  .btn { border-width:2px; }
+}
+
+/* ============================================================
+   23. PRINT
+   ============================================================ */
+@media print {
+  body { background:#fff; color:#000; font-size:12pt; }
+  .sidebar, .topbar, .app-footer, .landing-nav, .landing-footer,
+  .btn, .icon-btn, #toast-container, .modal-overlay, .drawer-overlay { display:none !important; }
+  .app-shell { display:block; }
+  .app-content { padding:0; }
+  .panel, .dashboard-card, .chart-card, .stat-card {
+    box-shadow:none; border:1px solid #ddd; break-inside:avoid;
+  }
+  a { color:#000; text-decoration:underline; }
+  .page-title { font-size:18pt; }
+  .data-table th, .data-table td { border-color:#ddd; }
+}
+
+/* ============================================================
+   24. RESPONSIVE
+   ============================================================ */
+@media (max-width:1200px) {
+  .footer-grid { grid-template-columns:1.4fr 1fr 1fr; }
+  .hero { gap:40px; }
+}
+
+@media (max-width:1024px) {
+  .stat-grid { grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); }
+  .form-grid-3 { grid-template-columns:1fr 1fr; }
+  .landing-nav-links { display:none; }
+  .landing-menu-toggle { display:inline-flex; }
+  .auth-page.split { grid-template-columns:1fr; }
+  .auth-aside { display:none; }
+}
+
+@media (max-width:900px) {
+  .app-shell { grid-template-columns:1fr; }
+  .hero { grid-template-columns:1fr; padding:30px 6vw 60px; }
+  .hero-visual { order:-1; }
+  .pricing-card.featured { transform:none; }
+  .pricing-card.featured:hover { transform:translateY(-4px); }
+  .topbar-search { display:none; }
+  .section { padding:60px 6vw; }
+  .footer-grid { grid-template-columns:1fr 1fr; gap:30px; }
+  .split-layout, .split-layout.wide-left { grid-template-columns:1fr; }
+  .sticky-aside { position:static; }
+}
+
+@media (max-width:768px) {
+  .form-grid { grid-template-columns:1fr; }
+  .form-grid-3 { grid-template-columns:1fr; }
+  .dashboard-columns { grid-template-columns:1fr; }
+  .stat-grid { grid-template-columns:1fr 1fr; }
+  .cta-band { margin:0 5vw 60px; padding:38px 24px; }
+  .cta-band h2 { font-size:1.5rem; }
+  .stepper-label { display:none; }
+  .data-table th, .data-table td { padding:10px; }
+}
+
+@media (max-width:640px) {
+  .app-content { padding:18px; }
+  .auth-card { padding:28px 22px; }
+  .page-title { font-size:1.25rem; }
+  .topbar { padding:12px 16px; }
+  .topbar-user { display:none; }
+  .hero-stats { gap:24px; }
+  .notif-panel { right:12px; }
+  .stat-grid { grid-template-columns:1fr; }
+  .footer-grid { grid-template-columns:1fr; gap:26px; }
+  .footer-bottom { flex-direction:column; align-items:flex-start; }
+  .section-title { font-size:1.5rem; }
+  .section-sub { margin-bottom:34px; }
+  .modal-content, .drawer { width:100%; }
+  .drawer { width:100vw; }
+  .hero-cta { flex-direction:column; }
+  .hero-cta .btn { width:100%; }
+  .otp-input { width:44px; height:52px; font-size:1.2rem; }
+  .role-picker { flex-direction:column; }
+  .chat-modal { height:90vh; }
+  .panel { padding:18px; }
+  .panel-body, .panel-footer { padding:18px; }
+  .panel-tabs { margin:-18px -18px 18px; padding:0 18px; }
+}
+
+@media (max-width:420px) {
+  .btn { padding:10px 16px; font-size:.9rem; }
+  .btn-lg { padding:12px 20px; font-size:.95rem; }
+  .card-grid { grid-template-columns:1fr; }
+  .event-card { flex-wrap:wrap; }
+  .event-actions { width:100%; }
+}
+
+/* Print-friendly & high-DPI tweaks */
+@media (min-resolution: 2dppx) {
+  .hero-card, .panel, .stat-card { border-width:.5px; }
+}
+
+/* ============================================================
+   END OF 08-final.css
+   ============================================================ */

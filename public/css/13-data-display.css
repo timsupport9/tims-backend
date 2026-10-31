@@ -1,0 +1,218 @@
+/* ============================================================
+   ExpertHub 2.0 � 13. DATA DISPLAY
+   ------------------------------------------------------------
+   Chart wrappers, stacked bars, heatmap, sparkline,
+   responsive card-table. Loads after 12.
+   ============================================================ */
+
+/* ============================================================
+   13.01 � CHART CONTAINER (works with Chart.js, ApexCharts, D3, Recharts�)
+   ============================================================ */
+.chart-container {
+  position: relative;
+  width: 100%;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.chart-container.flush { padding: 0; }
+.chart-container.transparent { background: transparent; border: 0; box-shadow: none; }
+
+.chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.chart-canvas-wrap > canvas,
+.chart-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* Aspect ratio variants */
+.chart-aspect-square { aspect-ratio: 1 / 1; }
+.chart-aspect-wide   { aspect-ratio: 2 / 1; }
+.chart-aspect-wide-3 { aspect-ratio: 3 / 1; }
+.chart-aspect-tall   { aspect-ratio: 3 / 4; }
+.chart-aspect-photo  { aspect-ratio: 4 / 3; }
+
+/* Third-party chart tuning */
+.chart-container .chartjs-render-monitor,
+.chart-container .apexcharts-canvas,
+.chart-container .recharts-responsive-container {
+  max-width: 100%;
+}
+.chart-container .apexcharts-tooltip,
+.chart-container .chartjs-tooltip {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-md) !important;
+  font-family: inherit !important;
+}
+
+/* ============================================================
+   13.02 � STACKED BAR CHART
+   ============================================================ */
+.bar-chart.stacked .bar-chart-col { justify-content: flex-end; }
+.bar-chart-segment {
+  width: 100%;
+  transition: height var(--t-slow);
+}
+.bar-chart-segment:first-child {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  border-end-start-radius: 3px;
+  border-end-end-radius: 3px;
+}
+.bar-chart-segment:last-child {
+  border-start-start-radius: 8px;
+  border-start-end-radius: 8px;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+.bar-chart-segment:only-child {
+  border-radius: 8px 8px 3px 3px;
+}
+.bar-chart-segment.blue   { background: var(--grad-blue); }
+.bar-chart-segment.green  { background: var(--grad-green); }
+.bar-chart-segment.yellow { background: var(--grad-yellow); }
+.bar-chart-segment.red    { background: var(--grad-red); }
+.bar-chart-segment.purple { background: var(--grad-purple); }
+
+/* ============================================================
+   13.03 � HEATMAP
+   ============================================================ */
+.heatmap {
+  display: grid;
+  grid-template-columns: auto repeat(auto, 1fr);
+  gap: 3px;
+  align-items: center;
+}
+.heatmap-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: var(--fw-semibold);
+  padding-inline-end: 6px;
+}
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--surface-3);
+  transition: transform var(--t);
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+.heatmap-cell:hover { transform: scale(1.15); outline: 1px solid var(--brand); }
+.heatmap-cell[data-level="1"] { background: rgba(99,102,241,.2); }
+.heatmap-cell[data-level="2"] { background: rgba(99,102,241,.4); }
+.heatmap-cell[data-level="3"] { background: rgba(99,102,241,.65); }
+.heatmap-cell[data-level="4"] { background: var(--brand); }
+
+/* ============================================================
+   13.04 � SPARKLINE
+   ============================================================ */
+.sparkline {
+  display: inline-block;
+  width: 100px;
+  height: 30px;
+  vertical-align: middle;
+}
+.sparkline svg { width: 100%; height: 100%; display: block; }
+.sparkline-line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sparkline-area { fill: rgba(99,102,241,.15); stroke: none; }
+.sparkline.green .sparkline-line   { stroke: var(--accent); }
+.sparkline.green .sparkline-area   { fill: rgba(16,185,129,.15); }
+.sparkline.yellow .sparkline-line  { stroke: var(--warn); }
+.sparkline.yellow .sparkline-area  { fill: rgba(245,158,11,.15); }
+.sparkline.red .sparkline-line     { stroke: var(--danger); }
+.sparkline.red .sparkline-area     { fill: rgba(239,68,68,.15); }
+
+/* ============================================================
+   13.05 � RESPONSIVE CARD-TABLE
+   Add .respond to a .data-table; at 768px each <tr> becomes
+   a card, each <td> shows its label via data-label attribute.
+   ============================================================ */
+@media (max-width: 768px) {
+  .data-table.respond thead { display: none; }
+  .data-table.respond,
+  .data-table.respond tbody,
+  .data-table.respond tr,
+  .data-table.respond td {
+    display: block;
+    width: 100%;
+  }
+  .data-table.respond {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .data-table.respond tbody tr {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-block-end: 12px;
+    padding-block: 4px;
+    box-shadow: var(--shadow-sm);
+  }
+  .data-table.respond tbody tr:hover td { background: transparent; }
+  .data-table.respond tbody tr:last-child { margin-block-end: 0; }
+  .data-table.respond td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border: 0;
+    gap: 14px;
+    text-align: end;
+    font-size: .9rem;
+  }
+  .data-table.respond td + td { border-block-start: 1px solid var(--border); }
+  .data-table.respond td::before {
+    content: attr(data-label);
+    font-weight: var(--fw-semibold);
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    flex-shrink: 0;
+    text-align: start;
+    max-width: 45%;
+  }
+  .data-table.respond td[data-label=""]::before { display: none; }
+  .data-table.respond td.actions-cell {
+    justify-content: flex-end;
+    padding-block-start: 12px;
+    flex-wrap: wrap;
+  }
+  .data-table.respond td.actions-cell::before { display: none; }
+  .data-table.respond td .user-cell { justify-content: flex-end; }
+  .data-table.respond tr.is-selected {
+    border-color: var(--brand);
+    background: var(--brand-50);
+  }
+
+  /* Optional: split-in-two layout for short tables */
+  .data-table.respond.split-2 tbody tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .data-table.respond.split-2 tbody tr td:first-child {
+    grid-column: 1 / -1;
+    border-block-start: 0;
+  }
+}
+
+/* ============================================================
+   END OF 13-data-display.css
+   ============================================================ */

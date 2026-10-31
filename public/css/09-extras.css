@@ -1,0 +1,437 @@
+/* ============================================================
+   ExpertHub 2.0 � 09. EXTRAS
+   ------------------------------------------------------------
+   Loads LAST (after 08-final.css). Depends only on 01-tokens.css.
+   Covers: native form controls, fieldset/legend, progress/meter,
+   extended utilities, RTL aliases, print table handling.
+   ============================================================ */
+
+/* ============================================================
+   09.01 � NATIVE FORM CONTROLS
+   ============================================================ */
+/* Shared native-input base � mirrors .form-input sizing */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"],
+input[type="color"],
+input[type="file"] {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  line-height: 1.4;
+  transition: border-color var(--t), box-shadow var(--t), background var(--t);
+  box-sizing: border-box;
+}
+input[type="date"]:hover:not(:disabled),
+input[type="time"]:hover:not(:disabled),
+input[type="datetime-local"]:hover:not(:disabled),
+input[type="month"]:hover:not(:disabled),
+input[type="week"]:hover:not(:disabled),
+input[type="color"]:hover:not(:disabled),
+input[type="file"]:hover:not(:disabled) {
+  border-color: var(--border-2);
+}
+input[type="date"]:focus,
+input[type="time"]:focus,
+input[type="datetime-local"]:focus,
+input[type="month"]:focus,
+input[type="week"]:focus,
+input[type="color"]:focus,
+input[type="file"]:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--ring);
+}
+input[type="date"]:disabled,
+input[type="time"]:disabled,
+input[type="datetime-local"]:disabled,
+input[type="month"]:disabled,
+input[type="week"]:disabled,
+input[type="color"]:disabled,
+input[type="file"]:disabled {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+/* Native picker indicators � follow the theme via color-scheme */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: .65;
+  transition: opacity var(--t);
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover,
+input[type="week"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+html.dark input[type="date"]::-webkit-calendar-picker-indicator,
+html.dark input[type="time"]::-webkit-calendar-picker-indicator,
+html.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+html.dark input[type="month"]::-webkit-calendar-picker-indicator,
+html.dark input[type="week"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* Color input � square-ish swatch */
+input[type="color"] {
+  padding: 4px;
+  height: 46px;
+  cursor: pointer;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 4px);
+}
+input[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 4px);
+}
+
+/* File input � base + selector-button styling */
+input[type="file"] {
+  padding: 8px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+input[type="file"]::file-selector-button {
+  margin-inline-end: 12px;
+  margin-right: 12px;
+  padding: 9px 16px;
+  border-radius: calc(var(--radius-sm) - 4px);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: inherit;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all var(--t);
+}
+input[type="file"]::file-selector-button:hover {
+  background: var(--brand-50);
+  color: var(--brand-600);
+  border-color: var(--brand);
+}
+
+/* Validation states for native controls */
+input[type="date"].is-invalid, input[type="time"].is-invalid,
+input[type="datetime-local"].is-invalid, input[type="month"].is-invalid,
+input[type="week"].is-invalid, input[type="color"].is-invalid,
+input[type="file"].is-invalid {
+  border-color: var(--danger);
+  box-shadow: var(--ring-danger);
+}
+input[type="date"].is-valid, input[type="time"].is-valid,
+input[type="datetime-local"].is-valid, input[type="month"].is-valid,
+input[type="week"].is-valid, input[type="color"].is-valid,
+input[type="file"].is-valid {
+  border-color: var(--accent);
+  box-shadow: var(--ring-success);
+}
+
+/* Small / large variants to match .form-input-sm / .form-input-lg */
+input.form-input-sm[type="date"],
+input.form-input-sm[type="time"],
+input.form-input-sm[type="datetime-local"],
+input.form-input-sm[type="month"],
+input.form-input-sm[type="week"] { padding: 8px 12px; font-size: var(--fs-sm); }
+input.form-input-lg[type="date"],
+input.form-input-lg[type="time"],
+input.form-input-lg[type="datetime-local"],
+input.form-input-lg[type="month"],
+input.form-input-lg[type="week"] { padding: 15px 18px; font-size: var(--fs-md); }
+
+/* ============================================================
+   09.02 � FIELDSET & LEGEND
+   ============================================================ */
+fieldset {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+fieldset:disabled {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+fieldset > *:last-child { margin-bottom: 0; }
+
+legend {
+  padding: 0 var(--space-2);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.form-fieldset {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.form-legend {
+  padding: 0 var(--space-2);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+/* ============================================================
+   09.03 � PROGRESS & METER
+   ============================================================ */
+progress {
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+  appearance: none;
+  -webkit-appearance: none;
+}
+progress::-webkit-progress-bar {
+  background: var(--surface-3);
+  border-radius: 999px;
+}
+progress::-webkit-progress-value {
+  background: var(--grad-brand-deep);
+  border-radius: 999px;
+  transition: width var(--t-slow);
+}
+progress::-moz-progress-bar {
+  background: var(--grad-brand-deep);
+  border-radius: 999px;
+  transition: width var(--t-slow);
+}
+progress.success::-webkit-progress-value { background: var(--grad-green); }
+progress.success::-moz-progress-bar { background: var(--grad-green); }
+progress.warn::-webkit-progress-value { background: var(--grad-yellow); }
+progress.warn::-moz-progress-bar { background: var(--grad-yellow); }
+progress.danger::-webkit-progress-value { background: var(--grad-red); }
+progress.danger::-moz-progress-bar { background: var(--grad-red); }
+
+meter {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+meter::-webkit-meter-bar {
+  background: var(--surface-3);
+  border: 0;
+  border-radius: 999px;
+}
+meter::-webkit-meter-optimum-value {
+  background: var(--grad-green);
+  border-radius: 999px;
+}
+meter::-webkit-meter-suboptimum-value {
+  background: var(--grad-yellow);
+  border-radius: 999px;
+}
+meter::-webkit-meter-even-less-good-value {
+  background: var(--grad-red);
+  border-radius: 999px;
+}
+meter::-moz-meter-bar {
+  background: var(--grad-green);
+  border-radius: 999px;
+}
+
+/* ============================================================
+   09.04 � EXTENDED UTILITIES
+   ============================================================ */
+
+/* Negative margins */
+.mt-n1 { margin-top: calc(-1 * var(--space-1)) !important; }
+.mt-n2 { margin-top: calc(-1 * var(--space-2)) !important; }
+.mt-n3 { margin-top: calc(-1 * var(--space-3)) !important; }
+.mt-n4 { margin-top: calc(-1 * var(--space-4)) !important; }
+.mt-n6 { margin-top: calc(-1 * var(--space-6)) !important; }
+.mb-n1 { margin-bottom: calc(-1 * var(--space-1)) !important; }
+.mb-n2 { margin-bottom: calc(-1 * var(--space-2)) !important; }
+.mb-n3 { margin-bottom: calc(-1 * var(--space-3)) !important; }
+.mb-n4 { margin-bottom: calc(-1 * var(--space-4)) !important; }
+.mb-n6 { margin-bottom: calc(-1 * var(--space-6)) !important; }
+
+/* Width / height additions */
+.w-33 { width: 33.333% !important; }
+.w-66 { width: 66.666% !important; }
+.w-full { width: 100% !important; }
+.h-full { height: 100% !important; }
+.h-screen { height: 100vh !important; }
+.min-h-screen { min-height: 100vh !important; }
+.max-w-full { max-width: 100% !important; }
+
+/* Z-index utilities */
+.z-0 { z-index: 0 !important; }
+.z-1 { z-index: 1 !important; }
+.z-10 { z-index: 10 !important; }
+.z-20 { z-index: 20 !important; }
+.z-30 { z-index: 30 !important; }
+.z-40 { z-index: 40 !important; }
+.z-50 { z-index: 50 !important; }
+.z-auto { z-index: auto !important; }
+.z-dropdown { z-index: var(--z-dropdown) !important; }
+.z-sticky { z-index: var(--z-sticky) !important; }
+.z-fixed { z-index: var(--z-fixed) !important; }
+.z-drawer { z-index: var(--z-drawer) !important; }
+.z-modal { z-index: var(--z-modal) !important; }
+.z-popover { z-index: var(--z-popover) !important; }
+.z-tooltip { z-index: var(--z-tooltip) !important; }
+.z-toast { z-index: var(--z-toast) !important; }
+
+/* Aspect ratio */
+.aspect-square { aspect-ratio: 1 / 1 !important; }
+.aspect-video { aspect-ratio: 16 / 9 !important; }
+.aspect-photo { aspect-ratio: 4 / 3 !important; }
+.aspect-portrait { aspect-ratio: 3 / 4 !important; }
+.aspect-wide { aspect-ratio: 21 / 9 !important; }
+
+/* Flex order */
+.order-first { order: -9999 !important; }
+.order-1 { order: 1 !important; }
+.order-2 { order: 2 !important; }
+.order-3 { order: 3 !important; }
+.order-4 { order: 4 !important; }
+.order-5 { order: 5 !important; }
+.order-last { order: 9999 !important; }
+
+/* Additional grid columns */
+.grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+.grid-cols-7 { grid-template-columns: repeat(7, minmax(0, 1fr)) !important; }
+.grid-cols-8 { grid-template-columns: repeat(8, minmax(0, 1fr)) !important; }
+.grid-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)) !important; }
+
+/* Grid column spans */
+.col-span-1 { grid-column: span 1 / span 1 !important; }
+.col-span-2 { grid-column: span 2 / span 2 !important; }
+.col-span-3 { grid-column: span 3 / span 3 !important; }
+.col-span-4 { grid-column: span 4 / span 4 !important; }
+.col-span-5 { grid-column: span 5 / span 5 !important; }
+.col-span-6 { grid-column: span 6 / span 6 !important; }
+.col-span-full { grid-column: 1 / -1 !important; }
+
+/* Split gap axis */
+.gap-x-1 { column-gap: var(--space-1) !important; }
+.gap-x-2 { column-gap: var(--space-2) !important; }
+.gap-x-3 { column-gap: var(--space-3) !important; }
+.gap-x-4 { column-gap: var(--space-4) !important; }
+.gap-x-6 { column-gap: var(--space-6) !important; }
+.gap-x-8 { column-gap: var(--space-8) !important; }
+.gap-y-1 { row-gap: var(--space-1) !important; }
+.gap-y-2 { row-gap: var(--space-2) !important; }
+.gap-y-3 { row-gap: var(--space-3) !important; }
+.gap-y-4 { row-gap: var(--space-4) !important; }
+.gap-y-6 { row-gap: var(--space-6) !important; }
+.gap-y-8 { row-gap: var(--space-8) !important; }
+
+/* Inset shortcuts */
+.inset-1 { top: var(--space-1); right: var(--space-1); bottom: var(--space-1); left: var(--space-1); }
+.inset-2 { top: var(--space-2); right: var(--space-2); bottom: var(--space-2); left: var(--space-2); }
+.inset-4 { top: var(--space-4); right: var(--space-4); bottom: var(--space-4); left: var(--space-4); }
+.inset-x-0 { left: 0; right: 0; }
+.inset-y-0 { top: 0; bottom: 0; }
+
+/* ============================================================
+   09.05 � RTL-READY ALIASES
+   Safe to use in LTR sites (mirrors .ml-* / .mr-* etc.).
+   If you later add [dir="rtl"], these keep working correctly.
+   ============================================================ */
+
+/* Margin-inline */
+.ms-auto { margin-inline-start: auto !important; }
+.me-auto { margin-inline-end: auto !important; }
+.mx-auto { margin-inline: auto !important; }
+.ms-1 { margin-inline-start: var(--space-1) !important; }
+.ms-2 { margin-inline-start: var(--space-2) !important; }
+.ms-3 { margin-inline-start: var(--space-3) !important; }
+.ms-4 { margin-inline-start: var(--space-4) !important; }
+.ms-6 { margin-inline-start: var(--space-6) !important; }
+.me-1 { margin-inline-end: var(--space-1) !important; }
+.me-2 { margin-inline-end: var(--space-2) !important; }
+.me-3 { margin-inline-end: var(--space-3) !important; }
+.me-4 { margin-inline-end: var(--space-4) !important; }
+.me-6 { margin-inline-end: var(--space-6) !important; }
+
+/* Padding-inline */
+.ps-1 { padding-inline-start: var(--space-1) !important; }
+.ps-2 { padding-inline-start: var(--space-2) !important; }
+.ps-3 { padding-inline-start: var(--space-3) !important; }
+.ps-4 { padding-inline-start: var(--space-4) !important; }
+.ps-6 { padding-inline-start: var(--space-6) !important; }
+.pe-1 { padding-inline-end: var(--space-1) !important; }
+.pe-2 { padding-inline-end: var(--space-2) !important; }
+.pe-3 { padding-inline-end: var(--space-3) !important; }
+.pe-4 { padding-inline-end: var(--space-4) !important; }
+.pe-6 { padding-inline-end: var(--space-6) !important; }
+
+/* Logical text alignment */
+.text-start { text-align: start !important; }
+.text-end { text-align: end !important; }
+
+/* Logical float */
+.float-start { float: inline-start !important; }
+.float-end { float: inline-end !important; }
+
+/* Logical border */
+.border-s { border-inline-start: 1px solid var(--border) !important; }
+.border-e { border-inline-end: 1px solid var(--border) !important; }
+
+/* ============================================================
+   09.06 � PRINT TABLE HANDLING
+   (Core print reset is in 08-final.css; this handles table
+   pagination across pages.)
+   ============================================================ */
+@media print {
+  .data-table thead { display: table-header-group; }
+  .data-table tfoot { display: table-footer-group; }
+  .data-table tr { break-inside: avoid; }
+  .data-table { font-size: 10pt; }
+  .data-table th, .data-table td { padding: 6px 8px; }
+  .data-table .actions-cell,
+  .data-table .btn,
+  .data-table .icon-btn { display: none !important; }
+}
+
+/* ============================================================
+   09.07 � NATIVE CONTROL FOCUS-VISIBLE (a11y)
+   ============================================================ */
+input[type="date"]:focus-visible,
+input[type="time"]:focus-visible,
+input[type="datetime-local"]:focus-visible,
+input[type="month"]:focus-visible,
+input[type="week"]:focus-visible,
+input[type="color"]:focus-visible,
+input[type="file"]:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   END OF 09-extras.css
+   ============================================================ */

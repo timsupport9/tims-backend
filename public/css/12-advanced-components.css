@@ -1,0 +1,530 @@
+/* ============================================================
+   ExpertHub 2.0 � 12. ADVANCED COMPONENTS
+   ------------------------------------------------------------
+   Carousel, sortable, native <dialog>, <details>, command
+   palette, vertical stepper, circular progress.
+   Loads after 11. Depends on 01-tokens.css only.
+   ============================================================ */
+
+/* ============================================================
+   12.01 � CAROUSEL / SLIDER
+   ============================================================ */
+.carousel {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.carousel-track {
+  display: flex;
+  transition: transform var(--t-slow);
+  will-change: transform;
+}
+.carousel-track.scroll-snap {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.carousel-track.scroll-snap::-webkit-scrollbar { display: none; }
+
+.carousel-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  min-width: 0;
+}
+.carousel-slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.carousel.multi-2 .carousel-slide { flex-basis: 50%; }
+.carousel.multi-3 .carousel-slide { flex-basis: 33.3333%; }
+.carousel.multi-4 .carousel-slide { flex-basis: 25%; }
+
+.carousel-nav {
+  position: absolute;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.9);
+  border: 1px solid var(--border);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: all var(--t);
+  box-shadow: var(--shadow);
+  line-height: 1;
+}
+.carousel-nav:hover { background: #fff; box-shadow: var(--shadow-md); }
+.carousel-nav:disabled { opacity: .4; cursor: not-allowed; }
+.carousel-nav-prev { inset-inline-start: 12px; }
+.carousel-nav-next { inset-inline-end: 12px; }
+[dir="rtl"] .carousel-nav-prev .icon,
+[dir="rtl"] .carousel-nav-next .icon { transform: scaleX(-1); }
+
+.carousel-dots {
+  position: absolute;
+  inset-block-end: 14px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(0,0,0,.4);
+  border-radius: 999px;
+}
+.carousel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.5);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: all var(--t);
+}
+.carousel-dot.is-active { background: #fff; width: 20px; border-radius: 999px; }
+
+.carousel-fade .carousel-track { position: relative; display: block; }
+.carousel-fade .carousel-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity var(--t-slow);
+  flex: none;
+}
+.carousel-fade .carousel-slide.is-active {
+  opacity: 1;
+  position: relative;
+}
+
+.carousel-caption {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  padding: 40px 20px 20px;
+  background: linear-gradient(to top, rgba(0,0,0,.7), transparent);
+  color: #fff;
+}
+.carousel-caption-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  margin: 0 0 4px;
+}
+.carousel-caption-desc { font-size: var(--fs-sm); opacity: .9; margin: 0; }
+
+/* ============================================================
+   12.02 � SORTABLE LIST (drag & drop visual states)
+   ============================================================ */
+.sortable {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.sortable-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  transition: box-shadow var(--t), transform var(--t), border-color var(--t);
+}
+.sortable-item:active { cursor: grabbing; }
+.sortable-item:hover { box-shadow: var(--shadow-sm); }
+
+.sortable-item.dragging {
+  opacity: .5;
+  box-shadow: var(--shadow-lg);
+  transform: scale(1.02);
+}
+.sortable-item.drop-target { border-color: var(--brand); box-shadow: var(--ring); }
+.sortable-item.drop-above { border-block-start: 2px solid var(--brand); }
+.sortable-item.drop-below { border-block-end: 2px solid var(--brand); }
+
+.sortable-handle {
+  color: var(--text-faint);
+  cursor: grab;
+  padding: 4px;
+  border-radius: 4px;
+  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+}
+.sortable-handle:hover { color: var(--text-muted); background: var(--surface-2); }
+
+.sortable-placeholder {
+  height: 48px;
+  border: 2px dashed var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+/* ============================================================
+   12.03 � NATIVE <dialog>
+   ============================================================ */
+dialog.dialog {
+  border: 0;
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-xl);
+  max-width: 520px;
+  width: calc(100% - 40px);
+  max-height: 92vh;
+  overflow: hidden;
+}
+dialog.dialog.sm { max-width: 380px; }
+dialog.dialog.lg { max-width: 760px; }
+dialog.dialog.xl { max-width: 1000px; }
+dialog.dialog::backdrop {
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+}
+dialog.dialog[open] { animation: popIn .25s ease; }
+dialog.dialog[open]::backdrop { animation: fadeIn .2s ease; }
+
+dialog.dialog .dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-block-end: 1px solid var(--border);
+  gap: 14px;
+}
+dialog.dialog .dialog-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+}
+dialog.dialog .dialog-body {
+  padding: 22px 24px;
+  display: grid;
+  gap: 14px;
+  overflow-y: auto;
+  max-height: calc(92vh - 160px);
+}
+dialog.dialog .dialog-footer {
+  padding: 16px 24px;
+  border-block-start: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+dialog.dialog .dialog-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  transition: all var(--t);
+  line-height: 1;
+  flex-shrink: 0;
+}
+dialog.dialog .dialog-close:hover { background: var(--surface-2); color: var(--text); }
+
+/* ============================================================
+   12.04 � NATIVE <details> / <summary>
+   ============================================================ */
+.details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.details + .details { margin-block-start: 8px; }
+
+.details > summary {
+  padding: 14px 18px;
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  transition: background var(--t);
+  user-select: none;
+}
+.details > summary::-webkit-details-marker { display: none; }
+.details > summary:hover { background: var(--surface-2); }
+.details > summary::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--t);
+  flex-shrink: 0;
+  color: var(--text-muted);
+  margin-inline-start: 8px;
+}
+.details[open] > summary::after { transform: rotate(-135deg); }
+.details[open] > summary { border-block-end: 1px solid var(--border); }
+.details .details-body {
+  padding: 16px 18px;
+  color: var(--text-3);
+  font-size: .93rem;
+}
+.details.flush > summary { padding-inline: 0; }
+.details.flush .details-body { padding-inline: 0; }
+
+/* ============================================================
+   12.05 � COMMAND PALETTE
+   ============================================================ */
+.command-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: start center;
+  padding-block-start: 15vh;
+  padding-inline: 20px;
+  animation: fadeIn .15s;
+}
+.command-palette {
+  width: 100%;
+  max-width: 640px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  animation: popIn .2s ease;
+}
+.command-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-block-end: 1px solid var(--border);
+}
+.command-input-wrap .icon { color: var(--text-muted); width: 1.1em; height: 1.1em; flex-shrink: 0; }
+.command-input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  min-width: 0;
+}
+.command-esc-hint {
+  font-family: 'Fira Code', ui-monospace, Menlo, monospace;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+.command-list {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 8px;
+}
+.command-group {
+  padding: 10px 10px 4px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.command-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: var(--fs-base);
+  color: var(--text);
+  transition: background var(--t);
+}
+.command-item:hover,
+.command-item.is-active { background: var(--brand-50); color: var(--brand-600); }
+.command-item-icon { color: var(--text-muted); flex-shrink: 0; width: 1.1em; height: 1.1em; }
+.command-item.is-active .command-item-icon { color: var(--brand); }
+.command-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.command-shortcut {
+  display: inline-flex;
+  gap: 3px;
+  font-family: 'Fira Code', ui-monospace, Menlo, monospace;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.command-shortcut kbd {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: .7em;
+}
+.command-footer {
+  padding: 10px 18px;
+  border-block-start: 1px solid var(--border);
+  display: flex;
+  gap: 14px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+.command-footer kbd {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: 'Fira Code', ui-monospace, Menlo, monospace;
+  font-size: .9em;
+  margin-inline-end: 4px;
+}
+.command-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.command-empty .icon { font-size: 2rem; opacity: .4; display: block; margin: 0 auto 8px; }
+
+/* ============================================================
+   12.06 � VERTICAL STEPPER
+   ============================================================ */
+.stepper-vertical {
+  display: flex;
+  flex-direction: column;
+}
+.stepper-v-item {
+  display: flex;
+  gap: 14px;
+  position: relative;
+  padding-block-end: 24px;
+}
+.stepper-v-item:last-child { padding-block-end: 0; }
+.stepper-v-item:last-child .stepper-v-line { display: none; }
+.stepper-v-node {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-weight: var(--fw-bold);
+  font-size: .85rem;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: all var(--t);
+  z-index: 1;
+}
+.stepper-v-item.active .stepper-v-node {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 0 0 5px rgba(99,102,241,.15);
+}
+.stepper-v-item.done .stepper-v-node { background: var(--accent); color: #fff; }
+.stepper-v-item.done .stepper-v-node::after {
+  content: '';
+  font-weight: var(--fw-bold);
+}
+.stepper-v-item.done .stepper-v-node > span { display: none; }
+
+.stepper-v-line {
+  position: absolute;
+  inset-block-start: 34px;
+  inset-block-end: 0;
+  inset-inline-start: 16px;
+  width: 2px;
+  background: var(--border);
+}
+.stepper-v-item.done .stepper-v-line { background: var(--accent); }
+
+.stepper-v-body { flex: 1; min-width: 0; padding-block-start: 5px; }
+.stepper-v-title {
+  font-weight: var(--fw-bold);
+  font-size: .95rem;
+  margin: 0 0 4px;
+  color: var(--text-muted);
+}
+.stepper-v-item.active .stepper-v-title { color: var(--text); }
+.stepper-v-item.done .stepper-v-title { color: var(--text); }
+.stepper-v-desc {
+  color: var(--text-muted);
+  font-size: .85rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   12.07 � CIRCULAR PROGRESS
+   ============================================================ */
+.ring-progress {
+  --value: 0;
+  --size: 80px;
+  --thickness: 8px;
+  --ring-color: var(--brand);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: conic-gradient(var(--ring-color) calc(var(--value) * 1%), var(--surface-3) 0);
+  display: grid;
+  place-items: center;
+  position: relative;
+  transition: background var(--t-slow);
+}
+.ring-progress::after {
+  content: '';
+  position: absolute;
+  inset: var(--thickness);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.ring-progress-value {
+  position: relative;
+  z-index: 1;
+  font-size: calc(var(--size) * .22);
+  font-weight: var(--fw-extrabold);
+  color: var(--text);
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+.ring-progress-success { --ring-color: var(--accent); }
+.ring-progress-warn    { --ring-color: var(--warn); }
+.ring-progress-danger  { --ring-color: var(--danger); }
+.ring-progress-info    { --ring-color: var(--info); }
+
+.ring-progress-sm { --size: 48px; --thickness: 5px; }
+.ring-progress-lg { --size: 120px; --thickness: 10px; }
+.ring-progress-xl { --size: 160px; --thickness: 12px; }
+
+.ring-progress.animate {
+  transition: --value var(--t-slow);
+}
+
+/* ============================================================
+   END OF 12-advanced-components.css
+   ============================================================ */
