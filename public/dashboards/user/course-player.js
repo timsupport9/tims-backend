@@ -1,22 +1,19 @@
 /* ============================================================ */
-/* ExpertHub 2.0 — dashboards/user/course-player.js (FINAL)     */
-/*                                                              */
-/* SPRINT 1:                                                    */
-/*   - A: bindPreviewInteractions + play-lesson-preview         */
-/*                                                              */
-/* SPRINT 2:                                                    */
-/*   - C: Assignment lessons render a submission form;          */
-/*        submission status, grade, feedback displayed          */
-/*   - D: On final lesson completion, server returns course    */
-/*        state — we surface certificate issuance or pending    */
-/*                                                              */
-/* EXPANSION (final):                                           */
-/*   - Keyboard shortcuts: Space play/pause, ←/→ seek, F full,  */
-/*     M mute, Esc close                                        */
-/*   - Assignment draft auto-save to localStorage (per lesson)  */
-/*   - Direct certificate download from player after completion */
-/*   - Robust cleanup, no orphan listeners                      */
+/* ExpertHub 2.0 — dashboards/user/course-player.js              */
+/* Digital classroom: full-page 2-column layout, accessible      */
+/* playback, debounced progress sync, resume position,           */
+/* offline-safe notes, backend-determined completion.           */
+/*                                                               */
+/* Rendered via UserUI.page() — NOT a modal.                    */
+/* Registered as module "course-player" and routed by            */
+/* setting `activeTab = 'course-player'` + rerenderRoleContent() */
 /* ============================================================ */
+
+/* ---------------- Global module state ---------------- */
+
+let activeCoursePlayerId = null;
+let activeLessonId       = null;
+let __playerActiveTab    = 'overview';   // overview | notes | qa | discussion | resources
 
 const __playerState = {
   courseId: null,
@@ -25,42 +22,129 @@ const __playerState = {
   pendingSeconds: 0,
   lastFlushedAt: 0,
   dirty: false,
-  keyHandler: null,
 };
 
+/* Track lesson completion eligibility returned by server */
 let __lessonCanComplete = false;
 
-/* SPRINT 2 / Item C — currently-loaded assignment payload */
-S.currentAssignment = S.currentAssignment || null;
+/* ============================================================ */
+/* Helpers                                                       */
+/* ============================================================ */
 
-/* EXPANSION — draft key helper */
-function __draftKey(lessonId) {
-  return `expertHub.draft.assignment.${lessonId}`;
+function formatClock(totalSeconds) {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
 }
 
-function __loadDraft(lessonId) {
-  try { return localStorage.getItem(__draftKey(lessonId)) || ''; }
-  catch { return ''; }
+/* Safely escape and render a course thumbnail */
+function courseThumb(course) {
+  return course?.thumbnail || '/assets/default-course.png';
 }
 
-function __saveDraft(lessonId, text) {
-  try {
-    if (text && text.trim()) localStorage.setItem(__draftKey(lessonId), text);
-    else localStorage.removeItem(__draftKey(lessonId));
-  } catch {}
-}
+/* ============================================================ */
+/* Actions — entry points                                        */
+/* ============================================================ */
 
-function __clearDraft(lessonId) {
-  try { localStorage.removeItem(__draftKey(lessonId)); } catch {}
-}
+window.ExpertHubUser.registerAction('open-course-player', async (id, el) => {
+  const targetLesson = el?.dataset?.lesson || null;
+  const sameCourse   = String(id) === String(activeCoursePlayerId) && __playerState.courseId;
 
-async function openCoursePlayer(courseId, lessonId) {
+  if (sameCourse && targetLesson && String(targetLesson) === String(__playerState.lessonId)) {
+    return; // Already viewing this lesson
+  }
+
   __cleanupPlayer();
+  activeCoursePlayerId = id;
+  activeLessonId       = targetLesson;
 
+  if (sameCourse) {
+    // Same course — only fetch the new lesson; keep curriculum in memory.
+    await switchToLesson(targetLesson || activeLessonId);
+  } else {
+    await loadAndShowCoursePlayer(id, targetLesson);
+  }
+});
+
+window.ExpertHubUser.registerAction('open-lesson', (_, el) => {
+  const courseId = el?.dataset?.course || activeCoursePlayerId || __playerState.courseId;
+  const lessonId = el?.dataset?.lesson;
+  __cleanupPlayer();
+  activeCoursePlayerId = courseId;
+  activeLessonId       = lessonId;
+  loadAndShowCoursePlayer(courseId, lessonId);
+});
+
+window.ExpertHubUser.registerAction('player-tab', (tab) => {
+  if (!tab) return;
+  __playerActiveTab = tab;
+  document.querySelectorAll('[data-player-tab]').forEach(b => {
+    const on = b.dataset.playerTab === tab;
+    b.classList.toggle('tab-btn-active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const host = $('#player-tab-content');
+  if (host) {
+    host.innerHTML = renderPlayerTabContent(tab, __playerState.courseId, __playerState.lessonId);
+    bindPlayerTabEvents(__playerState.courseId, __playerState.lessonId);
+  }
+});
+
+window.ExpertHubUser.registerAction('mark-lesson-complete', async (lessonId) => {
+  try {
+    const r = await apiCall(`/api/eschool/lessons/${lessonId}/complete`, 'POST');
+    if (r?.completed === false) {
+      return showToast(r.reason || 'Completion requirements not met yet', 'warning');
+    }
+    showToast('Lesson marked complete', 'success');
+
+    // Refresh lesson progress locally
+    if (__playerState.courseId) {
+      await refreshLessonState(__playerState.courseId, lessonId);
+      rerenderRoleContent();
+      requestAnimationFrame(() => bindCoursePlayerPage());
+    }
+
+    // Refresh enrollments to reflect progress
+    apiCall('/api/user/enrollments').then(d => {
+      S.enrollments        = d.enrollments || [];
+      S.enrolledCourseIds  = new Set(S.enrollments.map(e => String(e.course_id)));
+    }).catch(() => {});
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+window.ExpertHubUser.registerAction('upvote-discussion', async (id) => {
+  try {
+    await apiCall(`/api/eschool/discussions/${id}/upvote`, 'POST');
+    showToast('Upvoted', 'success');
+    // Re-fetch discussions so the count updates
+    if (__playerState.courseId) {
+      const d = await apiCall(`/api/eschool/courses/${__playerState.courseId}/discussions`).catch(() => null);
+      if (d) {
+        S.courseDiscussions = d.discussions || [];
+        const host = $('#player-tab-content');
+        if (host && __playerActiveTab === 'discussion') {
+          host.innerHTML = renderLessonDiscussion(__playerState.lessonId);
+          bindPlayerTabEvents(__playerState.courseId, __playerState.lessonId);
+        }
+      }
+    }
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+/* ============================================================ */
+/* Data loading                                                  */
+/* ============================================================ */
+
+async function loadAndShowCoursePlayer(courseId, lessonId) {
   try {
     showLoading(true);
     const d = await apiCall(`/api/eschool/courses/${courseId}/curriculum`);
-    if (d?.forbidden) { showLoading(false); return showToast('You do not have access to this course', 'error'); }
+    if (d?.forbidden) {
+      showLoading(false);
+      return showToast('You do not have access to this course', 'error');
+    }
 
     const course     = d.course || {};
     const modules    = d.modules || [];
@@ -74,215 +158,351 @@ async function openCoursePlayer(courseId, lessonId) {
       ? (allLessons.find(l => String(l.id) === String(lessonId)) || allLessons[0])
       : allLessons[0];
 
-    const needsAssignment = currentLesson.lesson_type === 'assignment';
-    const [lessonData, notesData, qaData, discData, assignData] = await Promise.all([
+    const [lessonData, notesData, qaData, discData] = await Promise.all([
       apiCall(`/api/eschool/lessons/${currentLesson.id}`).catch(() => ({ lesson: currentLesson, progress: null })),
       apiCall(`/api/eschool/lessons/${currentLesson.id}/notes`).catch(() => ({ notes: [] })),
       apiCall(`/api/eschool/lessons/${currentLesson.id}/questions`).catch(() => ({ questions: [] })),
       apiCall(`/api/eschool/courses/${courseId}/discussions`).catch(() => ({ discussions: [] })),
-      needsAssignment
-        ? apiCall(`/api/eschool/lessons/${currentLesson.id}/assignment`).catch(() => null)
-        : Promise.resolve(null),
     ]);
 
+    // Populate shared dashboard state
+    S.currentCourse         = course;
+    S.courseModules         = modules;
+    S.allLessons            = allLessons;
     S.currentLesson         = lessonData.lesson || currentLesson;
     S.currentLessonProgress = lessonData.progress || null;
     S.lessonNotes           = notesData.notes || [];
     S.lessonQuestions       = qaData.questions || [];
     S.courseDiscussions     = discData.discussions || [];
-    S.currentAssignment     = assignData || null;
 
-    __lessonCanComplete = !!lessonData.can_complete || S.currentLessonProgress?.status === 'in_progress';
+    // Completion eligibility: server-determined, default false
+    __lessonCanComplete = !!lessonData.can_complete
+      || S.currentLessonProgress?.status === 'in_progress';
 
     __playerState.courseId = courseId;
     __playerState.lessonId = currentLesson.id;
+    activeCoursePlayerId   = courseId;
+    activeLessonId         = currentLesson.id;
+    __playerActiveTab      = 'overview';
 
-    const completedLessons = allLessons.filter(l => l.progress?.status === 'completed').map(l => l.id);
-    const idx = allLessons.findIndex(l => String(l.id) === String(currentLesson.id));
-    const prev = idx > 0 ? allLessons[idx - 1] : null;
-    const next = idx < allLessons.length - 1 ? allLessons[idx + 1] : null;
+    // Route the dashboard to the player view
+    if (typeof activeTab !== 'undefined') activeTab = 'course-player';
+    if (typeof rerenderRoleContent === 'function') {
+      rerenderRoleContent();
+      requestAnimationFrame(() => bindCoursePlayerPage());
+    } else {
+      console.warn('rerenderRoleContent() not found; course player will not render.');
+    }
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    showLoading(false);
+  }
+}
 
-    const isAssignment = currentLesson.lesson_type === 'assignment';
-    const assignmentStatus = S.currentAssignment?.submission?.status;
-    const isAssignmentGraded = assignmentStatus === 'graded';
-    const isAssignmentSubmitted = assignmentStatus === 'submitted' || isAssignmentGraded;
+/* Lightweight refresh — used after marking a lesson complete */
+async function refreshLessonState(courseId, lessonId) {
+  const [lessonData, discData] = await Promise.all([
+    apiCall(`/api/eschool/lessons/${lessonId}`).catch(() => ({ lesson: null, progress: null })),
+    apiCall(`/api/eschool/courses/${courseId}/discussions`).catch(() => ({ discussions: [] })),
+  ]);
+  if (lessonData.lesson) S.currentLesson = lessonData.lesson;
+  S.currentLessonProgress = lessonData.progress || S.currentLessonProgress;
+  S.courseDiscussions     = discData.discussions || S.courseDiscussions;
 
-    const navHtml = isAssignment
-      ? `
-        <nav class="course-player-nav" aria-label="Lesson navigation">
-          ${prev
-            ? `<button class="btn btn-secondary btn-sm" data-action="open-lesson" data-course="${courseId}" data-lesson="${prev.id}">
-                <i class="fas fa-arrow-left" aria-hidden="true"></i> Previous</button>`
-            : '<span></span>'}
-          <span class="form-hint" style="align-self:center">
-            ${isAssignmentGraded
-              ? `Graded: ${S.currentAssignment.submission.score != null ? S.currentAssignment.submission.score + '%' : '—'}`
-              : isAssignmentSubmitted
-                ? 'Submitted — awaiting review'
-                : 'Submit your work to complete this lesson'}
-          </span>
-          ${next
-            ? `<button class="btn btn-secondary btn-sm" data-action="open-lesson" data-course="${courseId}" data-lesson="${next.id}">
-                Next <i class="fas fa-arrow-right" aria-hidden="true"></i></button>`
-            : '<span></span>'}
-        </nav>
-      `
-      : `
-        <nav class="course-player-nav" aria-label="Lesson navigation">
-          ${prev
-            ? `<button class="btn btn-secondary btn-sm" data-action="open-lesson" data-course="${courseId}" data-lesson="${prev.id}">
-                <i class="fas fa-arrow-left" aria-hidden="true"></i> Previous</button>`
-            : '<span></span>'}
-          <button class="btn btn-primary btn-sm" data-action="mark-lesson-complete" data-lesson="${currentLesson.id}"
-                  ${S.currentLessonProgress?.status === 'completed' ? 'disabled' : ''}>
-            <i class="fas fa-check" aria-hidden="true"></i>
-            ${S.currentLessonProgress?.status === 'completed' ? 'Completed' : 'Mark Complete'}</button>
-          ${next
-            ? `<button class="btn btn-secondary btn-sm" data-action="open-lesson" data-course="${courseId}" data-lesson="${next.id}">
-                Next <i class="fas fa-arrow-right" aria-hidden="true"></i></button>`
-            : '<span></span>'}
-        </nav>
-      `;
+  // Refresh the in-memory lesson row too, so the curriculum sidebar reflects status
+  if (S.allLessons) {
+    const row = S.allLessons.find(l => String(l.id) === String(lessonId));
+    if (row && S.currentLessonProgress) row.progress = S.currentLessonProgress;
+  }
+  __lessonCanComplete = !!lessonData.can_complete
+    || S.currentLessonProgress?.status === 'in_progress';
+}
 
-    openModal({
-      title: `${course.title || ''} — Lesson ${idx + 1} of ${allLessons.length}`,
-      className: 'course-player-modal',
-      body: `
-        <div class="course-player-layout">
-          <aside class="course-player-sidebar" aria-label="Course curriculum">
-            <h3 class="panel-title">Curriculum</h3>
+/* Same-course lesson switch — avoids re-fetching the curriculum */
+async function switchToLesson(lessonId) {
+  try {
+    showLoading(true);
+    const allLessons = S.allLessons || [];
+    const target = allLessons.find(l => String(l.id) === String(lessonId)) || allLessons[0];
+    if (!target) return;
+
+    const [lessonData, notesData, qaData] = await Promise.all([
+      apiCall(`/api/eschool/lessons/${target.id}`).catch(() => ({ lesson: target, progress: null })),
+      apiCall(`/api/eschool/lessons/${target.id}/notes`).catch(() => ({ notes: [] })),
+      apiCall(`/api/eschool/lessons/${target.id}/questions`).catch(() => ({ questions: [] })),
+    ]);
+
+    S.currentLesson         = lessonData.lesson || target;
+    S.currentLessonProgress = lessonData.progress || null;
+    S.lessonNotes           = notesData.notes || [];
+    S.lessonQuestions       = qaData.questions || [];
+
+    __lessonCanComplete    = !!lessonData.can_complete
+      || S.currentLessonProgress?.status === 'in_progress';
+    __playerState.lessonId = target.id;
+    activeLessonId         = target.id;
+    __playerActiveTab      = 'overview';
+
+    rerenderRoleContent();
+    requestAnimationFrame(() => bindCoursePlayerPage());
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    showLoading(false);
+  }
+}
+
+/* ============================================================ */
+/* Full-page renderer                                            */
+/* ============================================================ */
+
+function renderCoursePlayerPage() {
+  if (!activeCoursePlayerId) {
+    return UserUI.empty({
+      title: 'No course selected',
+      message: 'Please pick a course from your learning dashboard.',
+    });
+  }
+
+  const course        = S.currentCourse || S.courses?.find(c => String(c.id) === String(activeCoursePlayerId)) || {};
+  const modules       = S.courseModules || [];
+  const allLessons    = S.allLessons || modules.flatMap(m => m.lessons || []);
+  const currentLesson = S.currentLesson || {};
+  const progress      = S.currentLessonProgress || {};
+  const isCompleted   = progress.status === 'completed';
+
+  const completedIds = allLessons
+    .filter(l => l.progress?.status === 'completed')
+    .map(l => String(l.id));
+  const completedCount = completedIds.length;
+  const totalLessons   = allLessons.length;
+  const progressPct    = totalLessons > 0
+    ? Math.round((completedCount / totalLessons) * 100)
+    : 0;
+
+  const idx  = allLessons.findIndex(l => String(l.id) === String(currentLesson.id));
+  const prev = idx > 0 ? allLessons[idx - 1] : null;
+  const next = idx < allLessons.length - 1 ? allLessons[idx + 1] : null;
+
+  return UserUI.page({
+    title: course.title || 'Course Player',
+    breadcrumb: `<a href="#/learning">My Courses</a> &gt; ${esc(course.title || '')}`,
+    content: `
+      <!-- ================================ -->
+      <!-- Course header bar                -->
+      <!-- ================================ -->
+      <section class="panel course-player-header" style="margin-bottom:20px;display:flex;align-items:center;gap:20px;padding:16px;">
+        <img src="${esc(courseThumb(course))}" alt=""
+             style="width:120px;height:70px;border-radius:8px;object-fit:cover;" />
+        <div style="flex:1;min-width:0;">
+          <h2 style="margin:0 0 4px 0;">${esc(course.title || '')}</h2>
+          <p class="form-hint" style="margin:0 0 6px 0;">${esc(course.description || '')}</p>
+          <div style="display:flex;gap:15px;font-size:0.85rem;color:var(--text-muted);flex-wrap:wrap;">
+            ${course.level ? `<span><i class="fas fa-signal"></i> ${esc(course.level)}</span>` : ''}
+            <span><i class="fas fa-folder"></i> ${modules.length} modules</span>
+            <span><i class="fas fa-book-open"></i> ${totalLessons} lessons</span>
+            ${course.duration_hours ? `<span><i class="fas fa-clock"></i> ${esc(course.duration_hours)} hours</span>` : ''}
+          </div>
+        </div>
+        <div style="width:250px;flex-shrink:0;">
+          <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:5px;">
+            <span>Course Progress</span>
+            <strong>${progressPct}%</strong>
+          </div>
+          <div class="progress-bar" style="height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden;">
+            <span style="display:block;height:100%;width:${progressPct}%;background:var(--accent);"></span>
+          </div>
+          <p class="form-hint" style="margin:6px 0 0 0;font-size:0.75rem;">
+            ${completedCount} of ${totalLessons} lessons completed
+          </p>
+        </div>
+      </section>
+
+      <!-- ================================ -->
+      <!-- Two-column main layout           -->
+      <!-- ================================ -->
+      <div class="course-player-layout" style="display:flex;gap:24px;align-items:flex-start;">
+
+        <!-- ============ LEFT: lesson content ============ -->
+        <div class="course-player-main" style="flex:1;min-width:0;">
+
+          <!-- Title row -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:15px;margin-bottom:15px;">
+            <div style="min-width:0;">
+              <a href="#/learning" class="btn-ghost btn-xs">
+                <i class="fas fa-arrow-left"></i> Back to Course
+              </a>
+              <h1 style="margin:10px 0 5px 0;font-size:1.5rem;">${esc(currentLesson.title || '')}</h1>
+              <div class="lesson-meta-row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                <span class="chip chip-neutral">${esc(currentLesson.lesson_type || 'video')}</span>
+                <span class="program-meta">${currentLesson.duration_minutes || 0} min</span>
+                ${isCompleted
+                  ? '<span class="status status-active">Completed</span>'
+                  : progress.status === 'in_progress'
+                  ? '<span class="status status-pending">In Progress</span>'
+                  : ''}
+              </div>
+            </div>
+            <button class="btn btn-primary"
+                    data-action="mark-lesson-complete"
+                    data-lesson="${currentLesson.id}"
+                    ${isCompleted || !__lessonCanComplete ? 'disabled' : ''}
+                    title="${!__lessonCanComplete && !isCompleted ? 'Complete playback requirements first' : ''}">
+              <i class="fas fa-check"></i>
+              ${isCompleted ? 'Completed' : 'Mark as Complete'}
+            </button>
+          </div>
+
+          <!-- Video / audio / slides player -->
+          <div id="lesson-content-host">
+            ${renderLessonContent(currentLesson, progress)}
+          </div>
+
+          <!-- Prev / Next navigation -->
+          <nav class="course-player-nav" aria-label="Lesson navigation"
+               style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:16px 0;">
+            ${prev
+              ? `<button class="btn btn-secondary btn-sm"
+                        data-action="open-course-player"
+                        data-id="${activeCoursePlayerId}"
+                        data-lesson="${prev.id}">
+                  <i class="fas fa-arrow-left"></i> ${esc(prev.title)}</button>`
+              : '<span></span>'}
+            ${next
+              ? `<button class="btn btn-secondary btn-sm"
+                        data-action="open-course-player"
+                        data-id="${activeCoursePlayerId}"
+                        data-lesson="${next.id}">
+                  ${esc(next.title)} <i class="fas fa-arrow-right"></i></button>`
+              : '<span></span>'}
+          </nav>
+
+          <!-- Tabs -->
+          <div class="tabs-course-player" role="tablist"
+               style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:15px;">
+            ${playerTabBtn('overview',   'fa-book-open',           'Lesson Overview')}
+            ${playerTabBtn('notes',      'fa-sticky-note',         'Notes')}
+            ${playerTabBtn('qa',         'fa-question-circle',     'Q&amp;A')}
+            ${playerTabBtn('discussion', 'fa-comments',            'Discussion')}
+            ${playerTabBtn('resources',  'fa-download',            'Resources')}
+          </div>
+
+          <!-- Tab content -->
+          <div id="player-tab-content" role="tabpanel"
+               aria-label="Lesson tabs content"></div>
+
+        </div>
+
+        <!-- ============ RIGHT: sticky curriculum ============ -->
+        <aside class="course-player-sidebar" aria-label="Course curriculum"
+               style="width:320px;flex-shrink:0;">
+          <div class="panel" style="position:sticky;top:20px;max-height:calc(100vh - 80px);overflow-y:auto;">
+            <h3 class="panel-title" style="margin-bottom:15px;">
+              <i class="fas fa-list-check"></i> Course Curriculum
+            </h3>
             ${modules.map(m => `
-              <div class="player-module">
-                <div class="player-module-header">${esc(m.title)}</div>
-                ${(m.lessons || []).map(l => `
-                  <div class="player-lesson ${String(l.id) === String(currentLesson.id) ? 'active' : ''} ${completedLessons.includes(l.id) ? 'completed' : ''}"
-                       data-lesson-id="${l.id}" role="button" tabindex="0"
-                       aria-label="${esc(l.title)}${completedLessons.includes(l.id) ? ', completed' : ''}">
-                    <i class="fas ${completedLessons.includes(l.id) ? 'fa-check-circle' : lessonIcon(l.lesson_type)}" aria-hidden="true"></i>
-                    <span>${esc(l.title)}</span>
-                    ${l.lesson_type === 'assignment'
-                      ? '<span class="chip chip-purple" style="font-size:0.6em;margin-left:auto">A</span>' : ''}
-                  </div>
-                `).join('')}
+              <div class="player-module" style="margin-bottom:15px;">
+                <div class="player-module-header"
+                     style="font-weight:600;font-size:0.9rem;margin-bottom:8px;">
+                  ${esc(m.title)}
+                </div>
+                ${(m.lessons || []).map(l => {
+                  const isActive    = String(l.id) === String(currentLesson.id);
+                  const isDone      = completedIds.includes(String(l.id));
+                  return `
+                    <div class="player-lesson ${isActive ? 'active' : ''} ${isDone ? 'completed' : ''}"
+                         data-action="open-course-player"
+                         data-id="${activeCoursePlayerId}"
+                         data-lesson="${l.id}"
+                         role="button"
+                         tabindex="0"
+                         aria-label="${esc(l.title)}${isDone ? ', completed' : ''}"
+                         aria-current="${isActive ? 'true' : 'false'}"
+                         style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:0.85rem;"
+                         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+                      <i class="fas ${isDone ? 'fa-check-circle' : isActive ? 'fa-play-circle' : lessonIcon(l.lesson_type)}"
+                         style="color:${isDone ? 'var(--accent)' : isActive ? 'var(--brand)' : 'var(--text-muted)'};"
+                         aria-hidden="true"></i>
+                      <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                        ${esc(l.title)}
+                      </span>
+                      ${isActive ? '<span class="chip chip-blue" style="font-size:0.65rem;">Now</span>' : ''}
+                    </div>
+                  `;
+                }).join('')}
               </div>
             `).join('')}
-          </aside>
+          </div>
+        </aside>
 
-          <main class="course-player-main">
-            <div id="lesson-content-host">${renderLessonContent(S.currentLesson, S.currentLessonProgress)}</div>
+      </div>
+    `,
+  });
+}
 
-            ${navHtml}
-
-            <div class="tabs-course-player" role="tablist">
-              <button class="tab-btn tab-btn-active" role="tab" aria-selected="true" data-player-tab="notes">
-                <i class="fas fa-sticky-note" aria-hidden="true"></i> Notes</button>
-              <button class="tab-btn" role="tab" aria-selected="false" data-player-tab="qa">
-                <i class="fas fa-question-circle" aria-hidden="true"></i> Q&amp;A</button>
-              <button class="tab-btn" role="tab" aria-selected="false" data-player-tab="discussion">
-                <i class="fas fa-comments" aria-hidden="true"></i> Discussion</button>
-            </div>
-
-            <div id="player-tab-content" role="tabpanel"></div>
-          </main>
-        </div>`,
-      footer: `<button class="btn btn-secondary" data-close-modal>Close Course</button>`,
-    });
-
-    bindPlayerInteractions(courseId, currentLesson.id);
-    bindPlayerKeyboardShortcuts();
-
-    if (isAssignment) {
-      bindAssignmentInteractions(courseId, currentLesson.id);
-    }
-  } catch (e) { showToast(e.message, 'error'); }
-  finally { showLoading(false); }
+/* Helper: render a single tab button */
+function playerTabBtn(key, icon, label) {
+  const on = __playerActiveTab === key;
+  return `<button class="tab-btn ${on ? 'tab-btn-active' : ''}"
+                  role="tab"
+                  aria-selected="${on ? 'true' : 'false'}"
+                  data-action="player-tab"
+                  data-player-tab="${key}">
+            <i class="fas ${icon}" aria-hidden="true"></i> ${label}
+          </button>`;
 }
 
 /* ============================================================ */
-/* EXPANSION — global keyboard shortcuts (scoped to open modal) */
+/* Lesson media renderer (video / audio / slides / text)         */
 /* ============================================================ */
-function bindPlayerKeyboardShortcuts() {
-  __playerState.keyHandler = (e) => {
-    // Only when player modal is open
-    const player = document.querySelector('.course-player-modal');
-    if (!player) return;
-    // Skip if focus is in an input/textarea/select
-    const tag = (e.target?.tagName || '').toLowerCase();
-    if (['input', 'textarea', 'select'].includes(tag) || e.target?.isContentEditable) return;
-
-    const v = __playerState.videoEl;
-    if (!v) return;
-
-    switch (e.key) {
-      case ' ':
-      case 'k':
-        e.preventDefault();
-        v.paused ? v.play().catch(() => {}) : v.pause();
-        break;
-      case 'ArrowRight':
-        if (e.shiftKey) { e.preventDefault(); v.currentTime = Math.min(v.duration || 0, v.currentTime + 10); }
-        break;
-      case 'ArrowLeft':
-        if (e.shiftKey) { e.preventDefault(); v.currentTime = Math.max(0, v.currentTime - 10); }
-        break;
-      case 'm':
-        v.muted = !v.muted;
-        showToast(v.muted ? 'Muted' : 'Unmuted', 'info', 1500);
-        break;
-      case 'f':
-        if (document.fullscreenElement) document.exitFullscreen?.();
-        else v.requestFullscreen?.().catch(() => {});
-        break;
-    }
-  };
-  document.addEventListener('keydown', __playerState.keyHandler);
-}
 
 function renderLessonContent(lesson, progress) {
   if (!lesson) return '<p class="empty-row">No lesson data</p>';
 
-  if (lesson.lesson_type === 'assignment') {
-    return renderAssignmentLesson(lesson, progress);
-  }
-
   const content    = lesson.content || lesson.description || '';
-  const resources  = safeJsonArray(lesson.resources);
-  const transcript = lesson.transcript_url || '';
   const resumeAt   = Number(progress?.position_seconds || 0);
+  const isDone     = progress?.status === 'completed';
+  const showResume = resumeAt > 5 && !isDone;
+  const transcript = lesson.transcript_url || '';
 
   return `
     <div class="lesson-content">
-      <h2 class="lesson-title">${esc(lesson.title)}</h2>
-      <div class="lesson-meta-row">
-        <span class="chip chip-neutral">${esc(lesson.lesson_type || 'video')}</span>
-        <span class="program-meta">${lesson.duration_minutes || 0} min</span>
-        ${progress?.status === 'completed'
-          ? '<span class="status status-active">Completed</span>'
-          : progress?.status === 'in_progress'
-          ? '<span class="status status-pending">In Progress</span>'
-          : ''}
-        ${resumeAt > 5 && progress?.status !== 'completed'
-          ? `<span class="chip chip-blue">Resume at ${Math.floor(resumeAt/60)}:${String(resumeAt%60).padStart(2,'0')}</span>`
-          : ''}
-      </div>
 
       ${lesson.lesson_type === 'video' && lesson.video_url ? `
-        <div class="lesson-video-wrap">
-          <video id="lesson-video" controls preload="metadata" playsinline
-                 poster="${esc(lesson.thumbnail || '')}" style="width:100%"
+        <div class="lesson-video-wrap"
+             style="background:#000;border-radius:12px;overflow:hidden;margin-bottom:14px;aspect-ratio:16/9;">
+          <video id="lesson-video"
+                 controls preload="metadata" playsinline
+                 poster="${esc(lesson.thumbnail || '')}"
+                 style="width:100%;height:100%;"
                  data-resume="${resumeAt}"
                  aria-label="Lesson video: ${esc(lesson.title)}">
             <source src="${esc(lesson.video_url)}" />
-            ${lesson.captions_url ? `<track kind="captions" src="${esc(lesson.captions_url)}" srclang="en" label="English" default />` : ''}
+            ${lesson.captions_url
+              ? `<track kind="captions" src="${esc(lesson.captions_url)}" srclang="en" label="English" default />`
+              : ''}
             Your browser does not support video playback.
           </video>
-          <p id="video-error" class="form-hint" style="display:none;color:var(--danger)" role="alert"></p>
-          <div class="player-aux-controls">
-            ${transcript ? `<a href="${esc(transcript)}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs">
-              <i class="fas fa-file-alt"></i> Transcript</a>` : ''}
-            <label class="form-hint" style="display:inline-flex;align-items:center;gap:6px">
+          <p id="video-error" class="form-hint"
+             style="display:none;color:var(--danger);padding:8px 0;" role="alert"></p>
+          <div class="player-aux-controls"
+               style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 0;">
+            ${transcript
+              ? `<a href="${esc(transcript)}" target="_blank" rel="noopener"
+                    class="btn btn-ghost btn-xs">
+                   <i class="fas fa-file-alt"></i> Transcript</a>`
+              : ''}
+            ${showResume
+              ? `<span class="chip chip-blue">
+                   <i class="fas fa-history"></i> Resume at ${formatClock(resumeAt)}
+                 </span>`
+              : ''}
+            <label class="form-hint"
+                   style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;">
               Playback speed
-              <select id="lesson-speed" class="form-select" style="width:auto;padding:2px 6px">
+              <select id="lesson-speed" class="form-select"
+                      style="width:auto;padding:2px 6px;">
                 <option value="0.75">0.75x</option>
                 <option value="1" selected>1x</option>
                 <option value="1.25">1.25x</option>
@@ -290,348 +510,291 @@ function renderLessonContent(lesson, progress) {
                 <option value="2">2x</option>
               </select>
             </label>
-            <span class="form-hint" style="margin-left:auto;font-size:0.75em">
-              <i class="fas fa-keyboard"></i> Space: play · Shift+←/→: 10s · M: mute · F: fullscreen
-            </span>
           </div>
         </div>
       ` : ''}
 
       ${lesson.lesson_type === 'audio' && lesson.audio_url ? `
-        <audio id="lesson-audio" controls preload="metadata" style="width:100%;margin-top:12px"
-               data-resume="${resumeAt}"
-               aria-label="Lesson audio: ${esc(lesson.title)}">
-          <source src="${esc(lesson.audio_url)}" />
-        </audio>
+        <div style="background:var(--surface-2);border-radius:12px;padding:20px;margin-bottom:14px;">
+          <audio id="lesson-audio"
+                 controls preload="metadata"
+                 style="width:100%;"
+                 data-resume="${resumeAt}"
+                 aria-label="Lesson audio: ${esc(lesson.title)}">
+            <source src="${esc(lesson.audio_url)}" />
+          </audio>
+          ${showResume
+            ? `<p class="form-hint" style="margin:10px 0 0 0;">
+                 <i class="fas fa-history"></i> Resume at ${formatClock(resumeAt)}
+               </p>`
+            : ''}
+          ${transcript
+            ? `<a href="${esc(transcript)}" target="_blank" rel="noopener"
+                  class="btn btn-ghost btn-xs" style="margin-top:10px;">
+                 <i class="fas fa-file-alt"></i> Transcript</a>`
+            : ''}
+        </div>
       ` : ''}
 
       ${lesson.lesson_type === 'slides' && lesson.slides_url ? `
-        <div class="lesson-slides">
-          <a class="btn btn-primary" href="${esc(lesson.slides_url)}" target="_blank" rel="noopener">
-            <i class="fas fa-file-powerpoint"></i> Open Slides</a>
+        <div class="lesson-slides"
+             style="background:var(--surface-2);border-radius:12px;padding:20px;margin-bottom:14px;text-align:center;">
+          <p class="form-hint" style="margin-top:0;">
+            This lesson is a slide deck. Open it in a new tab to view.
+          </p>
+          <a class="btn btn-primary"
+             href="${esc(lesson.slides_url)}"
+             target="_blank" rel="noopener">
+            <i class="fas fa-file-powerpoint"></i> Open Slides
+          </a>
         </div>
       ` : ''}
 
-      ${content ? `<div class="lesson-body">${content.replace(/\n/g, '<br/>')}</div>` : ''}
-
-      ${resources.length ? `
-        <div class="lesson-resources">
-          <h4>Resources</h4>
-          ${resources.map(r => `
-            <a class="lesson-resource-link" href="${esc(r.url)}" target="_blank" rel="noopener">
-              <i class="fas fa-download" aria-hidden="true"></i> ${esc(r.name || 'Download')}
-            </a>
-          `).join('')}
-        </div>
-      ` : ''}
+      ${content
+        ? `<div class="lesson-body" style="line-height:1.7;margin-top:8px;">
+             ${content.replace(/\n/g, '<br/>')}
+           </div>`
+        : ''}
     </div>
   `;
 }
 
 /* ============================================================ */
-/* SPRINT 2 / Item C — Assignment lesson renderer               */
+/* Tab renderers                                                 */
 /* ============================================================ */
 
-function renderAssignmentLesson(lesson, progress) {
-  const a = S.currentAssignment;
-  const submission = a?.submission || null;
-  const assignment = a?.assignment || a || {};
+function renderPlayerTabContent(tab, courseId, lessonId) {
+  switch (tab) {
+    case 'notes':      return renderLessonNotes();
+    case 'qa':         return renderLessonQA();
+    case 'discussion': return renderLessonDiscussion(lessonId);
+    case 'resources':  return renderLessonResources();
+    case 'overview':
+    default:           return renderLessonOverview();
+  }
+}
 
-  const submittedStatus = submission?.status;
-  const isGraded = submittedStatus === 'graded';
-  const isSubmitted = submittedStatus === 'submitted' || isGraded;
-
-  const score = submission?.score;
-  const passed = submission?.passed === true || (isGraded && score != null && Number(score) >= Number(assignment.pass_score || 60));
-  const canResubmit = submission?.can_resubmit === true || (isGraded && !passed && assignment.allow_resubmit !== false);
-
-  /* EXPANSION — restore draft when re-rendering the form */
-  const draft = !isSubmitted ? __loadDraft(lesson.id) : '';
+/* Overview tab — "What you'll learn" + lesson meta */
+function renderLessonOverview() {
+  const lesson   = S.currentLesson || {};
+  const progress = S.currentLessonProgress || {};
+  const content  = lesson.content || lesson.description || '';
+  const isDone   = progress.status === 'completed';
+  const resumeAt = Number(progress.position_seconds || 0);
 
   return `
-    <div class="assignment-content">
-      <h2 class="lesson-title">${esc(lesson.title)}</h2>
-      <div class="lesson-meta-row">
-        <span class="chip chip-purple"><i class="fas fa-file-alt"></i> Assignment</span>
-        ${assignment.max_score ? `<span class="program-meta">Worth ${assignment.max_score} points</span>` : ''}
-        ${assignment.due_at ? `<span class="program-meta">Due ${fmtDT(assignment.due_at)}</span>` : ''}
-        ${isGraded
-          ? `<span class="status ${passed ? 'status-active' : 'status-rejected'}">
-              ${passed ? 'Passed' : 'Needs revision'}
-             </span>`
-          : isSubmitted
-            ? '<span class="status status-pending">Submitted — awaiting grade</span>'
-            : '<span class="status status-pending">Not submitted</span>'}
-      </div>
+    <div class="overview-panel">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
 
-      ${assignment.description || lesson.content ? `
-        <div class="assignment-prompt">
-          <h3 class="panel-title" style="margin-top:16px">Assignment</h3>
-          <div class="lesson-body">${(assignment.description || lesson.content || '').replace(/\n/g, '<br/>')}</div>
-        </div>
-      ` : ''}
-
-      ${(assignment.rubric || []).length ? `
-        <div class="assignment-rubric" style="margin-top:16px">
-          <h3 class="panel-title">Grading rubric</h3>
-          <ul class="list-stack">
-            ${assignment.rubric.map(r => `
-              <li class="list-row">
-                <div class="list-row-main">
-                  <span class="list-row-title">${esc(r.criterion || '')}</span>
-                  ${r.description ? `<span class="list-row-sub">${esc(r.description)}</span>` : ''}
-                </div>
-                <span class="chip chip-neutral">${r.points || 0} pts</span>
-              </li>
-            `).join('')}
+        <div>
+          <h4 style="margin-top:0;">What you'll learn</h4>
+          <ul style="list-style:none;padding:0;line-height:1.9;margin:0;">
+            <li><i class="fas fa-check" style="color:var(--accent);margin-right:6px;"></i>
+                Understand the core concepts of "${esc(lesson.title || '')}"</li>
+            <li><i class="fas fa-check" style="color:var(--accent);margin-right:6px;"></i>
+                Apply the techniques demonstrated in this lesson</li>
+            <li><i class="fas fa-check" style="color:var(--accent);margin-right:6px;"></i>
+                Complete the practice exercise to reinforce learning</li>
+            ${lesson.duration_minutes
+              ? `<li><i class="fas fa-clock" style="color:var(--brand);margin-right:6px;"></i>
+                   Estimated duration: ${lesson.duration_minutes} minutes</li>`
+              : ''}
           </ul>
+
+          ${content
+            ? `<div class="lesson-body" style="margin-top:20px;padding:14px;background:var(--surface-2);border-radius:8px;">
+                 ${content.replace(/\n/g, '<br/>')}
+               </div>`
+            : ''}
         </div>
-      ` : ''}
 
-      ${isSubmitted ? `
-        <div class="assignment-submission" style="margin-top:20px">
-          <h3 class="panel-title">
-            <i class="fas ${isGraded ? 'fa-check-circle' : 'fa-clock'}" style="color:var(--${isGraded ? 'accent' : 'warning'})"></i>
-            Your submission
-          </h3>
-          <p class="form-hint">Submitted ${timeAgo(submission.submitted_at || submission.created_at)}</p>
-          ${submission.text ? `
-            <div class="lesson-body" style="margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)">
-              ${esc(submission.text).replace(/\n/g, '<br/>')}
-            </div>
-          ` : ''}
-          ${(submission.files || []).length ? `
-            <p style="margin-top:8px">
-              ${(submission.files || []).map(f => `
-                <a class="btn btn-ghost btn-xs" href="${esc(f.url)}" target="_blank" rel="noopener">
-                  <i class="fas fa-paperclip"></i> ${esc(f.name || 'Attachment')}
-                </a>
-              `).join(' ')}
-            </p>
-          ` : ''}
-
-          ${isGraded ? `
-            <div class="assignment-grade" style="
-              margin-top:16px;padding:16px;border-radius:8px;
-              background:${passed ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'};
-              border:1px solid ${passed ? 'var(--accent)' : 'var(--danger)'}">
-              <p style="font-size:1.2rem;font-weight:600;margin-bottom:8px">
-                ${esc(String(score))}${assignment.max_score ? '/' + assignment.max_score : '%'}
-                <span class="chip chip-${passed ? 'green' : 'red'}" style="margin-left:8px">
-                  ${passed ? 'Passed' : 'Needs revision'}
-                </span>
-              </p>
-              ${submission.feedback ? `
-                <p><strong>Feedback from ${esc(submission.grader_name || 'instructor')}:</strong></p>
-                <div style="white-space:pre-wrap">${esc(submission.feedback)}</div>
-              ` : '<p class="form-hint">No feedback provided.</p>'}
-            </div>
-            ${!passed && canResubmit ? `
-              <button class="btn btn-primary btn-sm" id="assignmentResubmitBtn" style="margin-top:12px">
-                <i class="fas fa-redo"></i> Resubmit
-              </button>
-            ` : ''}
-          ` : `
-            ${submission.allow_edit ? `
-              <button class="btn btn-secondary btn-sm" id="assignmentEditBtn" style="margin-top:12px">
-                <i class="fas fa-pen"></i> Update submission
-              </button>
-            ` : ''}
-          `}
+        <div class="panel" style="background:var(--surface-2);padding:16px;border-radius:8px;">
+          <h4 style="margin-top:0;">Lesson Details</h4>
+          <p class="form-hint" style="margin:0 0 6px 0;">
+            <i class="fas fa-layer-group"></i>
+            Type: <strong>${esc(lesson.lesson_type || 'video')}</strong>
+          </p>
+          <p class="form-hint" style="margin:0 0 6px 0;">
+            <i class="fas fa-clock"></i>
+            Duration: <strong>${lesson.duration_minutes || 0} min</strong>
+          </p>
+          <p class="form-hint" style="margin:0 0 6px 0;">
+            <i class="fas fa-info-circle"></i>
+            Status:
+            <strong>
+              ${isDone
+                ? '<span style="color:var(--accent);">Completed</span>'
+                : progress.status === 'in_progress'
+                ? '<span style="color:var(--warning);">In Progress</span>'
+                : 'Not Started'}
+            </strong>
+          </p>
+          ${resumeAt > 5 && !isDone
+            ? `<p class="form-hint" style="margin:0;">
+                 <i class="fas fa-history"></i>
+                 Resume point: <strong>${formatClock(resumeAt)}</strong>
+               </p>`
+            : ''}
         </div>
-      ` : `
-        <div class="assignment-form" style="margin-top:20px" id="assignmentFormWrap">
-          <h3 class="panel-title">Submit your work</h3>
-          <label class="form-group">
-            <span class="form-label">Your answer</span>
-            <textarea id="assignmentText" class="form-textarea" rows="6"
-                      placeholder="${esc(assignment.text_placeholder || 'Type your answer here...')}"
-                      maxlength="10000">${esc(draft)}</textarea>
-            <p class="form-hint" id="assignmentDraftHint" style="display:${draft ? 'block' : 'none'}">
-              <i class="fas fa-save"></i> Draft restored from this device
-            </p>
-          </label>
-          <label class="form-group">
-            <span class="form-label">Attach files (optional)</span>
-            <input type="file" id="assignmentFiles" class="form-input" multiple
-                   accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.zip,.py,.js,.html,.css,.csv" />
-            <p class="form-hint">
-              Max ${assignment.max_file_size_mb || 25}MB per file. Accepted: PDF, DOC, TXT, images, ZIP, and code files.
-            </p>
-          </label>
-          <div class="panel-actions">
-            <button class="btn btn-primary" id="assignmentSubmitBtn">
-              <i class="fas fa-paper-plane"></i> Submit Assignment</button>
-          </div>
-        </div>
-      `}
-    </div>
-  `;
-}
 
-function bindAssignmentInteractions(courseId, lessonId) {
-  const submitBtn = document.getElementById('assignmentSubmitBtn');
-  if (submitBtn) submitBtn.onclick = () => _doSubmitAssignment(lessonId, { edit: false });
-
-  const editBtn = document.getElementById('assignmentEditBtn');
-  if (editBtn) editBtn.onclick = () => _openAssignmentEditForm(lessonId);
-
-  const resubmitBtn = document.getElementById('assignmentResubmitBtn');
-  if (resubmitBtn) resubmitBtn.onclick = () => _openAssignmentEditForm(lessonId);
-
-  /* EXPANSION — auto-save draft as user types */
-  const textEl = document.getElementById('assignmentText');
-  if (textEl) {
-    const saveDraft = debounce(() => __saveDraft(lessonId, textEl.value), 400);
-    textEl.addEventListener('input', saveDraft);
-  }
-}
-
-function _openAssignmentEditForm(lessonId) {
-  const host = document.getElementById('lesson-content-host');
-  if (!host) return;
-
-  const assignment = S.currentAssignment?.assignment || S.currentAssignment || {};
-  const submission = S.currentAssignment?.submission || {};
-  const draft = __loadDraft(lessonId);
-
-  host.innerHTML = `
-    <div class="assignment-content">
-      <h2 class="lesson-title">${esc(S.currentLesson.title)}</h2>
-      <div class="assignment-form" style="margin-top:16px">
-        <h3 class="panel-title">Update your submission</h3>
-        <label class="form-group">
-          <span class="form-label">Your answer</span>
-          <textarea id="assignmentText" class="form-textarea" rows="6" maxlength="10000">${esc(submission.text || draft || '')}</textarea>
-        </label>
-        <label class="form-group">
-          <span class="form-label">Attach files (optional)</span>
-          <input type="file" id="assignmentFiles" class="form-input" multiple
-                 accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.zip,.py,.js,.html,.css,.csv" />
-          <p class="form-hint">Max ${assignment.max_file_size_mb || 25}MB per file.</p>
-        </label>
-        <div class="panel-actions">
-          <button class="btn btn-secondary" id="assignmentCancelBtn">Cancel</button>
-          <button class="btn btn-primary" id="assignmentSubmitBtn">
-            <i class="fas fa-paper-plane"></i> Save &amp; Resubmit</button>
-        </div>
       </div>
     </div>
   `;
-
-  document.getElementById('assignmentSubmitBtn').onclick = () =>
-    _doSubmitAssignment(lessonId, { edit: true });
-  document.getElementById('assignmentCancelBtn').onclick = () =>
-    rerenderCurrentPlayerLesson();
-
-  const textEl = document.getElementById('assignmentText');
-  if (textEl) {
-    textEl.addEventListener('input', debounce(() => __saveDraft(lessonId, textEl.value), 400));
-  }
 }
 
-function rerenderCurrentPlayerLesson() {
+/* Notes tab */
+function renderLessonNotes() {
+  return `
+    <div class="notes-panel">
+      <div class="notes-add" style="margin-bottom:14px;">
+        <textarea id="new-note-text" class="form-textarea" rows="3"
+                  placeholder="Write a note for this lesson..."></textarea>
+        <button class="btn btn-primary btn-sm" id="add-note-btn" style="margin-top:8px;">
+          <i class="fas fa-plus"></i> Add Note
+        </button>
+      </div>
+      <ul class="notes-list" style="list-style:none;padding:0;margin:0;">
+        ${(S.lessonNotes || []).map(n => `
+          <li class="note-item"
+              style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
+            <p class="note-content" style="margin:0 0 6px 0;">${esc(n.content)}</p>
+            <span class="note-time form-hint" style="font-size:0.75rem;">
+              ${timeAgo(n.created_at)}
+              ${n.timestamp_seconds
+                ? ` &middot; <i class="fas fa-clock"></i> @ ${formatClock(n.timestamp_seconds)}`
+                : ''}
+            </span>
+          </li>
+        `).join('') || '<li class="empty-row">No notes yet. Be the first to add one!</li>'}
+      </ul>
+    </div>
+  `;
+}
+
+/* Q&A tab */
+function renderLessonQA() {
+  return `
+    <div class="qa-panel">
+      <div class="qa-add" style="margin-bottom:14px;display:flex;gap:8px;">
+        <input id="lesson-q-input" class="form-input"
+               placeholder="Ask a question about this lesson..."
+               style="flex:1;" />
+        <button class="btn btn-primary btn-sm" id="lesson-q-btn">
+          <i class="fas fa-paper-plane"></i> Ask
+        </button>
+      </div>
+      <ul class="qa-list" style="list-style:none;padding:0;margin:0;">
+        ${(S.lessonQuestions || []).map(q => `
+          <li class="qa-item"
+              style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
+            <p class="qa-q" style="margin:0 0 8px 0;">
+              <i class="fas fa-question-circle" style="color:var(--brand);"></i>
+              <strong>${esc(q.question)}</strong>
+            </p>
+            ${q.answer
+              ? `<p class="qa-a" style="margin:0;padding-left:20px;color:var(--text-muted);">
+                   <strong>Answer:</strong> ${esc(q.answer)}
+                 </p>`
+              : '<p class="qa-pending form-hint" style="margin:0;padding-left:20px;">Awaiting answer from instructor</p>'}
+          </li>
+        `).join('') || '<li class="empty-row">No questions yet. Be the first to ask!</li>'}
+      </ul>
+    </div>
+  `;
+}
+
+/* Discussion tab */
+function renderLessonDiscussion(lessonId) {
+  const discussions = (S.courseDiscussions || [])
+    .filter(d => String(d.lesson_id) === String(lessonId));
+
+  return `
+    <div class="discussion-panel">
+      <div class="discussion-add" style="margin-bottom:14px;">
+        <textarea id="discussion-input" class="form-textarea" rows="2"
+                  placeholder="Start a discussion..."></textarea>
+        <button class="btn btn-primary btn-sm" id="discussion-post-btn" style="margin-top:8px;">
+          <i class="fas fa-comment"></i> Post
+        </button>
+      </div>
+      <ul class="discussion-list" style="list-style:none;padding:0;margin:0;">
+        ${discussions.map(d => `
+          <li class="discussion-item"
+              style="display:flex;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;">
+            <img class="user-avatar" src="${avatar({ name: d.author_name })}" alt=""
+                 style="width:36px;height:36px;border-radius:50%;flex-shrink:0;" />
+            <div class="discussion-body" style="flex:1;min-width:0;">
+              <div class="discussion-author"
+                   style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+                <strong>${esc(d.author_name || 'Anonymous')}</strong>
+                <span class="discussion-time form-hint" style="font-size:0.75rem;">
+                  ${timeAgo(d.created_at)}
+                </span>
+              </div>
+              <p style="margin:0 0 8px 0;">${esc(d.body)}</p>
+              <div class="discussion-actions">
+                <button class="btn btn-ghost btn-xs"
+                        data-action="upvote-discussion"
+                        data-id="${d.id}">
+                  <i class="fas fa-arrow-up"></i> ${d.upvotes || 0}
+                </button>
+              </div>
+            </div>
+          </li>
+        `).join('') || '<li class="empty-row">No discussions yet. Start the conversation!</li>'}
+      </ul>
+    </div>
+  `;
+}
+
+/* Resources tab */
+function renderLessonResources() {
+  const lesson    = S.currentLesson || {};
+  const resources = safeJsonArray(lesson.resources);
+  const transcript = lesson.transcript_url || '';
+
+  const items = [
+    ...(transcript ? [{ name: 'Transcript', url: transcript, icon: 'fa-file-alt' }] : []),
+    ...resources,
+  ];
+
+  if (!items.length) {
+    return '<div class="empty-row">No resources for this lesson.</div>';
+  }
+
+  return `
+    <div class="resources-panel">
+      <ul style="list-style:none;padding:0;margin:0;">
+        ${items.map(r => `
+          <li style="margin-bottom:10px;">
+            <a class="btn btn-secondary btn-sm lesson-resource-link"
+               href="${esc(r.url)}" target="_blank" rel="noopener"
+               style="width:100%;justify-content:flex-start;text-align:left;">
+              <i class="fas ${r.icon || 'fa-download'}"
+                 style="color:${r.icon ? 'var(--brand)' : '#ef4444'};margin-right:8px;"></i>
+              ${esc(r.name || 'Download')}
+            </a>
+          </li>
+        `).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+/* ============================================================ */
+/* Post-render bindings                                          */
+/* ============================================================ */
+
+function bindCoursePlayerPage() {
   const courseId = __playerState.courseId;
   const lessonId = __playerState.lessonId;
   if (!courseId || !lessonId) return;
-  __cleanupPlayer();
-  closeModal();
-  openCoursePlayer(courseId, lessonId);
-}
 
-async function _doSubmitAssignment(lessonId, { edit = false } = {}) {
-  const textEl = document.getElementById('assignmentText');
-  const filesEl = document.getElementById('assignmentFiles');
-  const btn = document.getElementById('assignmentSubmitBtn');
-  const text = (textEl?.value || '').trim();
-  const files = Array.from(filesEl?.files || []);
-
-  if (!text && !files.length && !edit) {
-    return showToast('Enter an answer or attach at least one file', 'error');
-  }
-
-  const maxMb = Number((S.currentAssignment?.assignment || S.currentAssignment || {}).max_file_size_mb || 25);
-  for (const f of files) {
-    if (f.size > maxMb * 1024 * 1024) {
-      return showToast(`File "${f.name}" exceeds ${maxMb}MB`, 'error');
-    }
-  }
-
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Submitting…';
-  }
-
-  try {
-    let r;
-    if (files.length) {
-      const fd = new FormData();
-      fd.append('text', text);
-      files.forEach(f => fd.append('files[]', f));
-      r = await apiCall(`/api/eschool/lessons/${lessonId}/submission`, 'POST', fd, true);
-    } else {
-      r = await apiCall(`/api/eschool/lessons/${lessonId}/submission`, 'POST', { text });
-    }
-
-    /* EXPANSION — clear draft on successful submit */
-    __clearDraft(lessonId);
-
-    showToast(
-      r?.auto_graded
-        ? `Submitted! Score: ${r.score != null ? r.score + '%' : '—'}`
-        : 'Assignment submitted — awaiting instructor review',
-      'success', 6000
-    );
-
-    await rerenderCurrentPlayerLesson();
-  } catch (e) {
-    showToast(e.message || 'Submission failed', 'error');
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Assignment';
-    }
-  }
-}
-
-/* ============================================================ */
-/* Standard lesson interactions                                */
-/* ============================================================ */
-
-function bindPlayerInteractions(courseId, lessonId) {
-  document.querySelectorAll('.player-lesson').forEach(el => {
-    const go = () => { closeModal(); openCoursePlayer(courseId, el.dataset.lessonId); };
-    el.onclick = go;
-    el.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
-    };
-  });
-
-  document.querySelectorAll('[data-player-tab]').forEach(btn => {
-    btn.onclick = () => {
-      document.querySelectorAll('[data-player-tab]').forEach(b => {
-        b.classList.remove('tab-btn-active');
-        b.setAttribute('aria-selected', 'false');
-      });
-      btn.classList.add('tab-btn-active');
-      btn.setAttribute('aria-selected', 'true');
-      const tab = btn.dataset.playerTab;
-      const host = $('#player-tab-content');
-      if (tab === 'notes')           host.innerHTML = renderLessonNotes();
-      else if (tab === 'qa')         host.innerHTML = renderLessonQA();
-      else if (tab === 'discussion') host.innerHTML = renderLessonDiscussion(lessonId);
-      bindPlayerTabEvents(courseId, lessonId);
-    };
-  });
-
-  const host = $('#player-tab-content');
-  if (host) {
-    host.innerHTML = renderLessonNotes();
-    bindPlayerTabEvents(courseId, lessonId);
-  }
-
+  // -------- Video playback --------
   const video = $('#lesson-video');
   if (video) {
     __playerState.videoEl = video;
+
     const resume = Number(video.dataset.resume || 0);
     const onLoadedMetadata = () => {
       if (resume > 5 && video.duration && resume < video.duration - 5) {
@@ -650,10 +813,13 @@ function bindPlayerInteractions(courseId, lessonId) {
     });
 
     const speedSel = $('#lesson-speed');
-    if (speedSel) speedSel.onchange = () => {
-      try { video.playbackRate = Number(speedSel.value); } catch {}
-    };
+    if (speedSel) {
+      speedSel.onchange = () => {
+        try { video.playbackRate = Number(speedSel.value); } catch {}
+      };
+    }
 
+    // Debounced progress update — accumulate and flush every 10s
     video.addEventListener('timeupdate', () => {
       __playerState.pendingSeconds = Math.floor(video.currentTime);
       __playerState.dirty = true;
@@ -667,11 +833,12 @@ function bindPlayerInteractions(courseId, lessonId) {
     video.addEventListener('ended', () => {
       _flushPlayerProgress(lessonId);
       if (S.currentLessonProgress?.status !== 'completed') {
-        showToast('Lesson ended. Click "Mark Complete" to finish.', 'info', 4000);
+        showToast('Lesson ended. Click "Mark as Complete" to finish.', 'info', 4000);
       }
     });
   }
 
+  // -------- Audio playback --------
   const audio = $('#lesson-audio');
   if (audio) {
     const resume = Number(audio.dataset.resume || 0);
@@ -682,6 +849,7 @@ function bindPlayerInteractions(courseId, lessonId) {
       audio.removeEventListener('loadedmetadata', onMeta);
     };
     audio.addEventListener('loadedmetadata', onMeta);
+
     let lastSaved = 0;
     audio.addEventListener('timeupdate', () => {
       const current = Math.floor(audio.currentTime);
@@ -694,10 +862,97 @@ function bindPlayerInteractions(courseId, lessonId) {
       }
     });
   }
+
+  // -------- Initial tab content --------
+  const host = $('#player-tab-content');
+  if (host) {
+    host.innerHTML = renderPlayerTabContent(__playerActiveTab, courseId, lessonId);
+    bindPlayerTabEvents(courseId, lessonId);
+  }
 }
+
+/* Bind tab content form events */
+function bindPlayerTabEvents(courseId, lessonId) {
+  // Add note
+  const addBtn = $('#add-note-btn');
+  if (addBtn) {
+    addBtn.onclick = async () => {
+      const text = ($('#new-note-text')?.value || '').trim();
+      if (!text || addBtn.disabled) return;
+      addBtn.disabled = true;
+      try {
+        const v  = __playerState.videoEl;
+        const ts = v ? Math.floor(v.currentTime) : null;
+        await apiCall(`/api/eschool/lessons/${lessonId}/notes`, 'POST', {
+          content: text,
+          timestamp_seconds: ts,
+        });
+        const d = await apiCall(`/api/eschool/lessons/${lessonId}/notes`);
+        S.lessonNotes = d.notes || [];
+        $('#player-tab-content').innerHTML = renderLessonNotes();
+        bindPlayerTabEvents(courseId, lessonId);
+      } catch (e) {
+        showToast(e.message, 'error');
+      } finally {
+        addBtn.disabled = false;
+      }
+    };
+  }
+
+  // Ask question
+  const askBtn = $('#lesson-q-btn');
+  if (askBtn) {
+    askBtn.onclick = async () => {
+      const q = ($('#lesson-q-input')?.value || '').trim();
+      if (!q || askBtn.disabled) return;
+      askBtn.disabled = true;
+      try {
+        await apiCall(`/api/eschool/lessons/${lessonId}/questions`, 'POST', { question: q });
+        const d = await apiCall(`/api/eschool/lessons/${lessonId}/questions`);
+        S.lessonQuestions = d.questions || [];
+        $('#player-tab-content').innerHTML = renderLessonQA();
+        bindPlayerTabEvents(courseId, lessonId);
+      } catch (e) {
+        showToast(e.message, 'error');
+      } finally {
+        askBtn.disabled = false;
+      }
+    };
+  }
+
+  // Post discussion
+  const postBtn = $('#discussion-post-btn');
+  if (postBtn) {
+    postBtn.onclick = async () => {
+      const body = ($('#discussion-input')?.value || '').trim();
+      if (!body || postBtn.disabled) return;
+      postBtn.disabled = true;
+      try {
+        await apiCall('/api/eschool/discussions', 'POST', {
+          course_id: courseId,
+          lesson_id: lessonId,
+          body,
+        });
+        const d = await apiCall(`/api/eschool/courses/${courseId}/discussions`);
+        S.courseDiscussions = d.discussions || [];
+        $('#player-tab-content').innerHTML = renderLessonDiscussion(lessonId);
+        bindPlayerTabEvents(courseId, lessonId);
+      } catch (e) {
+        showToast(e.message, 'error');
+      } finally {
+        postBtn.disabled = false;
+      }
+    };
+  }
+}
+
+/* ============================================================ */
+/* Progress sync                                                 */
+/* ============================================================ */
 
 function _flushPlayerProgress(lessonId) {
   if (!__playerState.dirty) return;
+  if (!lessonId) return;
   const current = __playerState.pendingSeconds;
   __playerState.dirty = false;
   __playerState.lastFlushedAt = Date.now();
@@ -707,436 +962,30 @@ function _flushPlayerProgress(lessonId) {
   }).catch(() => {});
 }
 
+/* ============================================================ */
+/* Lifecycle cleanup                                             */
+/* ============================================================ */
+
 function __cleanupPlayer() {
+  // Flush any pending progress before leaving
   if (__playerState.lessonId) {
     try { _flushPlayerProgress(__playerState.lessonId); } catch {}
   }
-  if (__playerState.keyHandler) {
-    try { document.removeEventListener('keydown', __playerState.keyHandler); } catch {}
-    __playerState.keyHandler = null;
-  }
-  __playerState.courseId = null;
-  __playerState.lessonId = null;
-  __playerState.videoEl = null;
+  __playerState.courseId       = null;
+  __playerState.lessonId       = null;
+  __playerState.videoEl        = null;
   __playerState.pendingSeconds = 0;
-  __playerState.lastFlushedAt = 0;
-  __playerState.dirty = false;
-  __lessonCanComplete = false;
-  S.currentAssignment = null;
+  __playerState.lastFlushedAt  = 0;
+  __playerState.dirty          = false;
+  __lessonCanComplete          = false;
 }
 
 /* ============================================================ */
-/* Tab content renderers */
+/* Module registration                                           */
 /* ============================================================ */
 
-function renderLessonNotes() {
-  return `
-    <div class="notes-panel">
-      <div class="notes-add">
-        <textarea id="new-note-text" class="form-textarea" rows="3"
-                  placeholder="Write a note for this lesson..."></textarea>
-        <button class="btn btn-primary btn-sm" id="add-note-btn">
-          <i class="fas fa-plus"></i> Add Note</button>
-      </div>
-      <ul class="notes-list">
-        ${(S.lessonNotes || []).map(n => `
-          <li class="note-item">
-            <p class="note-content">${esc(n.content)}</p>
-            <span class="note-time">${timeAgo(n.created_at)}</span>
-          </li>
-        `).join('') || '<li class="empty-row">No notes yet</li>'}
-      </ul>
-    </div>
-  `;
+if (window.ExpertHubUser?.registerModule) {
+  window.ExpertHubUser.registerModule('course-player', renderCoursePlayerPage);
+} else {
+  console.warn('ExpertHubUser.registerModule not available; course-player page will not route.');
 }
-
-function renderLessonQA() {
-  return `
-    <div class="qa-panel">
-      <div class="qa-add">
-        <input id="lesson-q-input" class="form-input" placeholder="Ask a question about this lesson..." />
-        <button class="btn btn-primary btn-sm" id="lesson-q-btn">
-          <i class="fas fa-paper-plane"></i> Ask</button>
-      </div>
-      <ul class="qa-list">
-        ${(S.lessonQuestions || []).map(q => `
-          <li class="qa-item">
-            <p class="qa-q"><i class="fas fa-question-circle"></i> ${esc(q.question)}</p>
-            ${q.answer
-              ? `<p class="qa-a"><strong>Answer:</strong> ${esc(q.answer)}</p>`
-              : '<p class="qa-pending">Awaiting answer from instructor</p>'}
-          </li>
-        `).join('') || '<li class="empty-row">No questions yet. Be the first to ask!</li>'}
-      </ul>
-    </div>
-  `;
-}
-
-function renderLessonDiscussion(lessonId) {
-  const discussions = (S.courseDiscussions || [])
-    .filter(d => String(d.lesson_id) === String(lessonId));
-  return `
-    <div class="discussion-panel">
-      <div class="discussion-add">
-        <textarea id="discussion-input" class="form-textarea" rows="2"
-                  placeholder="Start a discussion..."></textarea>
-        <button class="btn btn-primary btn-sm" id="discussion-post-btn">
-          <i class="fas fa-comment"></i> Post</button>
-      </div>
-      <ul class="discussion-list">
-        ${discussions.map(d => `
-          <li class="discussion-item">
-            <img class="user-avatar" src="${avatar({ name: d.author_name })}" alt="" />
-            <div class="discussion-body">
-              <div class="discussion-author">
-                <strong>${esc(d.author_name || 'Anonymous')}</strong>
-                <span class="discussion-time">${timeAgo(d.created_at)}</span>
-              </div>
-              <p>${esc(d.body)}</p>
-              <div class="discussion-actions">
-                <button class="btn btn-ghost btn-xs" data-action="upvote-discussion" data-id="${d.id}">
-                  <i class="fas fa-arrow-up"></i> ${d.upvotes || 0}</button>
-              </div>
-            </div>
-          </li>
-        `).join('') || '<li class="empty-row">No discussions yet</li>'}
-      </ul>
-    </div>
-  `;
-}
-
-function bindPlayerTabEvents(courseId, lessonId) {
-  const addBtn = $('#add-note-btn');
-  if (addBtn) addBtn.onclick = async () => {
-    const text = ($('#new-note-text')?.value || '').trim();
-    if (!text || addBtn.disabled) return;
-    addBtn.disabled = true;
-    try {
-      const v = __playerState.videoEl;
-      const ts = v ? Math.floor(v.currentTime) : null;
-      await apiCall(`/api/eschool/lessons/${lessonId}/notes`, 'POST', {
-        content: text,
-        timestamp_seconds: ts,
-      });
-      const d = await apiCall(`/api/eschool/lessons/${lessonId}/notes`);
-      S.lessonNotes = d.notes || [];
-      $('#player-tab-content').innerHTML = renderLessonNotes();
-      bindPlayerTabEvents(courseId, lessonId);
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { addBtn.disabled = false; }
-  };
-
-  const askBtn = $('#lesson-q-btn');
-  if (askBtn) askBtn.onclick = async () => {
-    const q = ($('#lesson-q-input')?.value || '').trim();
-    if (!q || askBtn.disabled) return;
-    askBtn.disabled = true;
-    try {
-      await apiCall(`/api/eschool/lessons/${lessonId}/questions`, 'POST', { question: q });
-      const d = await apiCall(`/api/eschool/lessons/${lessonId}/questions`);
-      S.lessonQuestions = d.questions || [];
-      $('#player-tab-content').innerHTML = renderLessonQA();
-      bindPlayerTabEvents(courseId, lessonId);
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { askBtn.disabled = false; }
-  };
-
-  const postBtn = $('#discussion-post-btn');
-  if (postBtn) postBtn.onclick = async () => {
-    const body = ($('#discussion-input')?.value || '').trim();
-    if (!body || postBtn.disabled) return;
-    postBtn.disabled = true;
-    try {
-      await apiCall('/api/eschool/discussions', 'POST', { course_id: courseId, lesson_id: lessonId, body });
-      const d = await apiCall(`/api/eschool/courses/${courseId}/discussions`);
-      S.courseDiscussions = d.discussions || [];
-      $('#player-tab-content').innerHTML = renderLessonDiscussion(lessonId);
-      bindPlayerTabEvents(courseId, lessonId);
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { postBtn.disabled = false; }
-  };
-}
-
-/* ============================================================ */
-/* Actions */
-/* ============================================================ */
-
-window.ExpertHubUser.registerAction('open-course-player', (id) => openCoursePlayer(id));
-
-window.ExpertHubUser.registerAction('open-lesson', (_, el) => {
-  const courseId = el?.dataset?.course || __playerState.courseId;
-  const lessonId = el?.dataset?.lesson;
-  __cleanupPlayer();
-  closeModal();
-  openCoursePlayer(courseId, lessonId);
-});
-
-/* SPRINT 2 / D — mark-lesson-complete handles course-complete + cert */
-window.ExpertHubUser.registerAction('mark-lesson-complete', async (lessonId) => {
-  try {
-    const r = await apiCall(`/api/eschool/lessons/${lessonId}/complete`, 'POST');
-    if (r?.completed === false) {
-      return showToast(r.reason || 'Completion requirements not met yet', 'warning');
-    }
-
-    const courseId = __playerState.courseId;
-
-    if (r?.course_completed) {
-      if (r?.certificate_id) {
-        showToast('Course complete! Certificate issued.', 'success', 6000);
-        if (r.certificate_id && !S.certificates?.some(c => String(c.id) === String(r.certificate_id))) {
-          S.certificates = S.certificates || [];
-          S.certificates.unshift({
-            id: r.certificate_id,
-            course_id: courseId,
-            course_title: r.course_title || '',
-            serial: r.certificate_serial || '',
-            issued_at: new Date().toISOString(),
-          });
-        }
-        setTimeout(() => {
-          openModal({
-            title: '🎉 Course Complete!',
-            body: `
-              <div style="text-align:center;padding:20px">
-                <i class="fas fa-certificate" style="font-size:3rem;color:var(--accent)"></i>
-                <h3 style="margin-top:16px">Congratulations!</h3>
-                <p>You've completed the course and earned your certificate.</p>
-                ${r.certificate_serial ? `<p class="form-hint">Serial: <code class="code">${esc(r.certificate_serial)}</code></p>` : ''}
-              </div>
-            `,
-            footer: `
-              
-              <button class="btn btn-secondary" data-close-modal>Close</button>
-              <button class="btn btn-info" data-action="view-certificate"
-                      data-course="${courseId}" onclick="closeModal()">
-                <i class="fas fa-eye"></i> View Certificate</button>
-              <button class="btn btn-primary" data-action="download-certificate"
-                      data-course="${courseId}">
-                <i class="fas fa-download"></i> Download PDF</button>
-            `,
-          });
-        }, 800);
-      } else {
-        showToast('Course complete! Certificate will be issued after review.', 'info', 6000);
-      }
-    } else {
-      showToast('Lesson completed!', 'success');
-    }
-
-    /* Refresh enrolment + certificate data so badges update everywhere */
-    await _refreshLearningData({ force: true });
-    rerenderRoleContent();
-
-    /* Reload player unless we just showed the completion modal */
-    if (!r?.course_completed) {
-      const cid = __playerState.courseId;
-      const lid = __playerState.lessonId;
-      if (cid && lid) {
-        closeModal();
-        openCoursePlayer(cid, lid);
-      }
-    }
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-});
-
-/* ============================================================ */
-/* SPRINT 1 / Item A — free preview lesson player (non-enrolled) */
-/* ============================================================ */
-window.ExpertHubUser.registerAction('play-lesson-preview', async (lessonId, el) => {
-  const courseId = el?.dataset?.course;
-  if (!lessonId) return;
-  try {
-    showLoading(true);
-    const d = await apiCall(`/api/eschool/lessons/${lessonId}/preview`).catch(() => null);
-    showLoading(false);
-
-    if (!d || d.forbidden) {
-      return showToast(
-        d?.reason || 'Preview is not available for this lesson.',
-        'warning'
-      );
-    }
-
-    const lesson = d.lesson || {};
-    const modules = d.modules || [];
-    const allLessons = modules.flatMap(m => m.lessons || []);
-
-    S.currentLesson = lesson;
-    S.currentLessonProgress = null;
-    S.previewMode = true;
-
-    __cleanupPlayer();
-    __playerState.courseId = courseId || null;
-    __playerState.lessonId = lesson.id;
-
-    const idx = allLessons.findIndex(l => String(l.id) === String(lesson.id));
-    const prev = idx > 0 ? allLessons[idx - 1] : null;
-    const next = idx < allLessons.length - 1 ? allLessons[idx + 1] : null;
-
-    const navHtml = `
-      <nav class="course-player-nav" aria-label="Preview navigation">
-        ${prev
-          ? `<button class="btn btn-secondary btn-sm" data-action="play-lesson-preview"
-                     data-course="${courseId}" data-id="${prev.id}">
-               <i class="fas fa-arrow-left" aria-hidden="true"></i> Previous</button>`
-          : '<span></span>'}
-        <span class="chip chip-green" style="align-self:center">
-          <i class="fas fa-play"></i> Free preview</span>
-        ${next
-          ? `<button class="btn btn-secondary btn-sm" data-action="play-lesson-preview"
-                     data-course="${courseId}" data-id="${next.id}">
-               Next <i class="fas fa-arrow-right" aria-hidden="true"></i></button>`
-          : '<span></span>'}
-      </nav>
-    `;
-
-    openModal({
-      title: `${d.course_title || 'Preview'} — ${esc(lesson.title)}`,
-      className: 'course-player-modal',
-      body: `
-        <div class="course-player-layout">
-          <aside class="course-player-sidebar" aria-label="Preview curriculum">
-            <h3 class="panel-title">Preview Lessons</h3>
-            ${modules.map(m => `
-              <div class="player-module">
-                <div class="player-module-header">${esc(m.title)}</div>
-                ${(m.lessons || []).map(l => `
-                  <div class="player-lesson ${String(l.id) === String(lesson.id) ? 'active' : ''} ${l.is_preview ? 'is-preview' : ''}"
-                       ${l.is_preview ? `data-action="play-lesson-preview" data-course="${courseId}" data-id="${l.id}" role="button" tabindex="0"` : ''}>
-                    <i class="fas ${lessonIcon(l.lesson_type)}" aria-hidden="true"></i>
-                    <span>${esc(l.title)}</span>
-                    ${l.is_preview
-                      ? '<span class="chip chip-green" style="font-size:0.6em;margin-left:auto"><i class="fas fa-play"></i></span>'
-                      : '<i class="fas fa-lock curriculum-lock" style="margin-left:auto" aria-hidden="true"></i>'}
-                  </div>
-                `).join('')}
-              </div>
-            `).join('')}
-          </aside>
-
-          <main class="course-player-main">
-            <div id="lesson-content-host">
-              ${lesson.video_url ? `
-                <div class="lesson-video-wrap">
-                  <video id="lesson-video" controls preload="metadata" playsinline
-                         style="width:100%"
-                         aria-label="Preview video: ${esc(lesson.title)}">
-                    <source src="${esc(lesson.video_url)}" />
-                    Your browser does not support video playback.
-                  </video>
-                </div>
-              ` : ''}
-              ${lesson.audio_url ? `
-                <audio id="lesson-audio" controls preload="metadata" style="width:100%;margin-top:12px"
-                       aria-label="Preview audio: ${esc(lesson.title)}">
-                  <source src="${esc(lesson.audio_url)}" />
-                </audio>
-              ` : ''}
-              ${lesson.description ? `<div class="lesson-body">${lesson.description.replace(/\n/g, '<br/>')}</div>` : ''}
-            </div>
-
-            ${navHtml}
-
-            <div class="panel" style="margin-top:16px;padding:16px;background:var(--surface-2);border-radius:8px">
-              <p class="form-hint" style="margin:0">
-                <i class="fas fa-info-circle"></i>
-                You're viewing a free preview. Enrol to unlock all lessons and earn a certificate.
-              </p>
-              <button class="btn btn-primary btn-sm" style="margin-top:10px"
-                      data-action="enroll-modal" data-id="${courseId}" onclick="closeModal()">
-                <i class="fas fa-shopping-cart"></i> Enroll Now</button>
-            </div>
-          </main>
-        </div>`,
-      footer: `<button class="btn btn-secondary" data-close-modal>Close Preview</button>`,
-    });
-
-    /* Bind preview lesson-list navigation */
-    bindPreviewInteractions(courseId);
-
-    /* Bind video controls without progress flushing */
-    const video = $('#lesson-video');
-    if (video) {
-      __playerState.videoEl = video;
-      video.addEventListener('error', () => {
-        const err = $('#video-error');
-        if (err) {
-          err.style.display = 'block';
-          err.textContent = 'Preview video failed to load.';
-        }
-      });
-      bindPlayerKeyboardShortcuts();
-    }
-  } catch (e) {
-    showLoading(false);
-    showToast(e.message || 'Could not load preview', 'error');
-  }
-});
-
-/* Bind click/keyboard on preview lesson rows (sidebar) */
-function bindPreviewInteractions(courseId) {
-  document.querySelectorAll('.course-player-modal .player-lesson[data-action]').forEach(el => {
-    const go = () => {
-      const lessonId = el.dataset.id;
-      const cid = el.dataset.course || courseId;
-      closeModal();
-      window.ExpertHubUser.dispatchAction?.('play-lesson-preview', lessonId, { dataset: { course: cid, id: lessonId } });
-    };
-    el.onclick = go;
-    el.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
-    };
-  });
-}
-
-/* ============================================================ */
-/* Discussion upvote action (used by discussion tab)            */
-/* ============================================================ */
-window.ExpertHubUser.registerAction('upvote-discussion', async (id) => {
-  try {
-    const r = await apiCall(`/api/eschool/discussions/${id}/upvote`, 'POST');
-    const entry = (S.courseDiscussions || []).find(d => String(d.id) === String(id));
-    if (entry && r?.upvotes != null) entry.upvotes = r.upvotes;
-    /* Re-render just the discussion tab, preserving other state */
-    const lessonId = __playerState.lessonId;
-    if (lessonId && $('#player-tab-content')) {
-      $('#player-tab-content').innerHTML = renderLessonDiscussion(lessonId);
-      bindPlayerTabEvents(__playerState.courseId, lessonId);
-    }
-  } catch (e) {
-    showToast(e.message || 'Could not upvote', 'error');
-  }
-});
-
-/* ============================================================ */
-/* Safety: clean up keyboard handler + progress on modal close  */
-/* ============================================================ */
-(function installPlayerCleanupObserver() {
-  if (typeof MutationObserver === 'undefined') return;
-  const obs = new MutationObserver(() => {
-    const open = document.querySelector('.course-player-modal');
-    if (!open && __playerState.keyHandler) {
-      try { __cleanupPlayer(); } catch {}
-    }
-  });
-  obs.observe(document.body, { childList: true, subtree: true });
-})();
-
-/* Handle browser tab close / navigate away — flush progress */
-window.addEventListener('beforeunload', () => {
-  try { _flushPlayerProgress(__playerState.lessonId); } catch {}
-  try { __cleanupPlayer(); } catch {}
-});
-
-/* Export for other modules */
-window.CoursePlayer = {
-  open: openCoursePlayer,
-  preview: (lessonId, courseId) => {
-    const fakeEl = { dataset: { course: String(courseId), id: String(lessonId) } };
-    window.ExpertHubUser.dispatchAction?.('play-lesson-preview', lessonId, fakeEl);
-  },
-  cleanup: __cleanupPlayer,
-};
