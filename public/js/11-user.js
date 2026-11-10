@@ -1,18 +1,18 @@
 /* ============================================================
    ExpertHub 2.0 — 11-user.js (entry)
    Learner dashboard entry. Shell, sidebar, dispatcher, action
-   routing, shared UI helpers, and extended data loader.
-   Module pages live in /dashboards/user/*.js
+   routing, shared UI helpers, extended data loader with retry,
+   filter-state persistence, and lifecycle hooks.
    ============================================================ */
 
-/* ============================================================
-   CONFIG EXTENSIONS
-   ============================================================ */
+/* ---------------- CONFIG EXTENSIONS ---------------- */
 CONFIG.COURSE_REFUND_WINDOW_DAYS = CONFIG.COURSE_REFUND_WINDOW_DAYS || 14;
 CONFIG.REFUND_MAX_PROGRESS_PCT   = CONFIG.REFUND_MAX_PROGRESS_PCT   || 30;
 CONFIG.MAX_RESCHEDULES           = CONFIG.MAX_RESCHEDULES           || 2;
 CONFIG.CANCEL_FREE_HOURS         = CONFIG.CANCEL_FREE_HOURS         || 24;
 CONFIG.INSTANT_RESPONSE_MINS     = CONFIG.INSTANT_RESPONSE_MINS     || 15;
+CONFIG.USER_EXPANDED_RETRY_MS    = CONFIG.USER_EXPANDED_RETRY_MS    || 8000;
+CONFIG.USER_EXPANDED_MAX_TRIES   = CONFIG.USER_EXPANDED_MAX_TRIES   || 3;
 
 CONFIG.BADGES = CONFIG.BADGES || {
   first_course:       { name: 'First Steps',      icon: 'fa-shoe-prints',       desc: 'Enrolled in your first course' },
@@ -29,10 +29,7 @@ CONFIG.BADGES = CONFIG.BADGES || {
   path_complete:      { name: 'Path Master',      icon: 'fa-route',             desc: 'Completed a full learning path' },
 };
 
-/* ============================================================
-   STATE MIRRORS (mirror the ns.state bucket onto S for
-   backwards compatibility with code that reads S.wishlist etc.)
-   ============================================================ */
+/* ---------------- STATE MIRRORS ---------------- */
 Object.assign(S, {
   wishlist: S.wishlist || [], wishlistIds: S.wishlistIds || new Set(),
   enrolledCourseIds: S.enrolledCourseIds || new Set(),
@@ -51,10 +48,28 @@ Object.assign(S, {
   skillAssessments: S.skillAssessments || [], tasks: S.tasks || [],
   studyGroups: S.studyGroups || [], resources: S.resources || [],
   userExtLoaded: S.userExtLoaded || false,
+  userExtErrors: S.userExtErrors || [],
 });
 
 /* ============================================================
-   SHARED UI HELPERS  (UserUI.*)
+   FILTER-STATE STORE (persists across rerenders for the session)
+   ============================================================ */
+const UserFilters = (function () {
+  const store = new Map();
+  const KEY = (tab, name) => `${tab}::${name}`;
+  return {
+    get(tab, name, fallback = '') { return store.has(KEY(tab, name)) ? store.get(KEY(tab, name)) : fallback; },
+    set(tab, name, value) { store.set(KEY(tab, name), value); },
+    clear(tab) {
+      for (const k of Array.from(store.keys())) if (k.startsWith(tab + '::')) store.delete(k);
+    },
+    clearAll() { store.clear(); },
+  };
+})();
+window.UserFilters = UserFilters;
+
+/* ============================================================
+   SHARED UI HELPERS
    ============================================================ */
 const UserUI = (function () {
   const page = ({ title, breadcrumb, actions = '', content }) => `
@@ -82,6 +97,25 @@ const UserUI = (function () {
     </div>
   `;
 
+  const loading = (label = 'Loading…') => `
+    <div class="loading-state" role="status" aria-live="polite">
+      <i class="fas fa-circle-notch fa-spin"></i>
+      <span>${esc(label)}</span>
+    </div>
+  `;
+
+  const errorState = ({ title = 'Could not load', message = '', retryAction = '', retryLabel = 'Retry' }) => `
+    <div class="error-state" role="alert">
+      <i class="fas fa-exclamation-triangle"></i>
+      <h3>${esc(title)}</h3>
+      ${message ? `<p>${esc(message)}</p>` : ''}
+      ${retryAction ? `
+        <button class="btn btn-primary" data-action="${esc(retryAction)}">
+          <i class="fas fa-rotate-right"></i> ${esc(retryLabel)}</button>
+      ` : ''}
+    </div>
+  `;
+
   const stats = (items = []) => `
     <section class="stat-grid">
       ${items.map(i => `
@@ -98,9 +132,10 @@ const UserUI = (function () {
   `;
 
   const tabs = (list = [], active = '', attr = 'data-user-tab') => `
-    <nav class="tab-bar">
+    <nav class="tab-bar" role="tablist">
       ${list.map(t => `
         <button class="tab-btn ${active === t.id ? 'tab-btn-active' : ''}"
+                role="tab" aria-selected="${active === t.id}"
                 ${attr}="${esc(t.id)}">
           ${t.icon ? `<i class="fas ${t.icon}"></i>` : ''} ${esc(t.label || t.id)}
         </button>
@@ -127,7 +162,7 @@ const UserUI = (function () {
     <button class="btn btn-${tone} btn-${size}"
             data-action="${esc(action)}"
             ${id !== undefined && id !== null ? `data-id="${esc(id)}"` : ''}
-            ${extra} ${disabled ? 'disabled' : ''}>
+            ${extra} ${disabled ? 'disabled aria-disabled="true"' : ''}>
       ${icon ? `<i class="fas ${icon}"></i>` : ''} ${esc(label || '')}
     </button>
   `;
@@ -143,14 +178,25 @@ const UserUI = (function () {
       refunded: 'status-active', pending: 'status-pending', approved: 'status-active',
       rejected: 'status-rejected', draft: 'status-archived', published: 'status-active',
       active: 'status-active', archived: 'status-archived',
+      failed: 'status-rejected', reversed: 'status-rejected',
     };
     return `<span class="${map[s] || statusClass(s)}">${esc(s.replace(/_/g, ' '))}</span>`;
   };
 
-  /**
-   * Generic form modal. fields: [{ name, label, type, options, value, required, placeholder, hint }]
-   * onSubmit(values) may be async.
-   */
+  const pagination = ({ page: p = 1, pageSize = 12, total = 0, action = 'user-paginate', key = '' }) => {
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (totalPages <= 1) return '';
+    return `
+      <nav class="pagination" aria-label="Pagination">
+        <button class="btn btn-secondary btn-xs" data-action="${action}" data-page="${p - 1}" data-key="${esc(key)}"
+                ${p <= 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>
+        <span class="pagination-label">Page ${p} of ${totalPages}</span>
+        <button class="btn btn-secondary btn-xs" data-action="${action}" data-page="${p + 1}" data-key="${esc(key)}"
+                ${p >= totalPages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>
+      </nav>
+    `;
+  };
+
   function formModal({ title, fields = [], submitLabel = 'Save', onSubmit, width = '' }) {
     const body = fields.map(f => {
       const type = f.type || 'text';
@@ -195,79 +241,143 @@ const UserUI = (function () {
       `,
     });
 
-    document.getElementById('fm_submit').onclick = async () => {
+    const submit = async () => {
       const values = {};
+      let invalid = null;
       for (const f of fields) {
         const el = document.getElementById(`fm_${f.name}`);
         if (!el) continue;
         let v = el.value;
         if (f.type === 'number') v = v === '' ? null : Number(v);
+        if (f.required && (v === '' || v === null)) { invalid = f.label; break; }
         values[f.name] = v;
       }
+      if (invalid) return showToast(`${invalid} is required`, 'error');
+      const submitBtn = document.getElementById('fm_submit');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving…'; }
       try { await onSubmit(values); }
       catch (e) { showToast(e.message || 'Save failed', 'error'); }
+      finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitLabel; }
+      }
     };
+
+    const btnEl = document.getElementById('fm_submit');
+    if (btnEl) btnEl.onclick = submit;
   }
 
-  return { page, empty, stats, tabs, table, cardGrid, btn, statusPill, formModal };
+  return { page, empty, loading, errorState, stats, tabs, table, cardGrid, btn, statusPill, formModal, pagination };
 })();
-
 window.UserUI = UserUI;
 
 /* ============================================================
-   EXTENDED DATA LOADER
+   EXTENDED DATA LOADER (retry-aware, partial-aware)
    ============================================================ */
-async function loadUserExtendedData() {
-  if (S.userExtLoaded) return;
-  const tasks = [
-    apiCall('/api/user/wishlist').then(d => {
-      S.wishlist = d.items || [];
-      S.wishlistIds = new Set(S.wishlist.map(w => String(w.course_id)));
-    }).catch(() => {}),
-    apiCall('/api/user/enrollments').then(d => {
-      S.enrollments = d.enrollments || [];
-      S.enrolledCourseIds = new Set(S.enrollments.map(e => String(e.course_id)));
-    }).catch(() => {}),
-    apiCall('/api/user/achievements').then(d => {
-      S.userXP = d.xp || 0;
-      S.userLevel = d.level || (Math.floor(S.userXP / 500) + 1);
-      S.userBadges = d.badges || [];
-      S.userStreak = d.streak || S.userStreak;
-    }).catch(() => {}),
-    apiCall('/api/user/packages').then(d => { S.userPackages = d.packages || []; }).catch(() => {}),
-    apiCall('/api/user/shortlist').then(d => { S.userShortlist = d.items || []; }).catch(() => {}),
-    apiCall('/api/user/refunds').then(d => { S.userRefunds = d.refunds || []; }).catch(() => {}),
-    apiCall('/api/eschool/learning-paths').then(d => { S.coursePaths = d.paths || []; }).catch(() => {}),
-    apiCall('/api/eschool/bundles').then(d => { S.courseBundles = d.bundles || []; }).catch(() => {}),
-    apiCall('/api/user/goals').then(d => { S.personalGoals = d.goals || []; }).catch(() => {}),
-    apiCall('/api/user/habits').then(d => { S.habits = d.habits || []; }).catch(() => {}),
-    apiCall('/api/user/journal').then(d => { S.journalEntries = d.entries || []; }).catch(() => {}),
-    apiCall('/api/user/academic').then(d => {
-      S.academicSubjects    = d.subjects || [];
-      S.studyTimetable      = d.timetable || [];
-      S.academicAssignments = d.assignments || [];
-      S.revisionMaterials   = d.revision || [];
-    }).catch(() => {}),
-    apiCall('/api/user/career').then(d => { S.careerPathways = d.pathways || []; }).catch(() => {}),
-    apiCall('/api/user/mentorships').then(d => { S.mentorships = d.mentorships || []; }).catch(() => {}),
-    apiCall('/api/user/skills').then(d => { S.skillAssessments = d.assessments || []; }).catch(() => {}),
-    apiCall('/api/user/tasks').then(d => { S.tasks = d.tasks || []; }).catch(() => {}),
-    apiCall('/api/user/study-groups').then(d => { S.studyGroups = d.groups || []; }).catch(() => {}),
-    apiCall('/api/user/resources').then(d => { S.resources = d.resources || []; }).catch(() => {}),
-  ];
-  await Promise.allSettled(tasks);
-  S.userExtLoaded = true;
+let __userExtLoadingPromise = null;
+
+async function loadUserExtendedData({ force = false } = {}) {
+  if (__userExtLoadingPromise) return __userExtLoadingPromise;
+  if (S.userExtLoaded && !force) return;
+
+  S.userExtErrors = [];
+  window.ExpertHubUser.state.loadingState = 'loading';
+
+  const attempts = [];
+  const add = (name, promise, setter) => {
+    attempts.push(
+      promise.then(v => { try { setter(v); } catch (e) { S.userExtErrors.push({ name, error: e.message }); } })
+             .catch(e => { S.userExtErrors.push({ name, error: e.message || 'failed' }); })
+    );
+  };
+
+  add('wishlist', apiCall('/api/user/wishlist'), d => {
+    S.wishlist = d.items || [];
+    S.wishlistIds = new Set(S.wishlist.map(w => String(w.course_id)));
+  });
+  add('enrollments', apiCall('/api/user/enrollments'), d => {
+    S.enrollments = d.enrollments || [];
+    S.enrolledCourseIds = new Set(S.enrollments.map(e => String(e.course_id)));
+  });
+  add('achievements', apiCall('/api/user/achievements'), d => {
+    S.userXP = d.xp || 0;
+    S.userLevel = d.level || (Math.floor(S.userXP / 500) + 1);
+    S.userBadges = d.badges || [];
+    S.userStreak = d.streak || S.userStreak;
+  });
+  add('packages',   apiCall('/api/user/packages'),        d => { S.userPackages = d.packages || []; });
+  add('shortlist',  apiCall('/api/user/shortlist'),       d => { S.userShortlist = d.items || []; });
+  add('refunds',    apiCall('/api/user/refunds'),         d => { S.userRefunds = d.refunds || []; });
+  add('paths',      apiCall('/api/eschool/learning-paths'), d => { S.coursePaths = d.paths || []; });
+  add('bundles',    apiCall('/api/eschool/bundles'),      d => { S.courseBundles = d.bundles || []; });
+  add('goals',      apiCall('/api/user/goals'),           d => { S.personalGoals = d.goals || []; });
+  add('habits',     apiCall('/api/user/habits'),          d => { S.habits = d.habits || []; });
+  add('journal',    apiCall('/api/user/journal'),         d => { S.journalEntries = d.entries || []; });
+  add('academic',   apiCall('/api/user/academic'), d => {
+    S.academicSubjects    = d.subjects || [];
+    S.studyTimetable      = d.timetable || [];
+    S.academicAssignments = d.assignments || [];
+    S.revisionMaterials   = d.revision || [];
+  });
+  add('career',     apiCall('/api/user/career'),          d => { S.careerPathways = d.pathways || []; });
+  add('mentorships',apiCall('/api/user/mentorships'),     d => { S.mentorships = d.mentorships || []; });
+  add('skills',     apiCall('/api/user/skills'),          d => { S.skillAssessments = d.assessments || []; });
+  add('tasks',      apiCall('/api/user/tasks'),           d => { S.tasks = d.tasks || []; });
+  add('studyGroups',apiCall('/api/user/study-groups'),    d => { S.studyGroups = d.groups || []; });
+  add('resources',  apiCall('/api/user/resources'),       d => { S.resources = d.resources || []; });
+
+  __userExtLoadingPromise = Promise.allSettled(attempts)
+    .then(() => {
+      const failed = S.userExtErrors.length;
+      const total = attempts.length;
+      if (failed === 0) {
+        S.userExtLoaded = true;
+        window.ExpertHubUser.state.loadingState = 'ok';
+      } else if (failed < total) {
+        // Partial: keep usable but do not mark fully loaded, so retry can run
+        window.ExpertHubUser.state.loadingState = 'partial';
+      } else {
+        window.ExpertHubUser.state.loadingState = 'failed';
+      }
+      window.ExpertHubUser.state.lastLoadedAt = Date.now();
+      window.ExpertHubUser.state.lastError = failed
+        ? `Failed to load ${failed} section${failed === 1 ? '' : 's'}`
+        : null;
+      window.ExpertHubUser.syncStateFromS();
+    })
+    .finally(() => { __userExtLoadingPromise = null; });
+
+  return __userExtLoadingPromise;
+}
+
+/** Retry with exponential backoff if partial/failed (opt-in). */
+async function retryUserExtendedDataIfNeeded() {
+  const state = window.ExpertHubUser.state;
+  if (state.loadingState === 'ok' || state.loadingState === 'loading') return;
+  for (let i = 0; i < CONFIG.USER_EXPANDED_MAX_TRIES; i++) {
+    await loadUserExtendedData({ force: true });
+    if (window.ExpertHubUser.state.loadingState === 'ok') return;
+    await new Promise(r => setTimeout(r, CONFIG.USER_EXPANDED_RETRY_MS * (i + 1)));
+  }
 }
 
 /* ============================================================
    DASHBOARD ENTRY
    ============================================================ */
 function renderUserDashboard() {
+  if (!currentUser) {
+    return shell({
+      roleClass: 'role-user', brandIcon: 'fa-user-circle',
+      brandTitle: 'My Panel', brandSubtitle: 'ExpertHub',
+      nav: '', roleLabel: 'User Panel',
+      content: UserUI.errorState({ title: 'Session expired', message: 'Please sign in again.' }),
+    });
+  }
+
   const intent = S.userIntent || currentUser?.intent || 'both';
   const showLearn   = intent === 'learn'   || intent === 'both';
   const showConsult = intent === 'consult' || intent === 'both';
 
-  const mine = S.consultations.filter(c => c.user_id === currentUser?.id);
+  const mine = (S.consultations || []).filter(c => c.user_id === currentUser?.id);
   const activeCons = mine.filter(c =>
     ['pending_payment','pending_expert_confirmation','confirmed','scheduled','in_grace','in_session']
       .includes(c.status)
@@ -326,6 +436,8 @@ function renderUserDashboard() {
     ${sidebarItem('profile','Profile','fa-user')}
   `;
 
+  const content = renderUserContent();
+
   shell({
     roleClass: 'role-user',
     brandIcon: 'fa-user-circle',
@@ -333,25 +445,33 @@ function renderUserDashboard() {
     brandSubtitle: 'ExpertHub',
     nav,
     roleLabel: 'User Panel',
-    content: renderUserContent(),
+    content,
   });
 
   attachRoleEvents();
   attachUserActionListener();
+  initActiveUserModule();
 
-  if (!S.userExtLoaded) {
+  if (!S.userExtLoaded || window.ExpertHubUser.state.loadingState === 'partial') {
     loadUserExtendedData().then(() => rerenderRoleContent()).catch(() => {});
   }
 }
 
 /* ============================================================
-   CONTENT DISPATCHER
+   CONTENT DISPATCHER (with module lifecycle)
    ============================================================ */
+let __lastUserTab = null;
+
 function renderUserContent() {
   const ns = window.ExpertHubUser;
   const tab = activeTab || 'dashboard';
 
-  // Aliases: some tabs share a module renderer
+  // Cleanup previous module
+  if (__lastUserTab && __lastUserTab !== tab) {
+    ns.cleanupModule?.(__lastUserTab);
+  }
+  __lastUserTab = tab;
+
   const aliases = {
     'dashboard': 'overview',
     'eschool': 'learning',
@@ -360,8 +480,17 @@ function renderUserContent() {
   };
   const key = aliases[tab] || tab;
 
-  if (ns && ns.hasModule(key)) return ns.modules[key](tab);
-  if (ns && ns.hasModule(tab)) return ns.modules[tab](tab);
+  try {
+    if (ns?.hasModule(key)) return ns.modules[key](tab);
+    if (ns?.hasModule(tab)) return ns.modules[tab](tab);
+  } catch (e) {
+    ns.reportError(tab, e);
+    return UserUI.errorState({
+      title: 'Module failed to render',
+      message: e.message || 'Unknown error',
+      retryAction: 'switch-tab', retryLabel: 'Reload',
+    });
+  }
 
   return UserUI.page({
     title: 'Module unavailable',
@@ -373,29 +502,62 @@ function renderUserContent() {
   });
 }
 
+/** Called after shell attaches — lets modules wire DOM (event helpers etc). */
+function initActiveUserModule() {
+  const ns = window.ExpertHubUser;
+  const tab = activeTab || 'dashboard';
+  const aliases = { 'dashboard': 'overview', 'eschool': 'learning', 'my-learning': 'learning', 'course-notes': 'lesson-notes' };
+  const key = aliases[tab] || tab;
+  const host = document.getElementById('role-content') || document.body;
+  ns.initModule?.(key, host);
+}
+
 /* ============================================================
    ACTION DISPATCHER
    ============================================================ */
 async function dispatchUserAction(action, id, el) {
   const ns = window.ExpertHubUser;
   if (!ns || !ns.hasAction(action)) {
-    // Fall through to the global handler if 14-actions.js already defines it
-    if (typeof handleAction === 'function') {
-      return handleAction(action, id, el);
-    }
+    if (typeof handleAction === 'function') return handleAction(action, id, el);
     showToast(`Action not implemented: ${action}`, 'warning');
     return;
   }
-  return ns.actions[action](id, el);
+  if (!ns.canDo(action)) {
+    showToast('You do not have permission to do that', 'warning');
+    return;
+  }
+  // Disable button while running to prevent double-submit
+  let restore = null;
+  if (el && el.tagName === 'BUTTON' && !el.disabled) {
+    const originalHTML = el.innerHTML;
+    el.disabled = true;
+    restore = () => { el.disabled = false; el.innerHTML = originalHTML; };
+  }
+  try {
+    return await ns.actions[action](id, el);
+  } finally {
+    if (restore) restore();
+  }
 }
-
 window.dispatchUserAction = dispatchUserAction;
 
-/**
- * Delegated click listener scoped to the user shell.
- * Fires ONLY for actions registered in ExpertHubUser.actions, so it never
- * interferes with admin/expert/institution actions handled by 14-actions.js.
- */
+/* Session expiry check invoked after any action failure. */
+function handleUserActionFailure(err) {
+  const msg = String(err?.message || '');
+  if (/401|unauthori[sz]ed|session expired|token expired/i.test(msg)) {
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    } catch {}
+    currentUser = null;
+    showToast('Session expired — please sign in again', 'warning', 6000);
+    setTimeout(() => { location.hash = '#/login'; }, 800);
+    return true;
+  }
+  return false;
+}
+
+/* Delegated click listener — scoped to .role-user and registered actions only. */
 let __userActionListenerInstalled = false;
 function attachUserActionListener() {
   if (__userActionListenerInstalled) return;
@@ -407,21 +569,20 @@ function attachUserActionListener() {
     const action = target.dataset.action;
     const ns = window.ExpertHubUser;
     if (!ns || !ns.hasAction(action)) return;
-
-    // Avoid double-handling if 14-actions.js already swallowed the event
     if (e.defaultPrevented) return;
 
     e.preventDefault();
     try {
       await dispatchUserAction(action, target.dataset.id, target);
     } catch (ex) {
+      if (handleUserActionFailure(ex)) return;
       showToast(ex.message || 'Action failed', 'error');
     }
   });
 }
 
 /* ============================================================
-   SHARED CONSULTATION / XP HELPERS
+   SHARED HELPERS
    ============================================================ */
 function fmtInTz(d, tz) {
   if (!d) return '—';
@@ -450,24 +611,68 @@ function levelFromXP(xp) {
   const x = Number(xp) || 0;
   return Math.max(1, Math.floor(x / 500) + 1);
 }
-
-function xpForLevel(level) {
-  return Math.max(0, (Number(level) - 1) * 500);
-}
-
+function xpForLevel(level) { return Math.max(0, (Number(level) - 1) * 500); }
 function xpProgressPercent(xp) {
   const lvl = levelFromXP(xp);
   const start = xpForLevel(lvl);
   const end = xpForLevel(lvl + 1);
   return pct(end === start ? 0 : ((xp - start) / (end - start)) * 100);
 }
-
 function truncateHash(h, n = 8) {
   if (!h) return '';
   return h.length <= n * 2 ? h : `${h.slice(0, n)}…${h.slice(-n)}`;
 }
 
-/* Expose so modules can use them without duplicating */
+/** True if a session is currently joinable (server authoritatively confirms at join time). */
+function canJoinSessionNow(c) {
+  if (!c) return false;
+  if (!['confirmed','in_grace','in_session'].includes(c.status)) return false;
+  if (!c.scheduled_at) return false;
+  const start = new Date(c.scheduled_at).getTime();
+  const dur   = (Number(c.duration_minutes) || 30) * 60000;
+  const grace = 15 * 60000;
+  const now   = Date.now();
+  return now >= start - 5 * 60000 && now <= start + dur + grace;
+}
+
+/** Client-side hint; server remains authoritative. */
+function canCancelSession(c) {
+  if (!c) return false;
+  if (!['pending_expert_confirmation','confirmed','scheduled'].includes(c.status)) return false;
+  if (!c.scheduled_at) return true;
+  const hrs = (new Date(c.scheduled_at).getTime() - Date.now()) / 3600000;
+  return hrs >= CONFIG.CANCEL_FREE_HOURS || c.status === 'pending_expert_confirmation';
+}
+
+function canRescheduleSession(c) {
+  if (!c) return false;
+  if (!['confirmed','scheduled'].includes(c.status)) return false;
+  if ((c.reschedule_count || 0) >= CONFIG.MAX_RESCHEDULES) return false;
+  if (!c.scheduled_at) return true;
+  const hrs = (new Date(c.scheduled_at).getTime() - Date.now()) / 3600000;
+  return hrs >= CONFIG.CANCEL_FREE_HOURS;
+}
+
+/** refreshUserSnapshot — pull fresh user + wallet + consultations after a mutation. */
+async function refreshUserSnapshot() {
+  try {
+    const me = await apiCall('/api/auth/me');
+    if (me?.user) currentUser = me.user;
+  } catch {}
+  try { await reloadWallet?.(); } catch {}
+  try { await reloadConsultations?.(); } catch {}
+}
+
 window.UserHelpers = {
   fmtInTz, timeUntil, levelFromXP, xpForLevel, xpProgressPercent, truncateHash,
+  canJoinSessionNow, canCancelSession, canRescheduleSession, refreshUserSnapshot,
 };
+
+/* Refresh user state on cross-tab changes */
+window.addEventListener('storage', (e) => {
+  if (e.key === 'user' || e.key === 'token') {
+    if (!e.newValue) { location.hash = '#/login'; return; }
+    try { currentUser = JSON.parse(localStorage.getItem('user')); } catch {}
+    rerenderRoleContent?.();
+  }
+});
