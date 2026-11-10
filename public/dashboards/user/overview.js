@@ -3,16 +3,50 @@
    Overview / dashboard landing page.
    ============================================================ */
 
+let __overviewRefreshing = false;
+
+async function _refreshOverviewData() {
+  if (__overviewRefreshing) return;
+  __overviewRefreshing = true;
+  try {
+    const [consRes, enrollRes, achRes] = await Promise.allSettled([
+      apiCall('/api/user/consultations'),
+      apiCall('/api/user/enrollments'),
+      apiCall('/api/user/achievements'),
+    ]);
+    if (consRes.status === 'fulfilled' && consRes.value?.consultations) {
+      S.consultations = consRes.value.consultations;
+    }
+    if (enrollRes.status === 'fulfilled' && enrollRes.value?.enrollments) {
+      S.enrollments = enrollRes.value.enrollments;
+      S.enrolledCourseIds = new Set(S.enrollments.map(e => String(e.course_id)));
+    }
+    if (achRes.status === 'fulfilled' && achRes.value) {
+      const d = achRes.value;
+      S.userXP = d.xp || 0;
+      S.userLevel = d.level || levelFromXP(S.userXP);
+      S.userBadges = d.badges || [];
+      S.userStreak = d.streak || S.userStreak;
+    }
+  } catch {}
+  finally { __overviewRefreshing = false; }
+}
+
 function renderUserOverview() {
+  const ns = window.ExpertHubUser;
+  const state = ns.state;
   const intent = S.userIntent || currentUser?.intent || 'both';
-  const mine = S.consultations.filter(c => c.user_id === currentUser?.id);
+  const showLearn   = intent !== 'consult';
+  const showConsult = intent !== 'learn';
+
+  const mine = (S.consultations || []).filter(c => c.user_id === currentUser?.id);
   const activeCons = mine.filter(c =>
     ['pending_payment','pending_expert_confirmation','confirmed','scheduled','in_grace','in_session']
       .includes(c.status)
   ).length;
 
-  const inProgress = S.enrollments.filter(e => e.progress > 0 && e.progress < 100).slice(0, 3);
-  const completedCount = S.enrollments.filter(e => Number(e.progress) >= 100).length;
+  const inProgress = (S.enrollments || []).filter(e => Number(e.progress) > 0 && Number(e.progress) < 100).slice(0, 3);
+  const completedCount = (S.enrollments || []).filter(e => Number(e.progress) >= 100).length;
   const xp     = S.userXP || 0;
   const level  = S.userLevel || levelFromXP(xp);
   const streak = S.userStreak?.current || 0;
@@ -21,7 +55,35 @@ function renderUserOverview() {
       && !['cancelled','expired','no_show'].includes(c.status))
     .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
     .slice(0, 3);
-  const recommended = S.courses.filter(c => !S.enrolledCourseIds.has(String(c.id))).slice(0, 3);
+
+  // Recommendations based on enrolled categories then fallback to popular
+  const enrolledCategories = new Set(
+    (S.enrollments || []).map(e => (S.courses.find(c => String(c.id) === String(e.course_id))?.category) || '')
+      .filter(Boolean)
+  );
+  let recommended = (S.courses || [])
+    .filter(c => !S.enrolledCourseIds.has(String(c.id)))
+    .sort((a, b) => {
+      const aM = enrolledCategories.has(a.category) ? 1 : 0;
+      const bM = enrolledCategories.has(b.category) ? 1 : 0;
+      return bM - aM || (b.enrolled_count || 0) - (a.enrolled_count || 0);
+    })
+    .slice(0, 3);
+
+  const partialNote = state.loadingState === 'partial'
+    ? `<div class="alert alert-warning" role="status">
+         <i class="fas fa-exclamation-triangle"></i>
+         <div>Some dashboard data could not load.
+           <button class="btn btn-secondary btn-xs" data-action="retry-user-extended">
+             <i class="fas fa-rotate-right"></i> Retry</button>
+         </div>
+       </div>`
+    : '';
+
+  const loadingNote = state.loadingState === 'loading'
+    ? `<div class="alert alert-info" role="status">
+         <i class="fas fa-circle-notch fa-spin"></i> Loading your dashboard…
+       </div>` : '';
 
   return `
     <div class="breadcrumbs"><a href="#/dashboard">Home</a><span>Dashboard</span></div>
@@ -33,15 +95,20 @@ function renderUserOverview() {
         </span>
         <button class="btn btn-secondary btn-sm" data-action="change-intent">
           <i class="fas fa-sliders"></i> Change Mode</button>
+        <button class="btn btn-secondary btn-sm" data-action="refresh-overview" aria-label="Refresh">
+          <i class="fas fa-rotate-right"></i></button>
       </div>
     </section>
+
+    ${loadingNote}
+    ${partialNote}
 
     ${UserUI.stats([
       { label: 'Level',              value: level,         sub: `${xp} XP`,               icon: 'fa-medal',           tone: 'purple' },
       { label: 'Current Streak',     value: `${streak}d`,  sub: `Longest ${S.userStreak?.longest || 0}d`, icon: 'fa-fire', tone: 'red' },
       { label: 'Enrollments',        value: S.enrollments.length, sub: `${completedCount} completed`, icon: 'fa-graduation-cap', tone: 'blue' },
       { label: 'Active Consultations', value: activeCons,  icon: 'fa-comments',           tone: 'green' },
-      { label: 'Wallet Balance',     value: fmtCur(S.wallet.balance || 0), icon: 'fa-wallet', tone: 'yellow' },
+      { label: 'Wallet Balance',     value: fmtCur(S.wallet?.balance || 0), icon: 'fa-wallet', tone: 'yellow' },
       { label: 'Badges Earned',      value: S.userBadges.length, icon: 'fa-award',       tone: 'purple' },
     ])}
 
@@ -64,42 +131,46 @@ function renderUserOverview() {
     ${upcoming.length ? `
       <section class="panel">
         <h3 class="panel-title">Upcoming Sessions</h3>
-        ${upcoming.map(c => `
-          <div class="consultation-card">
-            <header class="consultation-card-header">
-              <div>
-                <h4 class="consultation-card-title">${esc(c.title)}</h4>
-                <p class="consultation-card-meta">${UserUI.statusPill(c.status)}</p>
-              </div>
-              <div class="consultation-card-price">${fmtCur(c.price || 0)}</div>
-            </header>
-            <div class="consultation-card-body">
-              <div class="consultation-card-expert">
-                <img class="user-avatar" src="${avatar({ name: c.expert_name })}" alt="" />
+        ${upcoming.map(c => {
+          const joinable = window.UserHelpers.canJoinSessionNow(c);
+          return `
+            <div class="consultation-card">
+              <header class="consultation-card-header">
                 <div>
-                  <div class="user-name">${esc(c.expert_name || 'Expert')}</div>
-                  <div class="user-email">${esc(c.expert_specialization || '')}</div>
+                  <h4 class="consultation-card-title">${esc(c.title)}</h4>
+                  <p class="consultation-card-meta">${UserUI.statusPill(c.status)}</p>
+                </div>
+                <div class="consultation-card-price">${fmtCur(c.price || 0)}</div>
+              </header>
+              <div class="consultation-card-body">
+                <div class="consultation-card-expert">
+                  <img class="user-avatar" src="${avatar({ name: c.expert_name })}" alt="" />
+                  <div>
+                    <div class="user-name">${esc(c.expert_name || 'Expert')}</div>
+                    <div class="user-email">${esc(c.expert_specialization || '')}</div>
+                  </div>
+                </div>
+                <div class="consultation-card-time">
+                  <i class="fas fa-calendar"></i>
+                  <strong>${UserHelpers.fmtInTz(c.scheduled_at, currentUser?.timezone)}</strong>
+                  <span class="consultation-card-countdown">${UserHelpers.timeUntil(c.scheduled_at)}</span>
                 </div>
               </div>
-              <div class="consultation-card-time">
-                <i class="fas fa-calendar"></i>
-                <strong>${UserHelpers.fmtInTz(c.scheduled_at, currentUser?.timezone)}</strong>
-                <span class="consultation-card-countdown">${UserHelpers.timeUntil(c.scheduled_at)}</span>
-              </div>
+              <footer class="consultation-card-actions">
+                <button class="btn btn-primary btn-sm" data-action="start-session" data-id="${c.id}"
+                        ${joinable ? '' : 'disabled aria-disabled="true" title="Session not open yet"'}>
+                  <i class="fas fa-video"></i> Join</button>
+                <button class="btn btn-info btn-sm" data-action="open-chat" data-id="${c.id}">
+                  <i class="fas fa-comments"></i> Chat</button>
+              </footer>
             </div>
-            <footer class="consultation-card-actions">
-              <button class="btn btn-primary btn-sm" data-action="start-session" data-id="${c.id}">
-                <i class="fas fa-video"></i> Join</button>
-              <button class="btn btn-info btn-sm" data-action="open-chat" data-id="${c.id}">
-                <i class="fas fa-comments"></i> Chat</button>
-            </footer>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </section>
     ` : ''}
 
     <section class="dashboard-columns">
-      ${intent !== 'consult' ? `
+      ${showLearn ? `
         <article class="dashboard-card tile-card">
           <i class="fas fa-school tile-icon"></i>
           <h3 class="tile-title">E-School</h3>
@@ -119,7 +190,7 @@ function renderUserOverview() {
           <button class="btn btn-warning" data-action="switch-tab" data-tab="achievements">View</button>
         </article>
       ` : ''}
-      ${intent !== 'learn' ? `
+      ${showConsult ? `
         <article class="dashboard-card tile-card">
           <i class="fas fa-user-tie tile-icon"></i>
           <h3 class="tile-title">Find Experts</h3>
@@ -169,7 +240,21 @@ function renderUserOverview() {
 window.ExpertHubUser.registerModule('overview', renderUserOverview);
 window.ExpertHubUser.registerModule('dashboard', renderUserOverview);
 
-/* Actions */
+/* ---------------- Actions ---------------- */
+window.ExpertHubUser.registerAction('refresh-overview', async () => {
+  await _refreshOverviewData();
+  rerenderRoleContent();
+  showToast('Dashboard refreshed', 'success');
+});
+
+window.ExpertHubUser.registerAction('retry-user-extended', async () => {
+  await loadUserExtendedData({ force: true });
+  rerenderRoleContent();
+  const st = window.ExpertHubUser.state;
+  if (st.loadingState === 'ok') showToast('Data loaded', 'success');
+  else showToast(st.lastError || 'Still incomplete', 'warning');
+});
+
 window.ExpertHubUser.registerAction('change-intent', async () => {
   UserUI.formModal({
     title: 'Choose your mode',
@@ -185,11 +270,20 @@ window.ExpertHubUser.registerAction('change-intent', async () => {
     }],
     submitLabel: 'Save',
     onSubmit: async (v) => {
-      S.userIntent = v.intent;
-      try { await apiCall('/api/user/preferences', 'PUT', { intent: S.userIntent }); } catch {}
-      closeModal();
-      rerenderRoleContent();
-      showToast('Mode updated', 'success');
+      const previous = S.userIntent;
+      try {
+        const d = await apiCall('/api/user/preferences', 'PUT', { intent: v.intent });
+        // Only update UI state when server confirms
+        S.userIntent = d?.intent || v.intent;
+        if (currentUser) currentUser.intent = S.userIntent;
+        localStorage.setItem('user', JSON.stringify(currentUser));
+        closeModal();
+        rerenderRoleContent();
+        showToast('Mode updated', 'success');
+      } catch (e) {
+        S.userIntent = previous; // revert
+        showToast(e.message || 'Could not save preference', 'error');
+      }
     },
   });
 });

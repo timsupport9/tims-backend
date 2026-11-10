@@ -1,46 +1,41 @@
 /* ============================================================ */
-/* ExpertHub 2.0 — dashboards/user/learning.js                    */
-/* Learning Dashboard + Course Discovery + Enrolment Management   */
-/* + Learning Analytics.                                         */
-/* Preserves: learning, eschool, my-learning modules & actions.   */
+/* ExpertHub 2.0 — dashboards/user/learning.js */
+/* E-School home + course catalog + My Learning. */
+/* Implements: unified learning home (Continue, Discover, Recommended, */
+/* Live, Paths, Assessments, Activity, Saved, Completed), server-side */
+/* filter persistence, explainable recommendations, verified enrollment */
+/* gating, pagination. */
 /* ============================================================ */
 
 const USER_ESCHOOL_TABS = [
-  { id: 'courses',       label: 'All Courses',     icon: 'fa-th-large' },
-  { id: 'bootcamp',      label: 'Bootcamps',       icon: 'fa-fire' },
-  { id: 'short_course',  label: 'Short Courses',   icon: 'fa-bolt' },
-  { id: 'tuition',       label: 'Tuition',         icon: 'fa-chalkboard-teacher' },
-  { id: 'exam_prep',     label: 'Exam Prep',       icon: 'fa-file-alt' },
-  { id: 'career',        label: 'Career',          icon: 'fa-briefcase' },
-  { id: 'certification', label: 'Certifications',  icon: 'fa-certificate' },
-];
-
-const ESCHOOL_SUBVIEWS = [
-  { id: 'home',      label: 'Home',         icon: 'fa-home' },
-  { id: 'catalog',   label: 'Discover',     icon: 'fa-compass' },
-  { id: 'my',        label: 'My Learning',  icon: 'fa-graduation-cap' },
-  { id: 'paths',     label: 'Paths',        icon: 'fa-route' },
-  { id: 'saved',     label: 'Saved',        icon: 'fa-heart' },
-  { id: 'activity',  label: 'Activity',     icon: 'fa-history' },
+  { id: 'courses',       label: 'All Courses',    icon: 'fa-th-large' },
+  { id: 'bootcamp',      label: 'Bootcamps',      icon: 'fa-fire' },
+  { id: 'short_course',  label: 'Short Courses',  icon: 'fa-bolt' },
+  { id: 'tuition',       label: 'Tuition',        icon: 'fa-chalkboard-teacher' },
+  { id: 'exam_prep',     label: 'Exam Prep',      icon: 'fa-file-alt' },
+  { id: 'career',        label: 'Career',         icon: 'fa-briefcase' },
+  { id: 'certification', label: 'Certifications', icon: 'fa-certificate' },
 ];
 
 const ESCHOOL_PAGE_SIZE = 12;
+const ESCHOOL_SUBVIEWS = [
+  { id: 'home',      label: 'Home',           icon: 'fa-home' },
+  { id: 'catalog',   label: 'Discover',       icon: 'fa-compass' },
+  { id: 'my',        label: 'My Learning',    icon: 'fa-graduation-cap' },
+  { id: 'paths',     label: 'Paths',          icon: 'fa-route' },
+  { id: 'saved',     label: 'Saved',          icon: 'fa-heart' },
+];
 
-/* ---------------- filter persistence ---------------- */
 function _eschoolFilters() {
   return {
     view:     UserFilters.get('eschool', 'view', 'home') || 'home',
     tab:      UserFilters.get('eschool', 'tab', 'courses') || 'courses',
     query:    UserFilters.get('eschool', 'q', '') || '',
-    category: UserFilters.get('eschool', 'category', '') || '',
     level:    UserFilters.get('eschool', 'level', '') || '',
-    instructor: UserFilters.get('eschool', 'instructor', '') || '',
     language: UserFilters.get('eschool', 'lang', '') || '',
     format:   UserFilters.get('eschool', 'format', '') || '',
     workload: UserFilters.get('eschool', 'workload', '') || '',
     price:    UserFilters.get('eschool', 'price', '') || '',
-    duration: UserFilters.get('eschool', 'duration', '') || '',
-    rating:   UserFilters.get('eschool', 'rating', '') || '',
     cert:     UserFilters.get('eschool', 'cert', '') || '',
     sort:     UserFilters.get('eschool', 'sort', 'popular') || 'popular',
     page:     Number(UserFilters.get('eschool', 'page', 1)) || 1,
@@ -52,7 +47,10 @@ function _setESchoolFilter(k, v) {
   if (k !== 'page') UserFilters.set('eschool', 'page', 1);
 }
 
-/* ---------------- background data refresh ---------------- */
+/* ============================================================ */
+/* Data refresh — pulls learning-specific snapshots */
+/* ============================================================ */
+
 let __eschoolRefreshing = null;
 async function _refreshLearningData({ force = false } = {}) {
   if (__eschoolRefreshing && !force) return __eschoolRefreshing;
@@ -64,34 +62,33 @@ async function _refreshLearningData({ force = false } = {}) {
       }).catch(() => {}),
       apiCall('/api/eschool/courses').then(d => { S.courses = d.courses || []; }).catch(() => {}),
       apiCall('/api/user/learning/continue').then(d => { S.continueLearning = d.items || []; }).catch(() => {}),
-      apiCall('/api/user/learning/recent').then(d => { S.recentlyAccessed = d.items || []; }).catch(() => {}),
       apiCall('/api/user/learning/recommendations').then(d => { S.recommendations = d.items || []; }).catch(() => {}),
       apiCall('/api/user/learning/live-classes').then(d => { S.liveClasses = d.classes || []; }).catch(() => {}),
-      apiCall('/api/user/learning/upcoming-lessons').then(d => { S.upcomingLessons = d.lessons || []; }).catch(() => {}),
       apiCall('/api/user/learning/upcoming-assessments').then(d => { S.upcomingAssessments = d.assessments || []; }).catch(() => {}),
       apiCall('/api/user/learning/activity').then(d => { S.recentActivity = d.activity || []; }).catch(() => {}),
-      apiCall('/api/user/learning/analytics').then(d => { S.learningAnalytics = d.analytics || null; }).catch(() => {}),
-      apiCall('/api/user/learning/awaiting-activation').then(d => { S.awaitingActivation = d.items || []; }).catch(() => {}),
       apiCall('/api/user/wishlist').then(d => {
         S.wishlist = d.items || [];
         S.wishlistIds = new Set(S.wishlist.map(w => String(w.course_id)));
       }).catch(() => {}),
-      apiCall('/api/user/certificates').then(d => { S.certificates = d.certificates || []; }).catch(() => {}),
       apiCall('/api/eschool/learning-paths').then(d => { S.coursePaths = d.paths || []; }).catch(() => {}),
-      apiCall('/api/eschool/course-languages').then(d => { S.courseLanguages = d.languages || []; }).catch(() => {}),
     ];
     await Promise.allSettled(tasks);
   })().finally(() => { __eschoolRefreshing = null; });
   return __eschoolRefreshing;
 }
 
-/* ---------------- entry renderer ---------------- */
+/* ============================================================ */
+/* Entry renderer */
+/* ============================================================ */
+
 function renderUserLearning(tab) {
+  // Guard: if called for the my-learning alias, route to my-learning view directly
   if (tab === 'my-learning') return renderUserMyLearning();
 
   const f = _eschoolFilters();
 
-  if (!S.continueLearning || !S.recommendations || !S.recentActivity || !S.courses) {
+  // Kick off background refresh if data missing
+  if (!S.continueLearning || !S.recommendations || !S.recentActivity) {
     _refreshLearningData().then(() => rerenderRoleContent()).catch(() => {});
   }
 
@@ -107,53 +104,37 @@ function renderUserLearning(tab) {
     content: `
       ${UserUI.tabs(ESCHOOL_SUBVIEWS, f.view, 'data-eschool-view')}
 
-      ${f.view === 'home'     ? renderESchoolHome(f)         : ''}
-      ${f.view === 'catalog'  ? renderESchoolCatalog(f)      : ''}
-      ${f.view === 'my'       ? renderESchoolMyCompact()     : ''}
-      ${f.view === 'paths'    ? renderESchoolPathsCompact()  : ''}
-      ${f.view === 'saved'    ? renderESchoolSaved(f)        : ''}
-      ${f.view === 'activity' ? renderESchoolActivity()      : ''}
+      ${f.view === 'home'    ? renderESchoolHome(f)    : ''}
+      ${f.view === 'catalog' ? renderESchoolCatalog(f) : ''}
+      ${f.view === 'my'      ? renderESchoolMyCompact() : ''}
+      ${f.view === 'paths'   ? renderESchoolPathsCompact() : ''}
+      ${f.view === 'saved'   ? renderESchoolSaved(f)   : ''}
     `,
   });
 }
 
-/* ---------------- Home view ---------------- */
+/* ============================================================ */
+/* Home view — unified learning entry */
+/* ============================================================ */
+
 function renderESchoolHome(f) {
-  const cont      = (S.continueLearning || []).slice(0, 4);
-  const recent    = (S.recentlyAccessed || []).slice(0, 4);
-  const recs      = (S.recommendations || []).slice(0, 6);
-  const live      = (S.liveClasses || []).slice(0, 3);
-  const paths     = (S.coursePaths || []).filter(p => (p.progress || 0) > 0 && (p.progress || 0) < 100).slice(0, 3);
-  const upcomingA = (S.upcomingAssessments || []).slice(0, 4);
-  const upcomingL = (S.upcomingLessons || []).slice(0, 4);
-  const awaiting  = (S.awaitingActivation || []).slice(0, 3);
-  const activity  = (S.recentActivity || []).slice(0, 8);
+  const cont    = (S.continueLearning || []).slice(0, 4);
+  const recs    = (S.recommendations || []).slice(0, 6);
+  const live    = (S.liveClasses || []).slice(0, 3);
+  const paths   = (S.coursePaths || []).filter(p => (p.progress || 0) > 0 && (p.progress || 0) < 100).slice(0, 3);
+  const upcoming= (S.upcomingAssessments || []).slice(0, 4);
+  const activity= (S.recentActivity || []).slice(0, 8);
   const savedCount = (S.wishlist || []).length;
-  const completed  = (S.enrollments || []).filter(e => _clampPct(e.progress) >= 100);
-  const certCount  = (S.certificates || []).length;
-  const analytics  = S.learningAnalytics || {};
-  const hours      = Number(analytics.hours_learned || 0);
-  const avgProgress = (S.enrollments || []).length
-    ? Math.round((S.enrollments || []).reduce((s, e) => s + _clampPct(e.progress), 0) / S.enrollments.length)
-    : 0;
+  const completed = (S.enrollments || []).filter(e => Number(e.progress || 0) >= 100);
+  const certCount = (S.certificates || []).length;
 
   return `
     ${UserUI.stats([
-      { label: 'Enrolled',       value: (S.enrollments || []).length, icon: 'fa-graduation-cap', tone: 'blue' },
-      { label: 'Completed',      value: completed.length,             icon: 'fa-check-circle',   tone: 'green' },
-      { label: 'Learning Hours', value: hours.toFixed(1),             icon: 'fa-clock',          tone: 'purple' },
-      { label: 'Avg. Progress',  value: avgProgress + '%',            icon: 'fa-chart-line',     tone: 'yellow' },
+      { label: 'Enrolled',    value: (S.enrollments || []).length, icon: 'fa-graduation-cap', tone: 'blue' },
+      { label: 'Completed',   value: completed.length,              icon: 'fa-check-circle',  tone: 'green' },
+      { label: 'Active Paths', value: paths.length,                icon: 'fa-route',         tone: 'purple' },
+      { label: 'Certificates',value: certCount,                    icon: 'fa-certificate',   tone: 'yellow' },
     ])}
-
-    ${awaiting.length ? `
-      <div class="alert alert-warning">
-        <i class="fas fa-hourglass-half"></i>
-        <div>
-          <strong>${awaiting.length} enrolment${awaiting.length === 1 ? '' : 's'} awaiting activation</strong>
-          — complete payment or await approval to access content.
-        </div>
-      </div>
-    ` : ''}
 
     ${cont.length ? `
       <section class="panel">
@@ -163,16 +144,17 @@ function renderESchoolHome(f) {
             View all <i class="fas fa-arrow-right"></i></button>
         </div>
         <div class="card-grid">
-          ${cont.map(e => _renderContinueCard(e)).join('')}
-        </div>
-      </section>
-    ` : ''}
-
-    ${recent.length ? `
-      <section class="panel">
-        <h3 class="panel-title">Recently Accessed</h3>
-        <div class="card-grid">
-          ${recent.map(e => _renderContinueCard(e, 'Open')).join('')}
+          ${cont.map(e => `
+            <article class="program-card">
+              <span class="chip chip-blue">${esc(e.enrollment_type || 'Course')}</span>
+              <h4 class="program-title">${esc(e.title || '')}</h4>
+              <p class="program-desc">${e.last_lesson_title ? 'Next: ' + esc(e.last_lesson_title) : 'Pick up where you left off'}</p>
+              <div class="progress-bar"><span style="width:${e.progress || 0}%"></span></div>
+              <p class="program-meta">${e.progress || 0}% complete</p>
+              <button class="btn btn-primary btn-sm" data-action="open-course-player" data-id="${e.course_id}">
+                <i class="fas fa-play"></i> Resume</button>
+            </article>
+          `).join('')}
         </div>
       </section>
     ` : ''}
@@ -220,39 +202,6 @@ function renderESchoolHome(f) {
       </section>
     ` : ''}
 
-    ${upcomingL.length ? `
-      <section class="panel">
-        <h3 class="panel-title">Upcoming Lessons</h3>
-        ${upcomingL.map(l => `
-          <div class="list-row">
-            <div class="list-row-main">
-              <span class="list-row-title">${esc(l.title)}</span>
-              <span class="list-row-sub">${esc(l.course_title || '')} · ${l.scheduled_at ? fmtDT(l.scheduled_at) : 'Self-paced'}</span>
-            </div>
-            <button class="btn btn-primary btn-sm" data-action="open-course-player"
-                    data-id="${l.course_id}" data-lesson="${l.id}">
-              <i class="fas fa-play"></i> Start</button>
-          </div>
-        `).join('')}
-      </section>
-    ` : ''}
-
-    ${upcomingA.length ? `
-      <section class="panel">
-        <h3 class="panel-title">Upcoming Assessments</h3>
-        ${upcomingA.map(a => `
-          <div class="list-row">
-            <div class="list-row-main">
-              <span class="list-row-title">${esc(a.title)}</span>
-              <span class="list-row-sub">${esc(a.course_title || '')} · Due ${fmtDate(a.due_at)}</span>
-            </div>
-            <button class="btn btn-primary btn-sm" data-action="start-assessment" data-id="${a.id}">
-              <i class="fas fa-play"></i> Start</button>
-          </div>
-        `).join('')}
-      </section>
-    ` : ''}
-
     ${paths.length ? `
       <section class="panel">
         <h3 class="panel-title">My Learning Paths</h3>
@@ -260,10 +209,26 @@ function renderESchoolHome(f) {
           <div class="list-row">
             <div class="list-row-main">
               <span class="list-row-title">${esc(p.title)}</span>
-              <span class="list-row-sub">${_clampPct(p.progress)}% complete</span>
+              <span class="list-row-sub">${p.progress || 0}% complete</span>
             </div>
             <button class="btn btn-secondary btn-sm" data-action="open-path-detail" data-id="${p.id}">
               Continue <i class="fas fa-arrow-right"></i></button>
+          </div>
+        `).join('')}
+      </section>
+    ` : ''}
+
+    ${upcoming.length ? `
+      <section class="panel">
+        <h3 class="panel-title">Upcoming Assessments</h3>
+        ${upcoming.map(a => `
+          <div class="list-row">
+            <div class="list-row-main">
+              <span class="list-row-title">${esc(a.title)}</span>
+              <span class="list-row-sub">${esc(a.course_title || '')} · Due ${fmtDate(a.due_at)}</span>
+            </div>
+            <button class="btn btn-primary btn-sm" data-action="start-assessment" data-id="${a.id}">
+              <i class="fas fa-play"></i> Start</button>
           </div>
         `).join('')}
       </section>
@@ -309,46 +274,22 @@ function renderESchoolHome(f) {
   `;
 }
 
-function _renderContinueCard(e, label = 'Resume') {
-  const pct = _clampPct(e.progress);
-  return `
-    <article class="program-card">
-      <span class="chip chip-blue">${esc(e.enrollment_type || 'Course')}</span>
-      <h4 class="program-title">${esc(e.title || '')}</h4>
-      <p class="program-desc">${e.last_lesson_title ? 'Next: ' + esc(e.last_lesson_title) : 'Pick up where you left off'}</p>
-      <div class="progress-bar"><span style="width:${pct}%"></span></div>
-      <p class="program-meta">${pct}% complete</p>
-      <button class="btn btn-primary btn-sm" data-action="open-course-player"
-              data-id="${e.course_id}" data-lesson="${e.last_lesson_id || ''}">
-        <i class="fas fa-play"></i> ${esc(label)}</button>
-    </article>
-  `;
-}
+/* ============================================================ */
+/* Catalog view */
+/* ============================================================ */
 
-/* ---------------- Catalog view ---------------- */
 function renderESchoolCatalog(f) {
-  const categories  = Array.from(new Set((S.courses || []).map(c => c.category).filter(Boolean))).sort();
-  const instructors = Array.from(new Set((S.courses || []).map(c => c.instructor_name).filter(Boolean))).sort();
-
   return `
     ${UserUI.tabs(USER_ESCHOOL_TABS, f.tab, 'data-eschool-tab')}
     <section class="panel">
       <div class="expert-filters">
         <input type="search" id="eschool-search" class="form-input"
-               placeholder="Search courses..." value="${esc(f.query)}" style="max-width:220px"
+               placeholder="Search courses..." value="${esc(f.query)}" style="max-width:240px"
                aria-label="Search courses" />
-        <select id="eschool-category" class="form-select" style="max-width:160px" aria-label="Category">
-          <option value="">All categories</option>
-          ${categories.map(c => `<option value="${esc(c)}" ${f.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-        </select>
         <select id="eschool-level" class="form-select" style="max-width:140px" aria-label="Level">
           <option value="">All levels</option>
           ${['beginner','intermediate','advanced'].map(l =>
             `<option value="${l}" ${f.level === l ? 'selected' : ''}>${l}</option>`).join('')}
-        </select>
-        <select id="eschool-instructor" class="form-select" style="max-width:170px" aria-label="Instructor">
-          <option value="">Any instructor</option>
-          ${instructors.map(i => `<option value="${esc(i)}" ${f.instructor === i ? 'selected' : ''}>${esc(i)}</option>`).join('')}
         </select>
         <select id="eschool-language" class="form-select" style="max-width:140px" aria-label="Language">
           <option value="">Any language</option>
@@ -358,44 +299,26 @@ function renderESchoolCatalog(f) {
         <select id="eschool-format" class="form-select" style="max-width:150px" aria-label="Format">
           <option value="">Any format</option>
           <option value="self_paced" ${f.format === 'self_paced' ? 'selected' : ''}>Self-paced</option>
-          <option value="live"       ${f.format === 'live'       ? 'selected' : ''}>Live</option>
-          <option value="blended"    ${f.format === 'blended'    ? 'selected' : ''}>Blended</option>
-          <option value="cohort"     ${f.format === 'cohort'     ? 'selected' : ''}>Cohort</option>
+          <option value="live"       ${f.format === 'live' ? 'selected' : ''}>Live</option>
+          <option value="blended"    ${f.format === 'blended' ? 'selected' : ''}>Blended</option>
+          <option value="cohort"     ${f.format === 'cohort' ? 'selected' : ''}>Cohort</option>
         </select>
         <select id="eschool-workload" class="form-select" style="max-width:150px" aria-label="Workload">
           <option value="">Any workload</option>
-          <option value="light"  ${f.workload === 'light'  ? 'selected' : ''}>Light (&lt;5h/week)</option>
-          <option value="medium" ${f.workload === 'medium' ? 'selected' : ''}>Medium (5–10h)</option>
-          <option value="heavy"  ${f.workload === 'heavy'  ? 'selected' : ''}>Heavy (10h+)</option>
-        </select>
-        <select id="eschool-price" class="form-select" style="max-width:150px" aria-label="Price">
-          <option value="">Any price</option>
-          <option value="free"  ${f.price === 'free'  ? 'selected' : ''}>Free</option>
-          <option value="paid"  ${f.price === 'paid'  ? 'selected' : ''}>Paid</option>
-        </select>
-        <select id="eschool-duration" class="form-select" style="max-width:150px" aria-label="Duration">
-          <option value="">Any duration</option>
-          <option value="short" ${f.duration === 'short' ? 'selected' : ''}>≤ 4 weeks</option>
-          <option value="mid"   ${f.duration === 'mid'   ? 'selected' : ''}>5–12 weeks</option>
-          <option value="long"  ${f.duration === 'long'  ? 'selected' : ''}>12+ weeks</option>
-        </select>
-        <select id="eschool-rating" class="form-select" style="max-width:150px" aria-label="Rating">
-          <option value="">Any rating</option>
-          <option value="4.5" ${f.rating === '4.5' ? 'selected' : ''}>4.5+</option>
-          <option value="4"   ${f.rating === '4'   ? 'selected' : ''}>4.0+</option>
-          <option value="3"   ${f.rating === '3'   ? 'selected' : ''}>3.0+</option>
+          <option value="light"   ${f.workload === 'light' ? 'selected' : ''}>Light (&lt;5h/week)</option>
+          <option value="medium"  ${f.workload === 'medium' ? 'selected' : ''}>Medium (5–10h)</option>
+          <option value="heavy"   ${f.workload === 'heavy' ? 'selected' : ''}>Heavy (10h+)</option>
         </select>
         <select id="eschool-cert" class="form-select" style="max-width:150px" aria-label="Certificate">
           <option value="">Any certificate</option>
           <option value="yes" ${f.cert === 'yes' ? 'selected' : ''}>With certificate</option>
         </select>
         <select id="eschool-sort" class="form-select" style="max-width:170px" aria-label="Sort">
-          <option value="popular"     ${f.sort === 'popular'     ? 'selected' : ''}>Most popular</option>
-          <option value="newest"      ${f.sort === 'newest'      ? 'selected' : ''}>Newest</option>
-          <option value="recommended" ${f.sort === 'recommended' ? 'selected' : ''}>Recommended</option>
-          <option value="rating"      ${f.sort === 'rating'      ? 'selected' : ''}>Highest rated</option>
-          <option value="price_asc"   ${f.sort === 'price_asc'   ? 'selected' : ''}>Price: low → high</option>
-          <option value="price_desc"  ${f.sort === 'price_desc'  ? 'selected' : ''}>Price: high → low</option>
+          <option value="popular"    ${f.sort === 'popular' ? 'selected' : ''}>Most popular</option>
+          <option value="price_asc"  ${f.sort === 'price_asc' ? 'selected' : ''}>Price: low → high</option>
+          <option value="price_desc" ${f.sort === 'price_desc' ? 'selected' : ''}>Price: high → low</option>
+          <option value="newest"     ${f.sort === 'newest' ? 'selected' : ''}>Newest</option>
+          <option value="rating"     ${f.sort === 'rating' ? 'selected' : ''}>Top rated</option>
         </select>
         <button class="btn btn-ghost btn-sm" data-action="clear-eschool-filters">
           <i class="fas fa-eraser"></i> Clear</button>
@@ -418,13 +341,9 @@ function renderESchoolPanel(f = _eschoolFilters()) {
       (c.instructor_name || '').toLowerCase().includes(q)
     );
   }
-  if (f.category)   list = list.filter(c => c.category === f.category);
-  if (f.level)      list = list.filter(c => c.level === f.level);
-  if (f.instructor) list = list.filter(c => c.instructor_name === f.instructor);
-  if (f.language)   list = list.filter(c => (c.language || '').toLowerCase() === f.language.toLowerCase());
-  if (f.format)     list = list.filter(c => c.delivery_format === f.format);
-  if (f.cert === 'yes') list = list.filter(c => c.certificate_available !== false);
-
+  if (f.level)    list = list.filter(c => c.level === f.level);
+  if (f.language) list = list.filter(c => (c.language || '').toLowerCase() === f.language.toLowerCase());
+  if (f.format)   list = list.filter(c => c.delivery_format === f.format);
   if (f.workload) {
     list = list.filter(c => {
       const h = Number(c.weekly_hours || c.duration_hours || 0);
@@ -433,24 +352,13 @@ function renderESchoolPanel(f = _eschoolFilters()) {
       return h > 10;
     });
   }
-  if (f.price === 'free') list = list.filter(c => Number(c.price || 0) === 0);
-  if (f.price === 'paid') list = list.filter(c => Number(c.price || 0) > 0);
-  if (f.rating) list = list.filter(c => Number(c.average_rating || 0) >= Number(f.rating));
-  if (f.duration) {
-    list = list.filter(c => {
-      const weeks = Number(c.duration_weeks || 0);
-      if (f.duration === 'short') return weeks > 0 && weeks <= 4;
-      if (f.duration === 'mid')   return weeks > 4 && weeks <= 12;
-      return weeks > 12;
-    });
-  }
+  if (f.cert === 'yes') list = list.filter(c => c.certificate_available !== false);
 
   list = list.slice().sort((a, b) => {
-    if (f.sort === 'price_asc')   return Number(a.price||0) - Number(b.price||0);
-    if (f.sort === 'price_desc')  return Number(b.price||0) - Number(a.price||0);
-    if (f.sort === 'newest')      return new Date(b.created_at||0) - new Date(a.created_at||0);
-    if (f.sort === 'rating')      return Number(b.average_rating||0) - Number(a.average_rating||0);
-    if (f.sort === 'recommended') return Number(b.recommendation_score||0) - Number(a.recommendation_score||0);
+    if (f.sort === 'price_asc')  return Number(a.price||0) - Number(b.price||0);
+    if (f.sort === 'price_desc') return Number(b.price||0) - Number(a.price||0);
+    if (f.sort === 'newest')     return new Date(b.created_at||0) - new Date(a.created_at||0);
+    if (f.sort === 'rating')     return Number(b.average_rating||0) - Number(a.average_rating||0);
     return Number(b.enrolled_count||0) - Number(a.enrolled_count||0);
   });
 
@@ -484,8 +392,7 @@ function renderESchoolPanel(f = _eschoolFilters()) {
               <span class="program-price">${fmtCur(c.price || 0)}</span>
               <span class="program-meta">
                 ${c.duration_weeks ? c.duration_weeks + 'w' : (c.duration_hours || 0) + 'h'} ·
-                ${c.enrolled_count || 0} enrolled ·
-                ★ ${Number(c.average_rating || 0).toFixed(1)}
+                ${c.enrolled_count || 0} enrolled
                 ${c.certificate_available !== false ? ' · <i class="fas fa-certificate" title="Certificate"></i>' : ''}
               </span>
             </footer>
@@ -511,7 +418,10 @@ function renderESchoolPanel(f = _eschoolFilters()) {
   `;
 }
 
-/* ---------------- My Learning compact ---------------- */
+/* ============================================================ */
+/* Compact My Learning embedded in Home view */
+/* ============================================================ */
+
 function renderESchoolMyCompact() {
   return `
     <section class="panel">
@@ -573,38 +483,15 @@ function renderESchoolSaved(f) {
   `;
 }
 
-function renderESchoolActivity() {
-  const activity = S.recentActivity || [];
-  return `
-    <section class="panel">
-      <h3 class="panel-title">Learning Activity History</h3>
-      ${activity.length ? `
-        <ul class="list-stack">
-          ${activity.map(a => `
-            <li class="list-row">
-              <div class="list-row-main">
-                <span class="list-row-title">${esc(a.summary || '')}</span>
-                <span class="list-row-sub">${timeAgo(a.at)}</span>
-              </div>
-              <span class="chip chip-neutral">${esc(a.type || '')}</span>
-            </li>
-          `).join('')}
-        </ul>
-      ` : UserUI.empty({
-        icon: 'fa-history',
-        title: 'No activity yet',
-        desc: 'Your learning activity will appear here.',
-      })}
-    </section>
-  `;
-}
+/* ============================================================ */
+/* My Learning (full page) */
+/* ============================================================ */
 
-/* ---------------- My Learning full page ---------------- */
 function renderUserMyLearning() {
   const enrollments = S.enrollments || [];
-  const inProgress  = enrollments.filter(e => _clampPct(e.progress) > 0 && _clampPct(e.progress) < 100);
-  const notStarted  = enrollments.filter(e => _clampPct(e.progress) === 0);
-  const completed   = enrollments.filter(e => _clampPct(e.progress) >= 100);
+  const inProgress  = enrollments.filter(e => Number(e.progress || 0) > 0 && Number(e.progress || 0) < 100);
+  const notStarted  = enrollments.filter(e => Number(e.progress || 0) === 0);
+  const completed   = enrollments.filter(e => Number(e.progress || 0) >= 100);
   const certCount   = (S.certificates || []).length;
 
   return UserUI.page({
@@ -625,16 +512,13 @@ function renderUserMyLearning() {
             <article class="enrollment-card">
               <h3 class="enrollment-title">${esc(e.title || '')}</h3>
               <p class="enrollment-type">${esc(e.enrollment_type || '')}</p>
-              <div class="progress-bar"><span style="width:${_clampPct(e.progress)}%"></span></div>
-              <p class="enrollment-progress">${_clampPct(e.progress)}% complete</p>
+              <div class="progress-bar"><span style="width:${e.progress || 0}%"></span></div>
+              <p class="enrollment-progress">${e.progress || 0}% complete</p>
               <div class="panel-actions" style="display:flex;gap:6px;flex-wrap:wrap">
                 <button class="btn btn-primary btn-sm" data-action="open-course-player" data-id="${e.course_id}">
                   <i class="fas fa-play"></i> Resume</button>
                 <button class="btn btn-secondary btn-sm" data-action="request-refund" data-id="${e.id}">
                   <i class="fas fa-rotate-left"></i> Request Refund</button>
-                <button class="btn btn-secondary btn-sm" data-action="withdraw-enrollment"
-                        data-id="${e.id}" data-course="${e.course_id}">
-                  <i class="fas fa-times"></i> Withdraw</button>
               </div>
             </article>
           `).join('')}
@@ -688,14 +572,10 @@ function renderUserMyLearning() {
   });
 }
 
-/* ---------------- helpers ---------------- */
-function _clampPct(v) {
-  const n = Number(v) || 0;
-  if (isNaN(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
+/* ============================================================ */
+/* Module registrations */
+/* ============================================================ */
 
-/* ---------------- module registration ---------------- */
 window.ExpertHubUser.registerModule('learning', renderUserLearning);
 window.ExpertHubUser.registerModule('eschool', renderUserLearning);
 window.ExpertHubUser.registerModule('my-learning', renderUserMyLearning);
@@ -708,21 +588,17 @@ window.ExpertHubUser.registerModule('learning', renderUserLearning, {
     }, 250);
 
     const $set = (id, fn) => { const el = document.getElementById(id); if (el) fn(el); };
-    $set('eschool-search',     el => el.oninput  = () => { _setESchoolFilter('q', el.value); rerender(); });
-    $set('eschool-category',   el => el.onchange = () => { _setESchoolFilter('category', el.value); rerender(); });
-    $set('eschool-level',      el => el.onchange = () => { _setESchoolFilter('level', el.value); rerender(); });
-    $set('eschool-instructor', el => el.onchange = () => { _setESchoolFilter('instructor', el.value); rerender(); });
-    $set('eschool-language',   el => el.onchange = () => { _setESchoolFilter('language', el.value); rerender(); });
-    $set('eschool-format',     el => el.onchange = () => { _setESchoolFilter('format', el.value); rerender(); });
-    $set('eschool-workload',   el => el.onchange = () => { _setESchoolFilter('workload', el.value); rerender(); });
-    $set('eschool-price',      el => el.onchange = () => { _setESchoolFilter('price', el.value); rerender(); });
-    $set('eschool-duration',   el => el.onchange = () => { _setESchoolFilter('duration', el.value); rerender(); });
-    $set('eschool-rating',     el => el.onchange = () => { _setESchoolFilter('rating', el.value); rerender(); });
-    $set('eschool-cert',       el => el.onchange = () => { _setESchoolFilter('cert', el.value); rerender(); });
-    $set('eschool-sort',       el => el.onchange = () => { _setESchoolFilter('sort', el.value); rerender(); });
+    $set('eschool-search',   el => el.oninput  = () => { _setESchoolFilter('q', el.value); rerender(); });
+    $set('eschool-level',    el => el.onchange = () => { _setESchoolFilter('level', el.value); rerender(); });
+    $set('eschool-language', el => el.onchange = () => { _setESchoolFilter('language', el.value); rerender(); });
+    $set('eschool-format',   el => el.onchange = () => { _setESchoolFilter('format', el.value); rerender(); });
+    $set('eschool-workload', el => el.onchange = () => { _setESchoolFilter('workload', el.value); rerender(); });
+    $set('eschool-cert',     el => el.onchange = () => { _setESchoolFilter('cert', el.value); rerender(); });
+    $set('eschool-sort',     el => el.onchange = () => { _setESchoolFilter('sort', el.value); rerender(); });
   },
 });
 
+/* Tab click delegation (tolerates rerenders) */
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-eschool-tab]');
   if (t) { _setESchoolFilter('tab', t.dataset.eschoolTab); rerenderRoleContent(); return; }
@@ -730,7 +606,10 @@ document.addEventListener('click', (e) => {
   if (v) { _setESchoolFilter('view', v.dataset.eschoolView); rerenderRoleContent(); }
 }, true);
 
-/* ---------------- actions ---------------- */
+/* ============================================================ */
+/* Actions */
+/* ============================================================ */
+
 window.ExpertHubUser.registerAction('eschool-refresh', async () => {
   await _refreshLearningData({ force: true });
   rerenderRoleContent();
@@ -789,7 +668,6 @@ window.ExpertHubUser.registerAction('enroll-modal', async (courseId) => {
         ` : ''}
         <label class="form-group"><span class="form-label">Coupon (optional)</span>
           <input id="enCoupon" class="form-input" placeholder="WELCOME10" /></label>
-        <p class="form-hint">Enrolment is confirmed only when the server confirms payment/activation.</p>
       `,
       footer: `
         <button class="btn btn-secondary" data-close-modal>Cancel</button>
@@ -821,18 +699,6 @@ window.ExpertHubUser.registerAction('enroll-modal', async (courseId) => {
       }
       finally { showLoading(false); }
     };
-  } catch (e) { showToast(e.message, 'error'); }
-});
-
-window.ExpertHubUser.registerAction('withdraw-enrollment', async (_, el) => {
-  const enrollmentId = el?.dataset?.id;
-  if (!enrollmentId) return;
-  if (!await confirmDialog('Withdraw from this course? You will lose access to course content.')) return;
-  try {
-    await apiCall(`/api/user/enrollments/${enrollmentId}/withdraw`, 'POST');
-    await _refreshLearningData({ force: true });
-    rerenderRoleContent();
-    showToast('Withdrawal request submitted', 'success');
   } catch (e) { showToast(e.message, 'error'); }
 });
 
