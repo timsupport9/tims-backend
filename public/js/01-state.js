@@ -1,17 +1,7 @@
 /* ============================================================
    ExpertHub 2.0 — 01-state.js
-   Global configuration + shared mutable state.
+   Global configuration + shared mutable state + runtime UI state.
    MUST load before every other app file.
-
-   Integrates:
-   - All original CONFIG entries (unaltered)
-   - Reconciled CONFIG.BADGES (single authoritative set, no override
-     needed in 11-user.js)
-   - CONFIG.FEATURES (Sprints 3-10 gating)
-   - All policy constants used by modules (REFUND_MAX_PROGRESS_PCT,
-     CANCEL_FREE_HOURS, INSTANT_RESPONSE_MINS, extended-loader retry)
-   - All S.* keys read by delivered user-dashboard modules
-   - Forward-compat S.* buckets for Sprints 3-10
    ============================================================ */
 
 /* ---------- CONFIG ---------- */
@@ -50,49 +40,32 @@ const CONFIG = {
   DISPUTE_REASONS: ['no_show','poor_quality','wrong_expertise','technical_issues','other'],
   TIP_PRESETS: [5, 10, 20, 50],
   MAX_RESCHEDULES: 2,
-  CANCEL_FREE_HOURS: 24,
-  INSTANT_RESPONSE_MINS: 15,
+  ESCROW_HOLD_HOURS: 24,
+  GRACE_PERIOD_MINUTES: 10,
 
   /* ---------- E-SCHOOL ---------- */
   COURSE_TYPES: ['bootcamp','short_course','tuition','exam_prep','career','certification'],
-  LESSON_TYPES: ['video','reading','quiz','assignment','live','code','download','audio','slides'],
+  LESSON_TYPES: ['video','reading','quiz','assignment','live','code','download'],
   QUIZ_QUESTION_TYPES: ['mcq','true_false','multi_select','short_answer','essay'],
   XP_REWARDS: {
     lesson_complete: 10, quiz_pass: 25, quiz_perfect: 50,
     assignment_submit: 20, course_complete: 200, daily_streak: 5,
     forum_answer: 15, first_lesson_today: 5,
   },
-
-  /* Reconciled BADGES — single authoritative set.
-     Every entry has {name, icon, desc}; achievements.js reads all three.
-     This replaces the partial set that was in 01-state.js AND the
-     override that was in 11-user.js (which no longer needs to run). */
   BADGES: {
-    first_lesson:       { name: 'First Steps',       icon: 'fa-shoe-prints',   desc: 'Completed your first lesson' },
-    first_course:       { name: 'Course Champion',   icon: 'fa-trophy',        desc: 'Enrolled in your first course' },
-    first_completion:   { name: 'Course Complete',   icon: 'fa-graduation-cap',desc: 'Completed your first course' },
-    three_courses:      { name: 'Knowledge Seeker',  icon: 'fa-book-open',     desc: 'Completed 3 courses' },
-    five_courses:       { name: 'Learning Machine',  icon: 'fa-rocket',        desc: 'Completed 5 courses' },
-    ten_courses:        { name: 'Lifelong Learner',  icon: 'fa-brain',         desc: 'Completed 10 courses' },
-    perfect_quiz:       { name: 'Perfect Score',     icon: 'fa-star',          desc: 'Scored 100% on an assessment' },
-    first_certificate:  { name: 'Certified',         icon: 'fa-certificate',   desc: 'Earned your first certificate' },
-    path_complete:      { name: 'Path Master',       icon: 'fa-route',         desc: 'Completed a full learning path' },
-    streak_7:           { name: 'Week Warrior',      icon: 'fa-fire',          desc: '7-day learning streak' },
-    streak_30:          { name: 'Month Master',      icon: 'fa-crown',         desc: '30-day learning streak' },
-    first_consultation: { name: 'First Session',     icon: 'fa-comments',      desc: 'Completed your first consultation' },
-    five_consultations: { name: 'Consultation Pro',  icon: 'fa-user-tie',      desc: 'Completed 5 consultations' },
-    help_10:            { name: 'Helpful Hand',      icon: 'fa-hands-helping', desc: 'Answered 10 questions in the community' },
-    night_owl:          { name: 'Night Owl',         icon: 'fa-moon',          desc: 'Studied after midnight 5 times' },
-    early_bird:         { name: 'Early Bird',        icon: 'fa-sun',           desc: 'Studied before 6 AM 5 times' },
+    first_lesson:   { name:'First Steps',       icon:'fa-shoe-prints' },
+    first_course:   { name:'Course Champion',   icon:'fa-trophy' },
+    five_courses:   { name:'Learning Machine',  icon:'fa-rocket' },
+    perfect_quiz:   { name:'Perfect Score',     icon:'fa-star' },
+    streak_7:       { name:'Week Warrior',      icon:'fa-fire' },
+    streak_30:      { name:'Month Master',      icon:'fa-crown' },
+    help_10:        { name:'Helpful Hand',      icon:'fa-hands-helping' },
+    night_owl:      { name:'Night Owl',         icon:'fa-moon' },
+    early_bird:     { name:'Early Bird',        icon:'fa-sun' },
   },
-
   COURSE_REFUND_WINDOW_DAYS: 14,
-  REFUND_MAX_PROGRESS_PCT: 30,
   TRIAL_DURATION_HOURS: 48,
-
-  /* ---------- USER DASHBOARD — DATA LOADER ---------- */
-  USER_EXPANDED_RETRY_MS: 8000,
-  USER_EXPANDED_MAX_TRIES: 3,
+  XP_LEVEL_THRESHOLDS: [0, 100, 250, 500, 1000, 2000, 3500, 5500, 8000, 12000, 17000, 23000, 30000],
 
   /* ---------- INSTITUTION ---------- */
   CAMPUS_TYPES: ['main','branch','satellite','partner'],
@@ -104,15 +77,15 @@ const CONFIG = {
     'forum_engagement','quiz_performance','feedback_sentiment'
   ],
   SUCCESSION_BOXES: [
-    { code:'star',         label:'Star',           readiness:'ready_now',   performance:'high',   potential:'high' },
-    { code:'high_pot',     label:'High Potential', readiness:'ready_soon',  performance:'medium', potential:'high' },
-    { code:'enigma',       label:'Enigma',         readiness:'ready_later', performance:'low',    potential:'high' },
-    { code:'current_star', label:'Current Star',   readiness:'ready_now',   performance:'high',   potential:'medium' },
-    { code:'core',         label:'Core Player',    readiness:'ready_later', performance:'medium', potential:'medium' },
-    { code:'inconsistent', label:'Inconsistent',   readiness:'developing',  performance:'low',    potential:'medium' },
-    { code:'trusted',      label:'Trusted Pro',    readiness:'ready_now',   performance:'high',   potential:'low' },
-    { code:'dilemma',      label:'Dilemma',        readiness:'developing',  performance:'medium', potential:'low' },
-    { code:'risk',         label:'At Risk',        readiness:'not_ready',   performance:'low',    potential:'low' },
+    { code:'star',        label:'Star',           readiness:'ready_now',  performance:'high',   potential:'high' },
+    { code:'high_pot',    label:'High Potential', readiness:'ready_soon', performance:'medium', potential:'high' },
+    { code:'enigma',      label:'Enigma',         readiness:'ready_later',performance:'low',    potential:'high' },
+    { code:'current_star',label:'Current Star',   readiness:'ready_now',  performance:'high',   potential:'medium' },
+    { code:'core',        label:'Core Player',    readiness:'ready_later',performance:'medium', potential:'medium' },
+    { code:'inconsistent',label:'Inconsistent',   readiness:'developing', performance:'low',    potential:'medium' },
+    { code:'trusted',     label:'Trusted Pro',    readiness:'ready_now',  performance:'high',   potential:'low' },
+    { code:'dilemma',     label:'Dilemma',        readiness:'developing', performance:'medium', potential:'low' },
+    { code:'risk',        label:'At Risk',        readiness:'not_ready',  performance:'low',    potential:'low' },
   ],
   SSO_PROVIDERS: ['saml','azure_ad','google_workspace','okta','onelogin','custom_oidc'],
   WEBHOOK_EVENTS: [
@@ -130,74 +103,79 @@ const CONFIG = {
   ANNOUNCEMENT_SCOPES: ['all','campus','programme','cohort','department','role'],
   ANNOUNCEMENT_PRIORITIES: ['info','important','urgent','critical'],
   REPORT_FIELD_LIBRARY: {
-    trainee:     ['id','name','email','department','job_title','campus','status','progress','joined_at','last_active'],
-    programme:   ['id','title','category','status','enrolled_count','capacity','avg_progress','start_date','end_date'],
-    cohort:      ['id','name','programme_title','instructor_name','capacity','trainee_count','start_date','end_date','status'],
-    assessment:  ['id','title','type','cohort_name','weight','due_date','submissions','avg_score','pass_rate'],
-    certificate: ['serial','trainee_name','programme_title','issued_at','expires_at','cpd_points','status'],
-    budget:      ['department','allocated','spent','remaining','utilization_pct','period'],
-    instructor:  ['name','specialization','programmes','sessions','avg_rating','utilization_pct'],
+    trainee:    ['id','name','email','department','job_title','campus','status','progress','joined_at','last_active'],
+    programme:  ['id','title','category','status','enrolled_count','capacity','avg_progress','start_date','end_date'],
+    cohort:     ['id','name','programme_title','instructor_name','capacity','trainee_count','start_date','end_date','status'],
+    assessment: ['id','title','type','cohort_name','weight','due_date','submissions','avg_score','pass_rate'],
+    certificate:['serial','trainee_name','programme_title','issued_at','expires_at','cpd_points','status'],
+    budget:     ['department','allocated','spent','remaining','utilization_pct','period'],
+    instructor: ['name','specialization','programmes','sessions','avg_rating','utilization_pct'],
   },
+  REPORT_FORMATS: ['csv','xlsx','pdf','json'],
+  REPORT_CADENCES: ['once','daily','weekly','monthly','quarterly'],
+  COMPLIANCE_OPERATORS: ['lt','lte','gt','gte','eq','neq'],
+  ORG_UNIT_TYPES: ['division','department','team','branch'],
+  LEARNING_PATH_STATUSES: ['draft','published','archived'],
+  INSTRUCTOR_CONTRACT_STATUSES: ['draft','pending_signature','active','completed','terminated'],
+  ASSESSMENT_GRADING_MODES: ['manual','auto','hybrid','peer'],
 
-  /* ---------- FEATURE FLAGS (Sprints 3-10) ----------
-     Each new sprint item ships behind a flag. Toggle per environment
-     via build-time substitution or an override passed to CONFIG. */
+  /* ---------- FEATURE FLAGS ---------- */
   FEATURES: {
-    /* Sprint 3 */
-    cohortLearning:        false,
-    courseForum:           false,
-    offlineMedia:          false,
-    /* Sprint 4 */
-    peerStudyGroups:       false,
-    courseComparison:      false,
-    advancedPlayer:        false,
-    learningGoals:         false,
-    /* Sprint 5 */
-    subscriptions:         false,
-    certificationTracks:   false,
-    institutionLinked:     false,
-    /* Sprint 6 */
-    recurringBookings:     false,
-    groupConsultations:    false,
-    sessionRecordings:     false,
-    expertVerifiedBadges:  false,
-    consultationBundles:   false,
-    /* Sprint 7 */
-    skillGapRecommendations: false,
-    cvEnhancement:         false,
-    mentorPathwayLink:     false,
-    interviewAIFeedback:   false,
-    pathwayProgress:       false,
-    /* Sprint 8 */
-    perCourseGroups:       false,
-    eventCalendarRSVP:     false,
-    studyChallenges:       false,
-    moderationTools:       false,
-    /* Sprint 9 */
-    invoices:              false,
-    spendingAnalytics:     false,
-    refundAutomation:      false,
-    supportTemplates:      false,
-    gdprEnhanced:          false,
-    /* Sprint 10 */
-    globalSearch:          false,
-    notificationCenter:    false,
-    offlineReads:          false,
-    accessibilityMode:     false,
+    instantConsultation: true,
+    videoCalls: true,
+    screenShare: true,
+    sessionRecording: true,
+    aiMatchmaking: true,
+    sessionPackages: true,
+    tipsAndFollowups: true,
+    courseBundles: true,
+    learningPaths: true,
+    studyPartners: true,
+    blockchainCertificates: true,
+    wellnessTracking: true,
+    successionPlanning: true,
+    instructorMarketplace: true,
+    examProctoring: true,
+    institutionApi: true,
+    institutionWebhooks: true,
+    institutionSso: true,
+    whiteLabelBranding: true,
+    scheduledReports: true,
+    budgetEnforcement: true,
+    commandPalette: true,
+    keyboardShortcuts: true,
+    offlineQueue: true,
   },
 
-  /* ---------- FORWARD-COMPAT POLICY (Sprints 3-10) ---------- */
-  COHORT_MAX_WAITLIST:       50,
-  OFFLINE_MAX_ITEMS:         50,
-  OFFLINE_MAX_MB:            500,
-  FORUM_MAX_THREADS_PER_DAY: 10,
-  COMPARE_MAX_COURSES:       4,
-  SEARCH_MIN_QUERY_LENGTH:   2,
-  NOTIFICATIONS_PER_PAGE:    25,
+  /* ---------- RUNTIME TUNING ---------- */
+  API_TIMEOUT_MS: 30000,
+  API_RETRY: { attempts: 2, backoffMs: 800, statuses: [408, 429, 500, 502, 503, 504] },
+  UPLOAD_MAX_MB: 25,
+  SOCKET_RECONNECT: { attempts: 8, delayMs: 1000, delayMaxMs: 15000 },
+  TOAST_DURATION_MS: 4200,
+  DEBOUNCE_SEARCH_MS: 300,
+  POLL_INTERVAL_MS: 60000,
+  COMMAND_PALETTE_LIMIT: 12,
+  NOTIFICATION_GROUP_LIMIT: 50,
+
+  /* ---------- KEYBOARD SHORTCUTS ---------- */
+  SHORTCUTS: {
+    'mod+k': 'command-palette',
+    'mod+/': 'shortcuts-help',
+    'mod+n': 'new-create',
+    'mod+j': 'toggle-notifications',
+    'mod+b': 'toggle-sidebar',
+    'mod+shift+t': 'toggle-theme',
+    'escape': 'close-overlay',
+  },
+
+  /* ---------- NOTIFICATION GROUPS ---------- */
+  NOTIFICATION_GROUPS: ['all','unread','consultations','courses','institution','system'],
 };
 
 /* ---------- GLOBAL STATE ---------- */
 let socket = null;
+let socketConnected = false;
 let authToken = null;
 let refreshToken = null;
 let currentUser = null;
@@ -210,42 +188,78 @@ let currentChatId = null;
 let chatTypingTimer = null;
 let pollTimer = null;
 let notificationsPanelOpen = false;
-let selectedRows = {
-  users: new Set(),
-  trainees: new Set(),
-  certificates: new Set(),
-  programmes: new Set(),
-  cohorts: new Set(),
-  campuses: new Set(),
+let commandPaletteOpen = false;
+let userMenuOpen = false;
+let shortcutsHelpOpen = false;
+let globalSearchQuery = '';
+let globalSearchResults = [];
+let globalSearchTimer = null;
+let connectionStatus = navigator.onLine ? 'online' : 'offline';
+let activeVideoSession = null;
+let localMediaStream = null;
+let remoteMediaStream = null;
+let screenShareStream = null;
+let sessionRecorder = null;
+let sessionRecordingChunks = [];
+let announceBannerDismissed = localStorage.getItem('announce_dismissed') || '';
+
+const selectedRows = {
+  users: new Set(), trainees: new Set(), certificates: new Set(),
+  programmes: new Set(), cohorts: new Set(), campuses: new Set(),
+  assessments: new Set(), instructors: new Set(), announcements: new Set(),
+  webhooks: new Set(), apiKeys: new Set(), reports: new Set(),
+  enrollments: new Set(), sessions: new Set(),
+};
+
+/* UI-level state (non-persisted, controller layer). */
+const UI = {
+  modal: null, modalData: null,
+  drawer: null, drawerData: null,
+  loading: {},              // per-section loading flags
+  search: {},               // per-section search terms
+  filters: {},              // per-section filter objects
+  sort: {},                 // per-section sort state {key, dir}
+  subTab: {},               // per-section active sub-tab
+  drafts: {},               // keyed form-drafts
+  toasts: [],               // queue of active toasts
+  sidebarCollapsed: localStorage.getItem('sidebar_collapsed') === '1',
+  notifGroup: 'all',
+  theme: localStorage.getItem('theme') || 'dark',
+  commandQuery: '',
+  commandCursor: 0,
+  paletteOpen: false,
+  onlineUserIds: new Set(),
+  typingIn: {},             // { [chatId]: [userId, ...] }
+  unreadByGroup: { consultations: 0, courses: 0, institution: 0, system: 0 },
+  wsBackoff: 0,
+  lastPing: null,
+  featureBanner: null,
 };
 
 const S = {
-  /* ============================================================
-     CORE
-     ============================================================ */
+  /* Core */
   users: [], experts: [], events: [], consultations: [], courses: [], notifications: [],
   reviews: [], transactions: [], payouts: [], enrollments: [], auditLogs: [], claims: [],
   tickets: [], coupons: [], certificates: [], wallet: { balance: 0, ledger: [] }, earnings: null,
   analytics: null, eventRegistrations: [], availability: [], timeOff: [], chatMessages: {},
   expertStats: null, expertPortfolio: [],
 
-  /* ============================================================
-     PAGINATION
-     ============================================================ */
   page: {
     users: 1, experts: 1, courses: 1, consultations: 1, transactions: 1,
     institutionTrainees: 1, institutionEnrollments: 1, institutionCertificates: 1,
     institutionSessions: 1, institutionProgrammes: 1, institutionCohorts: 1,
+    institutionInstructors: 1, institutionAssessments: 1, institutionAnnouncements: 1,
+    institutionWebhooks: 1, institutionApiKeys: 1, institutionReports: 1,
+  },
+  pageTotals: {
+    users: 0, experts: 0, courses: 0, consultations: 0, transactions: 0,
+    institutionTrainees: 0, institutionEnrollments: 0, institutionCertificates: 0,
+    institutionSessions: 0, institutionProgrammes: 0, institutionCohorts: 0,
+    institutionInstructors: 0, institutionAssessments: 0,
   },
 
-  /* ============================================================
-     INSTITUTIONS (admin scope)
-     ============================================================ */
   institutions: [],
 
-  /* ============================================================
-     INSTITUTION (institution scope)
-     ============================================================ */
   programmes: [], cohorts: [], assessments: [], projects: [],
   trainees: [], instructors: [], myInstitution: null, institutionStats: null,
   institutionTeam: [], institutionEnrollments: [], institutionSessions: [],
@@ -257,14 +271,9 @@ const S = {
   institutionComplianceRules: [], institutionReportTemplates: [],
   institutionScheduledReports: [], institutionTraineeTotal: 0, institutionEnrollmentTotal: 0,
 
-  /* ============================================================
-     USER INTENT
-     ============================================================ */
   userIntent: 'both',
 
-  /* ============================================================
-     CONSULTATION EXTENSIONS
-     ============================================================ */
+  /* ---------- CONSULTATION EXTENSIONS ---------- */
   consultationSlots: [], consultationPackages: [], consultationTiers: [],
   consultationEscrow: {}, consultationDisputes: [], consultationFollowups: [],
   consultationRecordings: {}, expertQuestions: [], userShortlist: [], userPackages: [],
@@ -272,10 +281,10 @@ const S = {
   expertPublicProfile: null, consultationMatchResults: [],
   instantConsultationExpert: null, corporateBudgets: [], consultationReviews: [],
   consultationReminders: [], consultationAttendees: [],
+  consultationAvailabilityRules: [], consultationNoShows: [],
+  consultationRescheduleRequests: [], consultationWaitlist: [],
 
-  /* ============================================================
-     E-SCHOOL EXTENSIONS
-     ============================================================ */
+  /* ---------- E-SCHOOL EXTENSIONS ---------- */
   courseCurriculum: {}, currentLesson: null, currentLessonProgress: null,
   currentQuiz: null, currentQuizAttempts: [], currentAssignment: null,
   currentAssignmentSubmission: null, lessonNotes: [], courseDiscussions: [],
@@ -285,10 +294,10 @@ const S = {
   recentWatchHistory: [], studyPartners: [], courseReviews: [],
   enrolledCourseIds: new Set(), wishlistIds: new Set(),
   courseAnalytics: null, courseCertificates: [],
+  quizBank: [], assignmentRubrics: [], peerReviewAssignments: [],
+  codePlaygroundState: {}, downloadedMaterials: [],
 
-  /* ============================================================
-     INSTITUTION EXTENSIONS
-     ============================================================ */
+  /* ---------- INSTITUTION EXTENSIONS ---------- */
   campuses: [], activeCampusId: null,
   budgetAllocations: [], budgetTransactions: [],
   examProctorSessions: [], examProctorFlags: [],
@@ -300,179 +309,68 @@ const S = {
   reportBuilderDrafts: [], savedReportDefinitions: [],
   institutionAnalytics: null, skillsGapAnalysis: null, complianceRuns: [],
   blockchainCerts: [], announcementReads: [], apiCallLogs: [],
-
-  /* ============================================================
-     LEARNER DASHBOARD — DELIVERED MODULES
-     ============================================================ */
-
-  /* ---- Wishlist ---- */
-  wishlist: [],
-
-  /* ---- E-School home aggregates (Sprint 1-2) ---- */
-  continueLearning:    [],
-  recommendations:     [],
-  liveClasses:         [],
-  upcomingAssessments: [],
-  recentActivity:      [],
-  learningAnalytics:   {},                    // { '7d': {...}, '30d': {...}, '90d': {...} }
-  courseLanguages:     ['English', 'Kiswahili'],
-
-  /* ---- Assessments ---- */
-  userAssessments: [],
-  userAttempts:    [],
-
-  /* ---- Personal development ---- */
-  personalGoals:  [],
-  habits:         [],
-  journalEntries: [],
-  decisions:      [],
-  milestones:     [],
-
-  /* ---- Academic ---- */
-  academicSubjects:    [],
-  studyTimetable:      [],
-  academicAssignments: [],
-  revisionMaterials:   [],
-
-  /* ---- Career ---- */
-  careerPathways:     [],
-  careerDirectory:    [],
-  careerInterests:    [],
-  careerProfiles:     [],
-  userCv:             null,
-  interviewPrep:      [],
-  savedOpportunities: [],
-  careerComparisons:  [],
-
-  /* ---- Mentorship ---- */
-  mentorships: [],
-
-  /* ---- Skills ---- */
-  skillAssessments: [],
-
-  /* ---- Productivity ---- */
-  tasks:     [],
-  reminders: [],
-
-  /* ---- Community ---- */
-  studyGroups:              [],
-  discussionsCommunity:     [],
-  communityChallenges:      [],
-  communityActivity:        [],
-  communityRecommendations: [],
-
-  /* ---- Resources ---- */
-  resources: [],
-
-  /* ---- Event registrations (guarded) ---- */
-  eventRegistrations: [],
-
-  /* ============================================================
-     PROFILE / SECURITY (Stage 7)
-     ============================================================ */
-  activeSessions:  [],
-  privacySettings: null,
-  securityEvents:  [],
-  recoveryOptions: {},
-  publicProfile:   null,
-
-  /* ============================================================
-     AI ASSISTANT (Stage 8)
-     ============================================================ */
-  aiConversations: [],
-  aiUsage:         null,
-  aiEnabled:       false,
-  aiCapabilities:  [],
-
-  /* ============================================================
-     OPPORTUNITIES (Stage 8)
-     ============================================================ */
-  opportunities: [],
-
-  /* ============================================================
-     EXTENDED LOADER BOOKKEEPING
-     ============================================================ */
-  userExtLoaded:       false,
-  userExtErrors:       [],
-  userExtLastLoadedAt: 0,
-
-  /* ============================================================
-     FORWARD-COMPAT — SPRINTS 3-10
-     Guarded buckets; empty by default until their feature flag is on.
-     ============================================================ */
-
-  /* Sprint 3 F — Cohorts */
-  userCohorts:    [],
-  cohortSessions: [],
-
-  /* Sprint 3 H — Course-level discussion forum */
-  courseForumThreads:    [],
-  courseForumPagination: {},
-
-  /* Sprint 3 K — Offline media downloads */
-  offlineDownloads: [],   // [{ lessonId, courseId, status, sizeBytes, downloadedAt }]
-
-  /* Sprint 4 L — Peer study groups */
-  peerStudyGroups: [],
-
-  /* Sprint 4 M — Course comparison tray */
-  comparisonTray: [],     // [{ courseId }]
-
-  /* Sprint 5 P — Subscriptions & invoices */
-  subscriptionPlans:   [],
-  currentSubscription: null,
-  invoices:            [],
-
-  /* Sprint 5 Q — Certification prep tracks */
-  certificationTracks: [],
-
-  /* Sprint 6 S — Recurring consultation series */
-  consultationSeries: [],
-
-  /* Sprint 6 T — Group consultations */
-  groupConsultationParticipants: [],
-
-  /* Sprint 6 U — Recording follow-ups */
-  consultationFollowupFiles: [],
-
-  /* Sprint 6 V — Verified expert badges */
-  expertVerifiedBadges: [],
-
-  /* Sprint 8 AD — Event RSVPs */
-  eventRSVPs: [],
-
-  /* Sprint 8 AE — Challenge leaderboards */
-  challengeLeaderboards: {},
-
-  /* Sprint 9 AG — Bulk invoice export job */
-  invoiceExportJob: null,
-
-  /* Sprint 10 AL — Global search */
-  searchResults: null,
-  searchHistory: [],
-
-  /* Sprint 10 AM — Notification preferences */
-  notificationPreferences: {},
+  instructorRatings: [], cohortFeedback: [],
+  complianceViolations: [], orgUnitsTree: [],
 };
 
-/* ============================================================
-   EXPERT ROLE ADDITIONS
-   Declared outside S literal for clarity; safely ignored by the
-   user dashboard (they simply remain empty).
-   ============================================================ */
-S.expertClients            = [];
-S.expertNotes              = [];
-S.expertReminders          = [];
-S.expertTasks              = [];
-S.expertProjects           = [];
-S.expertMilestones         = [];
-S.expertMentorships        = [];
-S.expertMentorshipSessions = [];
-S.expertProposals          = [];
-S.expertCredentials        = [];
-S.expertCPD                = [];
-S.expertSkills             = [];
-S.expertTeam               = [];
-S.expertAnalytics          = null;
-S.availabilitySettings     = { buffer_minutes: 15, advance_hours: 24 };
-S.courseAnalytics          = { courses: [], totalEnrollments: 0, avgCompletion: 0, avgRating: 0, revenue30d: 0 };
+/* ---------- Persisted prefs hydration ---------- */
+if (!['light','dark'].includes(UI.theme)) UI.theme = 'dark';
+document.documentElement.dataset.theme = UI.theme;
+
+/* ---------- Small memo cache for paginated GETs ---------- */
+const API_CACHE = {
+  store: new Map(),
+  set(key, value, ttlMs = 30000) {
+    this.store.set(key, { value, expires: Date.now() + ttlMs });
+  },
+  get(key) {
+    const e = this.store.get(key);
+    if (!e) return null;
+    if (e.expires < Date.now()) { this.store.delete(key); return null; }
+    return e.value;
+  },
+  invalidate(prefix = '') {
+    if (!prefix) return this.store.clear();
+    for (const k of this.store.keys()) if (k.startsWith(prefix)) this.store.delete(k);
+  },
+};
+
+/* ---------- Offline mutation queue ---------- */
+const OFFLINE_QUEUE = {
+  items: [],
+  push(req) { this.items.push({ ...req, ts: Date.now() }); this._persist(); },
+  async flush() {
+    if (!navigator.onLine || !this.items.length) return;
+    const pending = [...this.items];
+    this.items = [];
+    this._persist();
+    for (const req of pending) {
+      try {
+        await apiCall(req.endpoint, req.method, req.body, req.isFormData);
+        showToast(`Synced queued ${req.method} ${req.endpoint}`, 'success');
+      } catch (e) {
+        this.items.push(req);
+        this._persist();
+        showToast(`Sync failed: ${e.message}`, 'error');
+        break;
+      }
+    }
+  },
+  _persist() {
+    try {
+      localStorage.setItem('offline_queue', JSON.stringify(
+        this.items.map(i => ({ ...i, body: i.isFormData ? null : i.body }))
+      ));
+    } catch (_) {}
+  },
+  _hydrate() {
+    try {
+      const raw = localStorage.getItem('offline_queue');
+      if (raw) this.items = JSON.parse(raw).filter(r => !r.isFormData);
+    } catch (_) {}
+  },
+};
+OFFLINE_QUEUE._hydrate();
+
+window.addEventListener('online',  () => { connectionStatus = 'online';  OFFLINE_QUEUE.flush(); });
+window.addEventListener('offline', () => { connectionStatus = 'offline'; });
